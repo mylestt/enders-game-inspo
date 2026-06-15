@@ -14,31 +14,6 @@
 gravity_scale = 0.0
 angular_damp = 0.5
 script = ExtResource("1_3vyb7")
-min_push_strength = null
-max_push_strength = null
-max_charge_time = null
-push_range = null
-grab_range = null
-max_speed = null
-mouse_sensitivity = null
-mouse_rotation_strength = null
-roll_torque = null
-max_angular_speed = null
-stabilize_strength = null
-grab_wall_offset = null
-grab_roll_speed = null
-grab_position_snap_speed = null
-grab_rotation_snap_speed = null
-reticle_size = null
-reticle_max_alpha = null
-reticle_fade_speed = null
-show_velocity_indicator = null
-velocity_indicator_alpha = null
-velocity_indicator_font_size = null
-booster_thrust_force = null
-max_booster_fuel = null
-booster_drain_rate = null
-booster_bar_alpha = null
 
 [node name="MovementController" type="Node" parent="." unique_id=294609104]
 script = ExtResource("3_qlg0r")

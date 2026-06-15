@@ -1,5 +1,8 @@
 extends RigidBody3D
 
+@export var linear_damp_value: float = 0.0
+@export var angular_damp_value: float = 1.2
+
 var buy_menu_open: bool = false
 
 @onready var movement_controller: PlayerMovementController = get_node_or_null("MovementController") as PlayerMovementController
@@ -10,8 +13,8 @@ var buy_menu_open: bool = false
 
 func _ready() -> void:
 	gravity_scale = 0.0
-	linear_damp = 0.0
-	angular_damp = 0.05
+	linear_damp = linear_damp_value
+	angular_damp = angular_damp_value
 	can_sleep = false
 	
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED

@@ -2,8 +2,8 @@
 
 [ext_resource type="PackedScene" uid="uid://f2mjnk65ihmq" path="res://scenes/player.tscn" id="1_o5qli"]
 [ext_resource type="Script" uid="uid://b4vmjnqxsjw6m" path="res://scripts/main.gd" id="1_sugp2"]
-[ext_resource type="Texture2D" uid="uid://cx6g2bygli807" path="res://textures/GreyGrid.png" id="2_0wfyh"]
 [ext_resource type="Script" uid="uid://dat60tk8l7fsn" path="res://scripts/buy_menu.gd" id="4_jyhfs"]
+[ext_resource type="PackedScene" uid="uid://b7vdmnkbvgsqm" path="res://scenes/arena.tscn" id="4_tbgi4"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_0wfyh"]
 sky_horizon_color = Color(0.66224277, 0.6717428, 0.6867428, 1)
@@ -18,22 +18,13 @@ sky = SubResource("Sky_sugp2")
 tonemap_mode = 2
 glow_enabled = true
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_sugp2"]
-albedo_texture = ExtResource("2_0wfyh")
-uv1_triplanar = true
-
-[sub_resource type="BoxMesh" id="BoxMesh_tefeu"]
-material = SubResource("StandardMaterial3D_sugp2")
-
-[sub_resource type="BoxShape3D" id="BoxShape3D_tbgi4"]
-
 [node name="World Node3D" type="Node3D" unique_id=878825741 node_paths=PackedStringArray("debug_camera")]
 script = ExtResource("1_sugp2")
 player_path = NodePath("Player RigidBody3D")
 debug_camera = NodePath("DebugTopCamera Camera3D")
 
 [node name="Player RigidBody3D" parent="." unique_id=1389672182 instance=ExtResource("1_o5qli")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -29.481323)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.3772135, 4.274663, -46.397392)
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=316877635]
 environment = SubResource("Environment_jyhfs")
@@ -42,31 +33,12 @@ environment = SubResource("Environment_jyhfs")
 transform = Transform3D(-0.8660254, -0.43301278, 0.25, 0, 0.49999997, 0.86602545, -0.50000006, 0.75, -0.43301266, 0, 79.93668, 0)
 shadow_enabled = true
 
-[node name="Wall1" type="StaticBody3D" parent="." unique_id=1788832348]
-transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 1, 0, 0, -31.250515)
-
-[node name="MeshInstance3D" type="MeshInstance3D" parent="Wall1" unique_id=513948514]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.38121605)
-mesh = SubResource("BoxMesh_tefeu")
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="Wall1" unique_id=1326809444]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.38121653)
-shape = SubResource("BoxShape3D_tbgi4")
-
-[node name="Wall2" type="StaticBody3D" parent="." unique_id=1642028464]
-transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 1, 0, 0, -23.966791)
-
-[node name="MeshInstance3D" type="MeshInstance3D" parent="Wall2" unique_id=1862258141]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.38121605)
-mesh = SubResource("BoxMesh_tefeu")
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="Wall2" unique_id=808029096]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.38121653)
-shape = SubResource("BoxShape3D_tbgi4")
-
 [node name="DebugTopCamera Camera3D" type="Camera3D" parent="." unique_id=30514711]
-transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0, 10.37926, -28.136078)
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0, 26.474604, -28.136078)
 
 [node name="BuyMenu" type="CanvasLayer" parent="." unique_id=2018399957]
 script = ExtResource("4_jyhfs")
 player_path = NodePath("../Player RigidBody3D")
+
+[node name="Arena" parent="." unique_id=1319072193 instance=ExtResource("4_tbgi4")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -9)

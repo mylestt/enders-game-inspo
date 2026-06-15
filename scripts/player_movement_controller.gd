@@ -10,12 +10,17 @@ const GRAB_RANGE_BY_LEVEL := [2.5, 3.25, 4.25, 5.5]
 @export var push_range: float = 2.5
 @export var grab_range: float = 2.5
 
+# 0.0 = push only from wall normal.
+# 1.0 = push only from the player's backward-facing direction.
+# Recommended: 0.25 - 0.45
+@export var push_angle_influence: float = 0.35
+
 @export var max_speed: float = 18.0
-@export var max_angular_speed: float = 5.0
+@export var max_angular_speed: float = 8.0
 
 @export var mouse_sensitivity: float = 0.01
-@export var mouse_rotation_strength: float = 0.15
-@export var roll_torque: float = -4.0
+@export var mouse_rotation_strength: float = 0.3
+@export var roll_torque: float = 4.0
 @export var stabilize_strength: float = 2.0
 
 @export var grab_wall_offset: float = 0.75
@@ -232,6 +237,29 @@ func get_push_charge_percent() -> float:
 	return clampf(push_charge_time / max_charge_time, 0.0, 1.0)
 
 
+func get_push_direction(surface_normal: Vector3) -> Vector3:
+	var wall_direction := surface_normal.normalized()
+	
+	var player_backward_direction := player.global_transform.basis.z.normalized()
+	
+	var angle_weight := clampf(push_angle_influence, 0.0, 1.0)
+	
+	var push_direction := (
+		wall_direction * (1.0 - angle_weight)
+		+ player_backward_direction * angle_weight
+	)
+	
+	if push_direction.length() < 0.001:
+		return wall_direction
+	
+	push_direction = push_direction.normalized()
+	
+	if push_direction.dot(wall_direction) <= 0.05:
+		push_direction = wall_direction
+	
+	return push_direction
+
+
 func try_push_off(final_push_strength: float, charge_percent: float) -> void:
 	set_push_ray_range(push_range)
 	push_ray.force_raycast_update()
@@ -241,16 +269,19 @@ func try_push_off(final_push_strength: float, charge_percent: float) -> void:
 		return
 	
 	var collider := push_ray.get_collider()
-	var normal := push_ray.get_collision_normal()
+	var normal := push_ray.get_collision_normal().normalized()
 	var collision_point := push_ray.get_collision_point()
 	
-	var impulse := normal * final_push_strength
+	var push_direction := get_push_direction(normal)
+	var impulse := push_direction * final_push_strength
 	
 	player.apply_central_impulse(impulse)
 	
 	print("Push released")
 	print("Charge: ", round(charge_percent * 100.0), "%")
 	print("Strength: ", final_push_strength)
+	print("Wall normal: ", normal)
+	print("Push direction: ", push_direction)
 	print("Pushed off: ", collider)
 	
 	if collider is RigidBody3D:
