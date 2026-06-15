@@ -15,7 +15,7 @@ const GRAB_RANGE_BY_LEVEL := [2.5, 3.25, 4.25, 5.5]
 
 @export var mouse_sensitivity: float = 0.01
 @export var mouse_rotation_strength: float = 0.15
-@export var roll_torque: float = 4.0
+@export var roll_torque: float = -4.0
 @export var stabilize_strength: float = 2.0
 
 @export var grab_wall_offset: float = 0.75
