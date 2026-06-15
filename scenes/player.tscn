@@ -1,0 +1,82 @@
+[gd_scene format=3 uid="uid://f2mjnk65ihmq"]
+
+[ext_resource type="Script" uid="uid://cmt4i6gkjmk2f" path="res://scripts/player.gd" id="1_3vyb7"]
+[ext_resource type="Script" uid="uid://cukcin0no108i" path="res://scripts/laser_controller.gd" id="2_g2els"]
+[ext_resource type="Script" uid="uid://dxpqy5hokl06c" path="res://scripts/player_movement_controller.gd" id="3_qlg0r"]
+[ext_resource type="Script" uid="uid://5vqw82uk1ke2" path="res://scripts/suit_boosters.gd" id="4_tuyoq"]
+[ext_resource type="Script" uid="uid://bge7xypp4io2b" path="res://scripts/player_hud.gd" id="5_fjrip"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_g2els"]
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_qhqgy"]
+
+[node name="Player RigidBody3D" type="RigidBody3D" unique_id=1389672182]
+gravity_scale = 0.0
+angular_damp = 0.5
+script = ExtResource("1_3vyb7")
+min_push_strength = null
+max_push_strength = null
+max_charge_time = null
+push_range = null
+grab_range = null
+max_speed = null
+mouse_sensitivity = null
+mouse_rotation_strength = null
+roll_torque = null
+max_angular_speed = null
+stabilize_strength = null
+grab_wall_offset = null
+grab_roll_speed = null
+grab_position_snap_speed = null
+grab_rotation_snap_speed = null
+reticle_size = null
+reticle_max_alpha = null
+reticle_fade_speed = null
+show_velocity_indicator = null
+velocity_indicator_alpha = null
+velocity_indicator_font_size = null
+booster_thrust_force = null
+max_booster_fuel = null
+booster_drain_rate = null
+booster_bar_alpha = null
+
+[node name="MovementController" type="Node" parent="." unique_id=294609104]
+script = ExtResource("3_qlg0r")
+
+[node name="SuitBoosters" type="Node" parent="." unique_id=2126445202]
+script = ExtResource("4_tuyoq")
+
+[node name="PlayerHUD" type="Node" parent="." unique_id=1281244747]
+script = ExtResource("5_fjrip")
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=782354166]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5235928, -0.18032497)
+fov = 100.0
+
+[node name="RayCast3D" type="RayCast3D" parent="Camera3D" unique_id=1981107262]
+target_position = Vector3(0, 0, -2)
+
+[node name="LaserController" type="Node3D" parent="Camera3D" unique_id=1410101425]
+script = ExtResource("2_g2els")
+
+[node name="UI" type="CanvasLayer" parent="." unique_id=855663498]
+
+[node name="HUD" type="Control" parent="UI" unique_id=790996739]
+layout_mode = 3
+anchors_preset = 0
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="PushChargeBar" type="ProgressBar" parent="UI/HUD" unique_id=668526330]
+visible = false
+layout_mode = 0
+offset_right = 4.0
+offset_bottom = 27.0
+rounded = true
+show_percentage = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=157974881]
+shape = SubResource("CapsuleShape3D_g2els")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=1557973964]
+mesh = SubResource("CapsuleMesh_qhqgy")
