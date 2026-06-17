@@ -3,7 +3,7 @@ extends Node
 
 @export var booster_thrust_force: float = 7.5
 @export var max_booster_fuel: float = 100.0
-@export var booster_drain_rate: float = 22.0
+@export var booster_drain_rate: float = 1.0
 
 var player: RigidBody3D
 
