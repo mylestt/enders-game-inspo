@@ -11,7 +11,8 @@ script = ExtResource("1_sugp2")
 debug_camera = NodePath("DebugTopCamera Camera3D")
 
 [node name="DebugTopCamera Camera3D" type="Camera3D" parent="." unique_id=30514711]
-transform = Transform3D(0.7711914, 2.7826815e-08, -0.6366033, 0.6366033, -3.370985e-08, 0.7711914, 0, -1, -4.371139e-08, -15.94928, 20.16279, -29.875933)
+transform = Transform3D(0.8786469, -0.2806736, -0.38626668, 0.14854893, -0.60814434, 0.77980363, -0.45377615, -0.7425515, -0.49265042, -27.762413, 35.045925, -50.952976)
+fov = 111.5
 
 [node name="BuyMenu" type="CanvasLayer" parent="." unique_id=2018399957]
 script = ExtResource("4_jyhfs")
