@@ -15,6 +15,8 @@ class_name PlayerMovementController
 @export var max_jump_force: float = 30.0
 @export var jump_force_scroll_step: float = 1.0
 
+@export var max_grab_speed: float = 10.0
+
 @export var grab_distance_base: float = 2.1
 @export var grab_distance_level_1: float = 2.75
 @export var grab_distance_level_2: float = 3.4
@@ -161,8 +163,6 @@ func handle_body_mouse_rotation() -> void:
 
 
 func handle_free_look_rotation() -> void:
-	# Free-look camera behavior can stay controlled by the player/camera script.
-	# This clears the motion so body rotation does not happen during Alt free-look.
 	free_look_mouse_motion = Vector2.ZERO
 
 
@@ -225,8 +225,6 @@ func get_normal_push_direction() -> Vector3:
 	if player == null:
 		return Vector3.ZERO
 	
-	# Wall/surface in front allows the push.
-	# Launch direction is backward relative to player facing.
 	return player.global_transform.basis.z.normalized()
 
 
@@ -234,8 +232,6 @@ func get_ctrl_push_direction() -> Vector3:
 	if player == null:
 		return Vector3.ZERO
 	
-	# Surface behind allows the push.
-	# Launch direction is forward relative to player facing.
 	return (-player.global_transform.basis.z).normalized()
 
 
@@ -250,6 +246,15 @@ func handle_grab_input() -> void:
 
 
 func try_grab() -> void:
+	if player == null:
+		return
+	
+	var current_speed := player.linear_velocity.length()
+	
+	if current_speed > max_grab_speed:
+		release_grab()
+		return
+	
 	var result := get_normal_push_result()
 	
 	if result.is_empty():
