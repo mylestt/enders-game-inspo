@@ -22,8 +22,14 @@ const LASER_FIRE_COOLDOWN_BY_LEVEL := [0.20, 0.16, 0.12, 0.085]
 @export var desired_circle_size: float = 22.0
 @export var desired_circle_border_width: int = 2
 
+@export var surface_center_reticle_size: float = 10.0
+
 var input_enabled: bool = true
 var is_aiming: bool = false
+
+# Player.gd turns this on during surface-walk mode.
+# When true, the laser becomes a normal centered FPS reticle.
+var force_aiming: bool = false
 
 var laser_follow_speed_level: int = 0
 var laser_attack_speed_level: int = 0
@@ -42,6 +48,7 @@ var shot_beam_material: StandardMaterial3D
 var ui_layer: CanvasLayer
 var actual_laser_dot: Panel
 var desired_aim_circle: Panel
+var surface_center_reticle: Panel
 
 
 func _ready() -> void:
@@ -92,7 +99,14 @@ func setup_ui() -> void:
 		desired_circle_border_width
 	)
 	
+	surface_center_reticle = create_filled_reticle(
+		"SurfaceCenterReticle",
+		surface_center_reticle_size,
+		Color(1.0, 1.0, 1.0, 0.95)
+	)
+	
 	ui_layer.visible = false
+	hide_all_reticles()
 
 
 func create_filled_reticle(reticle_name: String, size: float, color: Color) -> Panel:
@@ -148,6 +162,10 @@ func _input(event: InputEvent) -> void:
 	if not input_enabled:
 		return
 	
+	# Surface-walk force aiming ignores RMB and ignores mouse reticle movement.
+	if force_aiming:
+		return
+	
 	if event.is_action_pressed("laser_aim"):
 		start_laser_aim()
 	
@@ -168,9 +186,20 @@ func _process(delta: float) -> void:
 		stop_laser_aim()
 		return
 	
+	if force_aiming:
+		if not is_aiming:
+			start_laser_aim()
+		
+		update_surface_center_aim()
+		
+		if Input.is_action_pressed("laser_fire"):
+			try_fire_laser()
+		
+		return
+	
 	if is_aiming:
-		update_aim_direction(delta)
-		update_aim_visuals()
+		update_follow_aim_direction(delta)
+		update_follow_aim_visuals()
 		
 		if Input.is_action_pressed("laser_fire"):
 			try_fire_laser()
@@ -187,13 +216,21 @@ func start_laser_aim() -> void:
 	if ui_layer != null:
 		ui_layer.visible = true
 	
+	if force_aiming:
+		set_screen_aim_to_center()
+		update_surface_center_aim()
+		return
+	
 	if screen_aim_position == Vector2.ZERO:
-		screen_aim_position = get_viewport().get_visible_rect().size * 0.5
+		set_screen_aim_to_center()
 	
 	clamp_screen_aim_position()
 
 
 func stop_laser_aim() -> void:
+	if force_aiming and input_enabled:
+		return
+	
 	is_aiming = false
 	hide_aim_visuals()
 
@@ -201,6 +238,23 @@ func stop_laser_aim() -> void:
 func hide_aim_visuals() -> void:
 	if ui_layer != null:
 		ui_layer.visible = false
+	
+	hide_all_reticles()
+
+
+func hide_all_reticles() -> void:
+	if actual_laser_dot != null:
+		actual_laser_dot.visible = false
+	
+	if desired_aim_circle != null:
+		desired_aim_circle.visible = false
+	
+	if surface_center_reticle != null:
+		surface_center_reticle.visible = false
+
+
+func set_screen_aim_to_center() -> void:
+	screen_aim_position = get_viewport().get_visible_rect().size * 0.5
 
 
 func clamp_screen_aim_position() -> void:
@@ -219,19 +273,24 @@ func clamp_screen_aim_position() -> void:
 	)
 
 
-func update_aim_direction(delta: float) -> void:
+# Normal zero-G aiming:
+# desired circle can move, actual laser dot follows behind.
+func update_follow_aim_direction(delta: float) -> void:
 	desired_aim_direction = camera.project_ray_normal(screen_aim_position).normalized()
 	
 	var follow_weight := 1.0 - exp(-laser_follow_speed * delta)
 	actual_aim_direction = actual_aim_direction.lerp(desired_aim_direction, follow_weight).normalized()
 
 
-func update_aim_visuals() -> void:
+func update_follow_aim_visuals() -> void:
 	if camera == null:
 		return
 	
 	if ui_layer != null:
 		ui_layer.visible = true
+	
+	if surface_center_reticle != null:
+		surface_center_reticle.visible = false
 	
 	update_desired_aim_circle()
 	update_actual_laser_dot()
@@ -260,6 +319,39 @@ func update_actual_laser_dot() -> void:
 	
 	actual_laser_dot.visible = true
 	actual_laser_dot.position = actual_screen_position - actual_laser_dot.size * 0.5
+
+
+# Surface-walk aiming:
+# one reticle, centered, no follow lag.
+func update_surface_center_aim() -> void:
+	if camera == null:
+		return
+	
+	set_screen_aim_to_center()
+	
+	desired_aim_direction = camera.project_ray_normal(screen_aim_position).normalized()
+	actual_aim_direction = desired_aim_direction
+	
+	if ui_layer != null:
+		ui_layer.visible = true
+	
+	if actual_laser_dot != null:
+		actual_laser_dot.visible = false
+	
+	if desired_aim_circle != null:
+		desired_aim_circle.visible = false
+	
+	update_surface_center_reticle()
+
+
+func update_surface_center_reticle() -> void:
+	if surface_center_reticle == null:
+		return
+	
+	var center := get_viewport().get_visible_rect().size * 0.5
+	
+	surface_center_reticle.visible = true
+	surface_center_reticle.position = center - surface_center_reticle.size * 0.5
 
 
 func get_laser_visual_end(origin: Vector3, direction: Vector3) -> Vector3:
@@ -377,7 +469,20 @@ func set_input_enabled(value: bool) -> void:
 	input_enabled = value
 	
 	if not input_enabled:
+		force_aiming = false
 		stop_laser_aim()
+
+
+func set_force_aiming(value: bool) -> void:
+	force_aiming = value
+	
+	if force_aiming and input_enabled:
+		start_laser_aim()
+		update_surface_center_aim()
+	else:
+		if not Input.is_action_pressed("laser_aim"):
+			is_aiming = false
+			hide_aim_visuals()
 
 
 func is_laser_aiming() -> bool:

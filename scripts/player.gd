@@ -122,15 +122,18 @@ func _input(event: InputEvent) -> void:
 			movement_controller.clear_free_look_mouse_motion()
 		return
 	
-	if event.is_action_pressed("free_look"):
-		set_laser_input_enabled(false)
+	var surface_walk_active := is_surface_walk_mode_active()
 	
-	if event.is_action_released("free_look"):
-		set_laser_input_enabled(not buy_menu_open and not is_input_locked())
+	if not surface_walk_active:
+		if event.is_action_pressed("free_look"):
+			set_laser_input_enabled(false)
+		
+		if event.is_action_released("free_look"):
+			set_laser_input_enabled(not buy_menu_open and not is_input_locked())
 	
 	if event is InputEventMouseMotion:
 		if movement_controller != null:
-			if is_free_look_active():
+			if is_free_look_active() and not surface_walk_active:
 				movement_controller.add_free_look_mouse_motion(event.relative)
 			else:
 				movement_controller.add_mouse_motion(event.relative)
@@ -155,9 +158,17 @@ func _physics_process(delta: float) -> void:
 		network_laser_cooldown_remaining = maxf(network_laser_cooldown_remaining, 0.0)
 	
 	var input_locked := is_input_locked()
+	var movement_locked := input_locked or buy_menu_open
+	var surface_walk_active := is_surface_walk_mode_active()
 	var free_look_active := is_free_look_active()
 	
-	set_laser_input_enabled(not buy_menu_open and not free_look_active and not input_locked)
+	if surface_walk_active:
+		free_look_active = false
+	
+	var laser_should_be_enabled := not buy_menu_open and not input_locked and (surface_walk_active or not free_look_active)
+	
+	set_laser_input_enabled(laser_should_be_enabled)
+	set_laser_force_aiming(surface_walk_active and laser_should_be_enabled)
 	
 	var laser_aiming := is_laser_aiming()
 	var surface_in_range := false
@@ -172,7 +183,7 @@ func _physics_process(delta: float) -> void:
 			buy_menu_open,
 			free_look_active,
 			laser_aiming,
-			input_locked
+			movement_locked
 		)
 		ctrl_push_direction = movement_controller.get_predicted_ctrl_push_direction()
 	
@@ -187,11 +198,13 @@ func _physics_process(delta: float) -> void:
 		)
 	
 	if movement_controller != null:
-		movement_controller.physics_update(delta, laser_aiming, free_look_active, input_locked)
+		movement_controller.physics_update(delta, laser_aiming, free_look_active, movement_locked)
 		grabbing = movement_controller.is_grabbing_wall()
 	
 	if suit_boosters != null:
-		suit_boosters.physics_update(delta, not buy_menu_open and not input_locked, grabbing)
+		var boosters_allowed := not buy_menu_open and not input_locked and not is_surface_walk_mode_active()
+		
+		suit_boosters.physics_update(delta, boosters_allowed, grabbing)
 		
 		if hud_controller != null:
 			hud_controller.update_booster_ui(
@@ -208,7 +221,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	if not is_local_player:
 		return
 	
-	if impact_controller != null:
+	if impact_controller != null and not is_surface_walk_mode_active():
 		impact_controller.integrate_forces(state)
 	
 	if movement_controller != null:
@@ -250,7 +263,6 @@ func detect_player_body_slam_contacts(state: PhysicsDirectBodyState3D) -> void:
 		if not can_send_body_slam_to_target(target_peer_id):
 			continue
 		
-		var slam_direction := linear_velocity.normalized()
 		var impulse := linear_velocity * body_slam_impulse_multiplier
 		
 		if impulse.length() > body_slam_max_impulse:
@@ -311,6 +323,11 @@ func apply_network_body_slam_impulse(impulse: Vector3, contact_position: Vector3
 		return
 	
 	sleeping = false
+	
+	if movement_controller != null:
+		if movement_controller.has_method("is_surface_walk_active") and movement_controller.call("is_surface_walk_active"):
+			if movement_controller.has_method("exit_surface_walk_mode"):
+				movement_controller.call("exit_surface_walk_mode")
 	
 	var local_contact_position := contact_position - global_position
 	
@@ -447,11 +464,20 @@ func is_free_look_active() -> bool:
 	if is_input_locked():
 		return false
 	
+	if is_surface_walk_mode_active():
+		return false
+	
 	return Input.is_action_pressed("free_look")
 
 
 func is_input_locked() -> bool:
-	return is_immobilized() or is_combat_disabled()
+	if is_combat_disabled():
+		return true
+	
+	if is_surface_walk_mode_active():
+		return false
+	
+	return is_immobilized()
 
 
 func is_immobilized() -> bool:
@@ -468,12 +494,28 @@ func is_combat_disabled() -> bool:
 	return health_controller.is_combat_disabled()
 
 
+func is_surface_walk_mode_active() -> bool:
+	if movement_controller == null:
+		return false
+	
+	if movement_controller.has_method("is_surface_walk_active"):
+		return bool(movement_controller.call("is_surface_walk_active"))
+	
+	return false
+
+
 func is_laser_aiming() -> bool:
-	if is_free_look_active() or is_input_locked():
+	if is_input_locked():
 		return false
 	
 	if laser_controller != null and laser_controller.has_method("is_laser_aiming"):
 		return laser_controller.call("is_laser_aiming") == true
+	
+	if is_surface_walk_mode_active():
+		return true
+	
+	if is_free_look_active():
+		return false
 	
 	return Input.is_action_pressed("laser_aim")
 
@@ -481,6 +523,11 @@ func is_laser_aiming() -> bool:
 func set_laser_input_enabled(value: bool) -> void:
 	if laser_controller != null and laser_controller.has_method("set_input_enabled"):
 		laser_controller.call("set_input_enabled", value)
+
+
+func set_laser_force_aiming(value: bool) -> void:
+	if laser_controller != null and laser_controller.has_method("set_force_aiming"):
+		laser_controller.call("set_force_aiming", value)
 
 
 func set_buy_menu_open(value: bool) -> void:
@@ -496,8 +543,10 @@ func set_buy_menu_open(value: bool) -> void:
 	set_laser_input_enabled(not value and not is_input_locked())
 	
 	if value:
+		set_laser_force_aiming(false)
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	else:
+		set_laser_force_aiming(is_surface_walk_mode_active())
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
@@ -521,6 +570,7 @@ func apply_network_damage_state(hits: int, disabled: bool) -> void:
 	
 	if disabled:
 		set_laser_input_enabled(false)
+		set_laser_force_aiming(false)
 		
 		if movement_controller != null:
 			movement_controller.clear_mouse_motion()

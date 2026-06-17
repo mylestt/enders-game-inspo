@@ -1,6 +1,11 @@
 extends Node
 class_name PlayerMovementController
 
+enum MovementMode {
+	ZERO_G,
+	SURFACE_WALK
+}
+
 @export var mouse_sensitivity: float = 0.0025
 @export var free_look_sensitivity: float = 0.0025
 
@@ -25,8 +30,35 @@ class_name PlayerMovementController
 @export var grabbed_linear_damp: float = 12.0
 @export var grabbed_angular_damp: float = 4.0
 
+@export var surface_walk_speed: float = 10.0
+@export var surface_walk_sprint_multiplier: float = 1.75
+
+@export var surface_walk_use_auto_acceleration: bool = true
+@export var surface_walk_time_to_full_speed: float = 0.18
+@export var surface_walk_acceleration: float = 60.0
+@export var surface_walk_sprint_acceleration_multiplier: float = 1.25
+
+@export var surface_walk_body_offset: float = 0.85
+@export var surface_walk_snap_strength: float = 10.0
+@export var surface_walk_max_snap_speed: float = 8.0
+@export var surface_walk_mouse_sensitivity: float = 0.0025
+@export var surface_walk_pitch_limit_degrees: float = 82.0
+@export var surface_walk_space_launches_off: bool = true
+
+@export var surface_walk_transition_duration: float = 0.14
+@export var surface_walk_entry_shake_duration: float = 0.18
+@export var surface_walk_entry_shake_strength: float = 0.07
+@export var surface_walk_entry_shake_frequency: float = 52.0
+
+@export var surface_walk_edge_check_extra_distance: float = 0.35
+@export var surface_walk_edge_grace_time: float = 0.06
+@export var surface_walk_surface_normal_min_dot: float = 0.65
+
 var player: RigidBody3D
+var camera: Camera3D
 var hud_controller: PlayerHUDController
+
+var movement_mode: int = MovementMode.ZERO_G
 
 var mouse_motion: Vector2 = Vector2.ZERO
 var free_look_mouse_motion: Vector2 = Vector2.ZERO
@@ -35,6 +67,20 @@ var grabbing_wall: bool = false
 var grab_position: Vector3 = Vector3.ZERO
 var grab_distance_level: int = 0
 
+var surface_walk_normal: Vector3 = Vector3.UP
+var surface_walk_forward: Vector3 = Vector3.FORWARD
+var surface_walk_anchor_point: Vector3 = Vector3.ZERO
+var surface_walk_pitch: float = 0.0
+
+var surface_walk_transition_active: bool = false
+var surface_walk_transition_timer: float = 0.0
+var surface_walk_transition_start_transform: Transform3D
+var surface_walk_transition_target_transform: Transform3D
+
+var camera_base_position: Vector3 = Vector3.ZERO
+var surface_walk_shake_timer: float = 0.0
+var surface_walk_no_surface_timer: float = 0.0
+
 var last_surface_result: Dictionary = {}
 var last_ctrl_push_result: Dictionary = {}
 
@@ -42,6 +88,10 @@ var last_ctrl_push_result: Dictionary = {}
 func setup(owner_player: RigidBody3D, owner_hud_controller: PlayerHUDController) -> void:
 	player = owner_player
 	hud_controller = owner_hud_controller
+	camera = player.get_node_or_null("Camera3D") as Camera3D
+	
+	if camera != null:
+		camera_base_position = camera.position
 	
 	jump_force = clampf(jump_force, min_jump_force, max_jump_force)
 	
@@ -72,10 +122,14 @@ func can_adjust_jump_force() -> bool:
 	if player == null:
 		return false
 	
-	if "is_local_player" in player and not player.is_local_player:
+	var local_value = player.get("is_local_player")
+	
+	if local_value is bool and local_value == false:
 		return false
 	
-	if "buy_menu_open" in player and player.buy_menu_open:
+	var buy_menu_value = player.get("buy_menu_open")
+	
+	if buy_menu_value is bool and buy_menu_value == true:
 		return false
 	
 	if player.has_method("is_input_locked") and player.call("is_input_locked"):
@@ -108,7 +162,7 @@ func clear_free_look_mouse_motion() -> void:
 
 
 func physics_update(
-	_delta: float,
+	delta: float,
 	laser_aiming: bool,
 	free_look_active: bool,
 	input_locked: bool
@@ -118,15 +172,61 @@ func physics_update(
 	
 	update_surface_cache()
 	update_ctrl_push_cache()
-	
-	if hud_controller != null:
-		hud_controller.update_jump_force(jump_force)
+	update_hud_values()
+	handle_movement_mode_toggle(input_locked)
+	update_surface_walk_entry_shake(delta)
 	
 	if input_locked:
+		handle_input_locked_state()
 		clear_mouse_motion()
 		clear_free_look_mouse_motion()
 		return
 	
+	match movement_mode:
+		MovementMode.ZERO_G:
+			physics_update_zero_g(laser_aiming, free_look_active)
+		
+		MovementMode.SURFACE_WALK:
+			physics_update_surface_walk(delta)
+	
+	clear_mouse_motion()
+	clear_free_look_mouse_motion()
+
+
+func update_hud_values() -> void:
+	if hud_controller != null:
+		hud_controller.update_jump_force(jump_force)
+
+
+func handle_input_locked_state() -> void:
+	if movement_mode == MovementMode.SURFACE_WALK:
+		player.linear_velocity = Vector3.ZERO
+		player.angular_velocity = Vector3.ZERO
+
+
+func integrate_forces(_state: PhysicsDirectBodyState3D) -> void:
+	if player == null:
+		return
+	
+	match movement_mode:
+		MovementMode.ZERO_G:
+			integrate_zero_g_forces()
+		
+		MovementMode.SURFACE_WALK:
+			integrate_surface_walk_forces()
+
+
+func integrate_zero_g_forces() -> void:
+	if grabbing_wall:
+		player.linear_velocity = player.linear_velocity.lerp(Vector3.ZERO, 0.55)
+		player.angular_velocity = player.angular_velocity.lerp(Vector3.ZERO, 0.25)
+
+
+func integrate_surface_walk_forces() -> void:
+	player.angular_velocity = Vector3.ZERO
+
+
+func physics_update_zero_g(laser_aiming: bool, free_look_active: bool) -> void:
 	if free_look_active:
 		handle_free_look_rotation()
 	else:
@@ -139,18 +239,406 @@ func physics_update(
 		handle_stabilize_input()
 	else:
 		release_grab()
+
+
+func physics_update_surface_walk(delta: float) -> void:
+	release_grab()
 	
-	clear_mouse_motion()
-	clear_free_look_mouse_motion()
-
-
-func integrate_forces(_state: PhysicsDirectBodyState3D) -> void:
-	if player == null:
+	if surface_walk_transition_active:
+		update_surface_walk_transition(delta)
 		return
 	
-	if grabbing_wall:
-		player.linear_velocity = player.linear_velocity.lerp(Vector3.ZERO, 0.55)
-		player.angular_velocity = player.angular_velocity.lerp(Vector3.ZERO, 0.25)
+	if update_surface_walk_edge_check(delta):
+		return
+	
+	update_surface_walk_mouse_look()
+	update_surface_walk_orientation()
+	handle_surface_walk_movement(delta)
+	handle_surface_walk_jump()
+
+
+func handle_movement_mode_toggle(input_locked: bool) -> void:
+	if not is_action_just_pressed_if_exists("toggle_surface_walk"):
+		return
+	
+	if movement_mode == MovementMode.SURFACE_WALK:
+		exit_surface_walk_mode()
+		return
+	
+	if input_locked:
+		return
+	
+	try_enter_surface_walk_mode()
+
+
+func try_enter_surface_walk_mode() -> void:
+	var result := get_normal_push_result()
+	
+	if result.is_empty():
+		print("Surface walk failed: no surface in front of player.")
+		return
+	
+	var surface_normal: Vector3 = result.get("normal", Vector3.ZERO)
+	var hit_position: Vector3 = result.get("position", player.global_position)
+	
+	if surface_normal.length() < 0.01:
+		print("Surface walk failed: invalid surface normal.")
+		return
+	
+	enter_surface_walk_mode(hit_position, surface_normal.normalized())
+
+
+func enter_surface_walk_mode(hit_position: Vector3, surface_normal: Vector3) -> void:
+	release_grab()
+	
+	movement_mode = MovementMode.SURFACE_WALK
+	
+	surface_walk_normal = surface_normal.normalized()
+	surface_walk_anchor_point = hit_position
+	surface_walk_no_surface_timer = 0.0
+	
+	var look_forward := (-player.global_transform.basis.z).normalized()
+	var projected_forward := look_forward.slide(surface_walk_normal)
+	
+	if projected_forward.length() < 0.01:
+		projected_forward = player.global_transform.basis.y.slide(surface_walk_normal)
+	
+	if projected_forward.length() < 0.01:
+		projected_forward = get_fallback_surface_forward(surface_walk_normal)
+	
+	surface_walk_forward = projected_forward.normalized()
+	surface_walk_pitch = 0.0
+	
+	var target_position := hit_position + surface_walk_normal * surface_walk_body_offset
+	var target_basis := make_surface_walk_basis(surface_walk_forward, surface_walk_normal)
+	var target_transform := Transform3D(target_basis, target_position)
+	
+	player.linear_velocity = Vector3.ZERO
+	player.angular_velocity = Vector3.ZERO
+	player.sleeping = false
+	
+	if camera != null:
+		camera.rotation = Vector3.ZERO
+	
+	start_surface_walk_transition(target_transform)
+	start_surface_walk_entry_shake()
+	
+	print("Entered surface-walk mode.")
+
+
+func start_surface_walk_transition(target_transform: Transform3D) -> void:
+	surface_walk_transition_active = true
+	surface_walk_transition_timer = 0.0
+	surface_walk_transition_start_transform = player.global_transform
+	surface_walk_transition_target_transform = target_transform
+	
+	if surface_walk_transition_duration <= 0.0:
+		player.global_transform = surface_walk_transition_target_transform
+		surface_walk_transition_active = false
+
+
+func update_surface_walk_transition(delta: float) -> void:
+	player.linear_velocity = Vector3.ZERO
+	player.angular_velocity = Vector3.ZERO
+	player.sleeping = false
+	
+	surface_walk_transition_timer += delta
+	
+	var raw_t := clampf(
+		surface_walk_transition_timer / maxf(surface_walk_transition_duration, 0.001),
+		0.0,
+		1.0
+	)
+	
+	var smooth_t := raw_t * raw_t * (3.0 - 2.0 * raw_t)
+	
+	var new_position := surface_walk_transition_start_transform.origin.lerp(
+		surface_walk_transition_target_transform.origin,
+		smooth_t
+	)
+	
+	var new_basis := surface_walk_transition_start_transform.basis.slerp(
+		surface_walk_transition_target_transform.basis,
+		smooth_t
+	).orthonormalized()
+	
+	player.global_transform = Transform3D(new_basis, new_position)
+	
+	if raw_t >= 1.0:
+		player.global_transform = surface_walk_transition_target_transform
+		surface_walk_transition_active = false
+		surface_walk_no_surface_timer = 0.0
+
+
+func start_surface_walk_entry_shake() -> void:
+	surface_walk_shake_timer = surface_walk_entry_shake_duration
+
+
+func update_surface_walk_entry_shake(delta: float) -> void:
+	if camera == null:
+		return
+	
+	if surface_walk_shake_timer <= 0.0:
+		return
+	
+	surface_walk_shake_timer -= delta
+	
+	var remaining_ratio := clampf(
+		surface_walk_shake_timer / maxf(surface_walk_entry_shake_duration, 0.001),
+		0.0,
+		1.0
+	)
+	
+	var time := Time.get_ticks_msec() / 1000.0
+	var shake_amount := surface_walk_entry_shake_strength * remaining_ratio
+	
+	var x_offset := sin(time * surface_walk_entry_shake_frequency) * shake_amount
+	var y_offset := cos(time * surface_walk_entry_shake_frequency * 1.37) * shake_amount * 0.65
+	
+	camera.position = camera_base_position + Vector3(x_offset, y_offset, 0.0)
+	
+	if surface_walk_shake_timer <= 0.0:
+		camera.position = camera_base_position
+
+
+func update_surface_walk_edge_check(delta: float) -> bool:
+	var result := get_surface_walk_ground_result()
+	
+	if result.is_empty():
+		surface_walk_no_surface_timer += delta
+		
+		if surface_walk_no_surface_timer >= surface_walk_edge_grace_time:
+			print("Surface walk ended: walked off edge.")
+			exit_surface_walk_mode()
+			return true
+		
+		return false
+	
+	var hit_normal: Vector3 = result.get("normal", Vector3.ZERO)
+	
+	if hit_normal.length() < 0.01:
+		surface_walk_no_surface_timer += delta
+		
+		if surface_walk_no_surface_timer >= surface_walk_edge_grace_time:
+			print("Surface walk ended: invalid surface under player.")
+			exit_surface_walk_mode()
+			return true
+		
+		return false
+	
+	var normal_similarity := hit_normal.normalized().dot(surface_walk_normal)
+	
+	if normal_similarity < surface_walk_surface_normal_min_dot:
+		print("Surface walk ended: different surface angle under player.")
+		exit_surface_walk_mode()
+		return true
+	
+	surface_walk_no_surface_timer = 0.0
+	surface_walk_anchor_point = result.get("position", surface_walk_anchor_point)
+	
+	return false
+
+
+func get_surface_walk_ground_result() -> Dictionary:
+	if player == null:
+		return {}
+	
+	var start := player.global_position + surface_walk_normal * 0.08
+	var end := player.global_position - surface_walk_normal * (
+		surface_walk_body_offset + surface_walk_edge_check_extra_distance
+	)
+	
+	return raycast_from_player(start, end)
+
+
+func exit_surface_walk_mode() -> void:
+	if movement_mode != MovementMode.SURFACE_WALK:
+		return
+	
+	surface_walk_transition_active = false
+	surface_walk_shake_timer = 0.0
+	surface_walk_no_surface_timer = 0.0
+	
+	if camera != null:
+		var camera_basis := camera.global_transform.basis.orthonormalized()
+		player.global_transform = Transform3D(camera_basis, player.global_position)
+		camera.rotation = Vector3.ZERO
+		camera.position = camera_base_position
+	
+	movement_mode = MovementMode.ZERO_G
+	player.angular_velocity = Vector3.ZERO
+	player.sleeping = false
+	
+	print("Exited surface-walk mode.")
+
+
+func update_surface_walk_mouse_look() -> void:
+	if mouse_motion != Vector2.ZERO:
+		var yaw_amount := -mouse_motion.x * surface_walk_mouse_sensitivity
+		surface_walk_forward = surface_walk_forward.rotated(surface_walk_normal, yaw_amount).normalized()
+		
+		surface_walk_pitch -= mouse_motion.y * surface_walk_mouse_sensitivity
+	
+	var pitch_limit := deg_to_rad(surface_walk_pitch_limit_degrees)
+	surface_walk_pitch = clampf(surface_walk_pitch, -pitch_limit, pitch_limit)
+	
+	if camera != null:
+		camera.rotation = Vector3(surface_walk_pitch, 0.0, 0.0)
+
+
+func update_surface_walk_orientation() -> void:
+	player.global_transform = Transform3D(
+		make_surface_walk_basis(surface_walk_forward, surface_walk_normal),
+		player.global_position
+	)
+	
+	player.angular_velocity = Vector3.ZERO
+
+
+func handle_surface_walk_movement(delta: float) -> void:
+	var input_vector := get_surface_walk_input_vector()
+	var sprinting := is_surface_walk_sprinting()
+	
+	var target_speed := get_surface_walk_target_speed(sprinting)
+	var current_acceleration := get_surface_walk_current_acceleration(sprinting)
+	
+	var forward := (-player.global_transform.basis.z).slide(surface_walk_normal).normalized()
+	var right := player.global_transform.basis.x.slide(surface_walk_normal).normalized()
+	
+	if forward.length() < 0.01:
+		forward = surface_walk_forward.normalized()
+	
+	if right.length() < 0.01:
+		right = forward.cross(surface_walk_normal).normalized()
+	
+	var desired_tangent_velocity := Vector3.ZERO
+	
+	if input_vector.length() > 0.01:
+		desired_tangent_velocity = (
+			right * input_vector.x +
+			forward * input_vector.y
+		).normalized() * target_speed
+	
+	var current_tangent_velocity := player.linear_velocity.slide(surface_walk_normal)
+	var new_tangent_velocity := current_tangent_velocity.move_toward(
+		desired_tangent_velocity,
+		current_acceleration * delta
+	)
+	
+	var snap_velocity := get_surface_walk_snap_velocity()
+	
+	player.linear_velocity = new_tangent_velocity + snap_velocity
+	player.angular_velocity = Vector3.ZERO
+	player.sleeping = false
+
+
+func get_surface_walk_target_speed(sprinting: bool) -> float:
+	var target_speed := surface_walk_speed
+	
+	if sprinting:
+		target_speed *= surface_walk_sprint_multiplier
+	
+	return target_speed
+
+
+func get_surface_walk_current_acceleration(sprinting: bool) -> float:
+	if not surface_walk_use_auto_acceleration:
+		var manual_acceleration := surface_walk_acceleration
+		
+		if sprinting:
+			manual_acceleration *= surface_walk_sprint_acceleration_multiplier
+		
+		return manual_acceleration
+	
+	var target_speed := get_surface_walk_target_speed(sprinting)
+	var time_to_speed := maxf(surface_walk_time_to_full_speed, 0.01)
+	var auto_acceleration := target_speed / time_to_speed
+	
+	if sprinting:
+		auto_acceleration *= surface_walk_sprint_acceleration_multiplier
+	
+	return auto_acceleration
+
+
+func get_surface_walk_snap_velocity() -> Vector3:
+	var distance_from_plane := surface_walk_normal.dot(player.global_position - surface_walk_anchor_point)
+	var offset_error := surface_walk_body_offset - distance_from_plane
+	
+	var snap_speed := clampf(
+		offset_error * surface_walk_snap_strength,
+		-surface_walk_max_snap_speed,
+		surface_walk_max_snap_speed
+	)
+	
+	return surface_walk_normal * snap_speed
+
+
+func is_surface_walk_sprinting() -> bool:
+	return (
+		is_action_pressed_if_exists("sprint")
+		or is_action_pressed_if_exists("stabilize_rotation")
+	)
+
+
+func handle_surface_walk_jump() -> void:
+	if not surface_walk_space_launches_off:
+		return
+	
+	if not is_action_just_pressed_if_exists("push"):
+		return
+	
+	var launch_direction := surface_walk_normal.normalized()
+	exit_surface_walk_mode()
+	
+	player.sleeping = false
+	player.apply_central_impulse(launch_direction * jump_force)
+
+
+func get_surface_walk_input_vector() -> Vector2:
+	var input_vector := Vector2.ZERO
+	
+	input_vector.x += get_action_strength_if_exists("walk_right")
+	input_vector.x -= get_action_strength_if_exists("walk_left")
+	
+	input_vector.y += get_action_strength_if_exists("booster_forward")
+	input_vector.y -= get_action_strength_if_exists("booster_backward")
+	
+	if input_vector.length() > 1.0:
+		input_vector = input_vector.normalized()
+	
+	return input_vector
+
+
+func make_surface_walk_basis(forward: Vector3, up: Vector3) -> Basis:
+	up = up.normalized()
+	forward = forward.slide(up)
+	
+	if forward.length() < 0.01:
+		forward = get_fallback_surface_forward(up)
+	
+	forward = forward.normalized()
+	
+	var right := forward.cross(up).normalized()
+	var corrected_forward := up.cross(right).normalized()
+	
+	return Basis(right, up, -corrected_forward).orthonormalized()
+
+
+func get_fallback_surface_forward(up: Vector3) -> Vector3:
+	var helper := Vector3.FORWARD
+	
+	if absf(up.dot(helper)) > 0.95:
+		helper = Vector3.RIGHT
+	
+	return helper.slide(up).normalized()
+
+
+func is_surface_walk_active() -> bool:
+	return movement_mode == MovementMode.SURFACE_WALK
+
+
+func get_movement_mode() -> int:
+	return movement_mode
 
 
 func handle_body_mouse_rotation() -> void:
@@ -167,13 +655,10 @@ func handle_free_look_rotation() -> void:
 
 
 func handle_jump_input() -> void:
-	if not InputMap.has_action("push"):
+	if not is_action_just_pressed_if_exists("push"):
 		return
 	
-	if not Input.is_action_just_pressed("push"):
-		return
-	
-	if InputMap.has_action("ctrl_push") and Input.is_action_pressed("ctrl_push"):
+	if is_action_pressed_if_exists("ctrl_push"):
 		try_ctrl_push()
 	else:
 		try_normal_push()
@@ -236,10 +721,7 @@ func get_ctrl_push_direction() -> Vector3:
 
 
 func handle_grab_input() -> void:
-	if not InputMap.has_action("grab"):
-		return
-	
-	if Input.is_action_pressed("grab"):
+	if is_action_pressed_if_exists("grab"):
 		try_grab()
 	else:
 		release_grab()
@@ -275,10 +757,10 @@ func release_grab() -> void:
 func handle_roll_input() -> void:
 	var roll_input := 0.0
 	
-	if InputMap.has_action("roll_left") and Input.is_action_pressed("roll_left"):
+	if is_action_pressed_if_exists("roll_left"):
 		roll_input += 1.0
 	
-	if InputMap.has_action("roll_right") and Input.is_action_pressed("roll_right"):
+	if is_action_pressed_if_exists("roll_right"):
 		roll_input -= 1.0
 	
 	if roll_input == 0.0:
@@ -289,10 +771,7 @@ func handle_roll_input() -> void:
 
 
 func handle_stabilize_input() -> void:
-	if not InputMap.has_action("stabilize_rotation"):
-		return
-	
-	if not Input.is_action_pressed("stabilize_rotation"):
+	if not is_action_pressed_if_exists("stabilize_rotation"):
 		return
 	
 	player.angular_velocity = player.angular_velocity.lerp(Vector3.ZERO, 0.12)
@@ -354,6 +833,9 @@ func should_show_ctrl_push_arrow(
 	laser_aiming: bool,
 	input_locked: bool
 ) -> bool:
+	if movement_mode == MovementMode.SURFACE_WALK:
+		return false
+	
 	if buy_menu_open:
 		return false
 	
@@ -366,10 +848,7 @@ func should_show_ctrl_push_arrow(
 	if input_locked:
 		return false
 	
-	if not InputMap.has_action("ctrl_push"):
-		return false
-	
-	if not Input.is_action_pressed("ctrl_push"):
+	if not is_action_pressed_if_exists("ctrl_push"):
 		return false
 	
 	return not last_ctrl_push_result.is_empty()
@@ -398,3 +877,18 @@ func get_current_grab_distance() -> float:
 			return grab_distance_level_3
 	
 	return grab_distance_base
+
+
+func is_action_pressed_if_exists(action_name: String) -> bool:
+	return InputMap.has_action(action_name) and Input.is_action_pressed(action_name)
+
+
+func is_action_just_pressed_if_exists(action_name: String) -> bool:
+	return InputMap.has_action(action_name) and Input.is_action_just_pressed(action_name)
+
+
+func get_action_strength_if_exists(action_name: String) -> float:
+	if not InputMap.has_action(action_name):
+		return 0.0
+	
+	return Input.get_action_strength(action_name)
