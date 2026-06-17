@@ -1,0 +1,69 @@
+[gd_scene format=3 uid="uid://b27y0s55qx24m"]
+
+[ext_resource type="Script" uid="uid://b4vmjnqxsjw6m" path="res://scripts/main.gd" id="1_sugp2"]
+[ext_resource type="Script" uid="uid://dat60tk8l7fsn" path="res://scripts/buy_menu.gd" id="4_jyhfs"]
+[ext_resource type="PackedScene" uid="uid://dj1f3wqa24gt8" path="res://scenes/arena3.tscn" id="4_tbgi4"]
+[ext_resource type="Script" uid="uid://ss27ux00fv75" path="res://scenes/network_manager.gd" id="4_tefeu"]
+[ext_resource type="PackedScene" uid="uid://f2mjnk65ihmq" path="res://player.tscn" id="5_tbgi4"]
+
+[node name="World Node3D" type="Node3D" unique_id=878825741 node_paths=PackedStringArray("debug_camera")]
+script = ExtResource("1_sugp2")
+debug_camera = NodePath("DebugTopCamera Camera3D")
+
+[node name="DebugTopCamera Camera3D" type="Camera3D" parent="." unique_id=30514711]
+transform = Transform3D(0.7711914, 2.7826815e-08, -0.6366033, 0.6366033, -3.370985e-08, 0.7711914, 0, -1, -4.371139e-08, -15.94928, 20.16279, -29.875933)
+
+[node name="BuyMenu" type="CanvasLayer" parent="." unique_id=2018399957]
+script = ExtResource("4_jyhfs")
+starting_cash = 200000
+
+[node name="Arena" parent="." unique_id=1659737674 instance=ExtResource("4_tbgi4")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6848607, -56.527985)
+
+[node name="Lights" type="Node" parent="." unique_id=988557465]
+
+[node name="OmniLight3D" type="OmniLight3D" parent="Lights" unique_id=1952357933]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -55.541832, 23.346184, -54.250675)
+light_energy = 10.918
+omni_range = 384.5924
+
+[node name="OmniLight3D3" type="OmniLight3D" parent="Lights" unique_id=524517446]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9.419388, 23.346184, -16.952827)
+light_energy = 10.918
+omni_range = 384.5924
+
+[node name="OmniLight3D4" type="OmniLight3D" parent="Lights" unique_id=176269322]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9.419388, 23.346184, -85.53803)
+light_energy = 10.918
+omni_range = 384.5924
+
+[node name="OmniLight3D5" type="OmniLight3D" parent="Lights" unique_id=1405108230]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9.419388, 40.29408, -46.897022)
+light_energy = 10.918
+omni_range = 384.5924
+
+[node name="OmniLight3D6" type="OmniLight3D" parent="Lights" unique_id=1590749033]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9.419388, 0.12721634, -46.897022)
+light_energy = 10.918
+omni_range = 384.5924
+
+[node name="OmniLight3D2" type="OmniLight3D" parent="Lights" unique_id=1907955726]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 61.342525, 23.346184, -49.705544)
+light_energy = 10.918
+omni_range = 384.5924
+
+[node name="NetworkManager" type="Node" parent="." unique_id=925509397]
+script = ExtResource("4_tefeu")
+player_scene = ExtResource("5_tbgi4")
+players_parent_path = NodePath("../Players")
+spawn_a_path = NodePath("../SpawnPointA")
+spawn_b_path = NodePath("../SpawnPointB")
+buy_menu_path = NodePath("../BuyMenu")
+
+[node name="Players" type="Node3D" parent="." unique_id=1147699974]
+
+[node name="SpawnPointA" type="Marker3D" parent="." unique_id=301948085]
+transform = Transform3D(-0.9967494, 0, -0.08056427, 0, 1, 0, 0.08056427, 0, -0.9967494, -56.358753, 21.572994, -54.54737)
+
+[node name="SpawnPointB" type="Marker3D" parent="." unique_id=1767691915]
+transform = Transform3D(0.97513777, -0.22159956, 0, 0.22159956, 0.97513777, 0, 0, 0, 1, 60.1372, 27.463604, -74.46355)
