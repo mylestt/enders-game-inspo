@@ -63,7 +63,7 @@ buy_menu_path = NodePath("../BuyMenu")
 [node name="Players" type="Node3D" parent="." unique_id=1147699974]
 
 [node name="SpawnPointA" type="Marker3D" parent="." unique_id=301948085]
-transform = Transform3D(-0.9967494, 0, -0.08056427, 0, 1, 0, 0.08056427, 0, -0.9967494, -54.92776, 21.572994, -54.54737)
+transform = Transform3D(-0.9967494, 0, -0.08056427, 0, 1, 0, 0.08056427, 0, -0.9967494, -56.358753, 21.572994, -54.54737)
 
 [node name="SpawnPointB" type="Marker3D" parent="." unique_id=1767691915]
 transform = Transform3D(0.97513777, -0.22159956, 0, 0.22159956, 0.97513777, 0, 0, 0, 1, 60.1372, 27.463604, -74.46355)

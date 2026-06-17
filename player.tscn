@@ -16,8 +16,6 @@
 gravity_scale = 0.0
 angular_damp = 0.5
 script = ExtResource("1_2hs0m")
-linear_damp_value = null
-angular_damp_value = null
 
 [node name="MovementController" type="Node" parent="." unique_id=294609104]
 script = ExtResource("2_1jxqw")

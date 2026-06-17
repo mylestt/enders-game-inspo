@@ -56,31 +56,31 @@ var shop_items: Array[Dictionary] = [
 		"price": 5000
 	},
 	{
-		"id": "laser_size_1",
+		"id": "laser_attack_speed_1",
 		"section": "WEAPON UPGRADES",
-		"group": "laser_size",
+		"group": "laser_attack_speed",
 		"level": 1,
-		"title": "Laser Size I",
-		"description": "Slightly larger laser and hit forgiveness.",
-		"price": 1250
+		"title": "Laser Attack Speed I",
+		"description": "Reduces laser fire cooldown.",
+		"price": 1500
 	},
 	{
-		"id": "laser_size_2",
+		"id": "laser_attack_speed_2",
 		"section": "WEAPON UPGRADES",
-		"group": "laser_size",
+		"group": "laser_attack_speed",
 		"level": 2,
-		"title": "Laser Size II",
-		"description": "Medium laser size and hit forgiveness.",
-		"price": 3250
+		"title": "Laser Attack Speed II",
+		"description": "Further reduces laser fire cooldown.",
+		"price": 3500
 	},
 	{
-		"id": "laser_size_3",
+		"id": "laser_attack_speed_3",
 		"section": "WEAPON UPGRADES",
-		"group": "laser_size",
+		"group": "laser_attack_speed",
 		"level": 3,
-		"title": "Laser Size III",
-		"description": "Maximum laser size and hit forgiveness.",
-		"price": 5500
+		"title": "Laser Attack Speed III",
+		"description": "Maximum laser fire rate.",
+		"price": 6000
 	},
 	{
 		"id": "grab_distance_1",
@@ -556,8 +556,8 @@ func can_apply_group(group: String) -> bool:
 	match group:
 		"laser_follow":
 			return laser_controller != null and laser_controller.has_method("apply_laser_follow_speed_upgrade")
-		"laser_size":
-			return laser_controller != null and laser_controller.has_method("apply_laser_size_upgrade")
+		"laser_attack_speed":
+			return laser_controller != null and laser_controller.has_method("apply_laser_attack_speed_upgrade")
 		"grab_distance":
 			return local_player != null and local_player.has_method("apply_grab_distance_upgrade")
 		"suit_boosters":
@@ -576,9 +576,9 @@ func apply_item_upgrade(item: Dictionary) -> bool:
 				laser_controller.call("apply_laser_follow_speed_upgrade", level)
 				return true
 		
-		"laser_size":
-			if laser_controller != null and laser_controller.has_method("apply_laser_size_upgrade"):
-				laser_controller.call("apply_laser_size_upgrade", level)
+		"laser_attack_speed":
+			if laser_controller != null and laser_controller.has_method("apply_laser_attack_speed_upgrade"):
+				laser_controller.call("apply_laser_attack_speed_upgrade", level)
 				return true
 		
 		"grab_distance":
@@ -600,9 +600,9 @@ func get_current_group_level(group: String) -> int:
 			if laser_controller != null and laser_controller.has_method("get_laser_follow_speed_level"):
 				return int(laser_controller.call("get_laser_follow_speed_level"))
 		
-		"laser_size":
-			if laser_controller != null and laser_controller.has_method("get_laser_size_level"):
-				return int(laser_controller.call("get_laser_size_level"))
+		"laser_attack_speed":
+			if laser_controller != null and laser_controller.has_method("get_laser_attack_speed_level"):
+				return int(laser_controller.call("get_laser_attack_speed_level"))
 		
 		"grab_distance":
 			if local_player != null and local_player.has_method("get_grab_distance_level"):

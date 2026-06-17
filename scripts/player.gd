@@ -5,8 +5,8 @@ extends RigidBody3D
 
 @export var network_send_rate: float = 30.0
 @export var network_interpolation_speed: float = 18.0
-@export var network_laser_fire_cooldown: float = 0.2
 @export var fallback_laser_range: float = 120.0
+@export var fallback_laser_fire_cooldown: float = 0.2
 
 var buy_menu_open: bool = false
 
@@ -88,6 +88,9 @@ func set_multiplayer_player(new_peer_id: int, new_is_local_player: bool, new_net
 	
 	if health_controller != null:
 		health_controller.set_is_local_player(is_local_player)
+	
+	if laser_controller != null and laser_controller.has_method("set_input_enabled"):
+		laser_controller.call("set_input_enabled", is_local_player)
 	
 	if is_local_player:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -269,7 +272,7 @@ func handle_network_laser_fire() -> void:
 	if network_laser_cooldown_remaining > 0.0:
 		return
 	
-	if not Input.is_action_just_pressed("laser_fire"):
+	if not Input.is_action_pressed("laser_fire"):
 		return
 	
 	if not is_laser_aiming():
@@ -278,14 +281,15 @@ func handle_network_laser_fire() -> void:
 	var origin := get_network_laser_origin()
 	var direction := get_network_laser_direction()
 	var laser_range := get_network_laser_range()
+	var fire_cooldown := get_network_laser_fire_cooldown()
 	
 	if direction.length() < 0.01:
 		return
 	
 	if network_manager.has_method("request_laser_fire"):
-		network_manager.call("request_laser_fire", peer_id, origin, direction, laser_range)
+		network_manager.call("request_laser_fire", peer_id, origin, direction, laser_range, fire_cooldown)
 	
-	network_laser_cooldown_remaining = network_laser_fire_cooldown
+	network_laser_cooldown_remaining = fire_cooldown
 
 
 func get_network_laser_origin() -> Vector3:
@@ -313,6 +317,13 @@ func get_network_laser_range() -> float:
 		return laser_controller.call("get_laser_range")
 	
 	return fallback_laser_range
+
+
+func get_network_laser_fire_cooldown() -> float:
+	if laser_controller != null and laser_controller.has_method("get_laser_fire_cooldown"):
+		return laser_controller.call("get_laser_fire_cooldown")
+	
+	return fallback_laser_fire_cooldown
 
 
 func is_free_look_active() -> bool:

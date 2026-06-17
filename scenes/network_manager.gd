@@ -12,7 +12,11 @@ extends Node
 
 @export var max_laser_hit_range: float = 120.0
 @export var server_laser_cooldown: float = 0.2
+@export var min_server_laser_cooldown: float = 0.08
 @export var max_laser_origin_distance_from_player: float = 4.0
+
+@export var remote_laser_lifetime: float = 0.08
+@export var remote_laser_radius: float = 0.045
 
 var players_parent: Node3D
 var buy_menu: Node
@@ -20,6 +24,8 @@ var buy_menu: Node
 var players_by_peer_id: Dictionary = {}
 var spawn_index_by_peer_id: Dictionary = {}
 var last_fire_time_by_peer_id: Dictionary = {}
+
+var remote_laser_material: StandardMaterial3D
 
 
 func _ready() -> void:
@@ -32,8 +38,18 @@ func _ready() -> void:
 	if buy_menu == null:
 		push_warning("NetworkManager could not find BuyMenu. Assign Buy Menu Path if you want multiplayer buy menu support.")
 	
+	setup_remote_laser_material()
 	connect_multiplayer_signals()
 	print("NetworkManager ready. Press H to host, J to join localhost.")
+
+
+func setup_remote_laser_material() -> void:
+	remote_laser_material = StandardMaterial3D.new()
+	remote_laser_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	remote_laser_material.albedo_color = Color(1.0, 0.0, 0.0, 0.95)
+	remote_laser_material.emission_enabled = true
+	remote_laser_material.emission = Color(1.0, 0.0, 0.0, 1.0)
+	remote_laser_material.emission_energy_multiplier = 5.0
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -308,35 +324,38 @@ func request_laser_fire(
 	shooter_peer_id: int,
 	origin: Vector3,
 	direction: Vector3,
-	requested_range: float
+	requested_range: float,
+	requested_cooldown: float
 ) -> void:
 	if multiplayer.multiplayer_peer == null:
 		return
 	
 	if multiplayer.is_server():
-		server_process_laser_fire(shooter_peer_id, origin, direction, requested_range)
+		server_process_laser_fire(shooter_peer_id, origin, direction, requested_range, requested_cooldown)
 	else:
-		rpc_id(1, "server_request_laser_fire", origin, direction, requested_range)
+		rpc_id(1, "server_request_laser_fire", origin, direction, requested_range, requested_cooldown)
 
 
 @rpc("any_peer", "reliable")
 func server_request_laser_fire(
 	origin: Vector3,
 	direction: Vector3,
-	requested_range: float
+	requested_range: float,
+	requested_cooldown: float
 ) -> void:
 	if not multiplayer.is_server():
 		return
 	
 	var shooter_peer_id := multiplayer.get_remote_sender_id()
-	server_process_laser_fire(shooter_peer_id, origin, direction, requested_range)
+	server_process_laser_fire(shooter_peer_id, origin, direction, requested_range, requested_cooldown)
 
 
 func server_process_laser_fire(
 	shooter_peer_id: int,
 	origin: Vector3,
 	direction: Vector3,
-	requested_range: float
+	requested_range: float,
+	requested_cooldown: float
 ) -> void:
 	if not multiplayer.is_server():
 		return
@@ -355,12 +374,13 @@ func server_process_laser_fire(
 	if shooter.has_method("is_combat_disabled") and shooter.call("is_combat_disabled"):
 		return
 	
+	var allowed_cooldown := clampf(requested_cooldown, min_server_laser_cooldown, server_laser_cooldown)
 	var current_time := Time.get_ticks_msec() / 1000.0
 	
 	if last_fire_time_by_peer_id.has(shooter_peer_id):
 		var last_fire_time: float = last_fire_time_by_peer_id[shooter_peer_id]
 		
-		if current_time - last_fire_time < server_laser_cooldown:
+		if current_time - last_fire_time < allowed_cooldown:
 			return
 	
 	last_fire_time_by_peer_id[shooter_peer_id] = current_time
@@ -381,6 +401,12 @@ func server_process_laser_fire(
 		query.exclude = [shooter.get_rid()]
 	
 	var result: Dictionary = shooter.get_world_3d().direct_space_state.intersect_ray(query)
+	var visual_end := end
+	
+	if not result.is_empty():
+		visual_end = result["position"]
+	
+	rpc("client_show_remote_laser", shooter_peer_id, origin, visual_end)
 	
 	if result.is_empty():
 		return
@@ -402,6 +428,67 @@ func server_process_laser_fire(
 	server_damage_player(hit_peer_id, 1)
 	
 	print("Server hit reg: ", shooter_peer_id, " hit ", hit_peer_id)
+
+
+@rpc("authority", "call_local", "unreliable")
+func client_show_remote_laser(shooter_peer_id: int, origin: Vector3, end: Vector3) -> void:
+	if shooter_peer_id == multiplayer.get_unique_id():
+		return
+	
+	create_remote_laser_beam(origin, end)
+
+
+func create_remote_laser_beam(origin: Vector3, end: Vector3) -> void:
+	var direction := end - origin
+	var length := direction.length()
+	
+	if length < 0.05:
+		return
+	
+	var beam := MeshInstance3D.new()
+	beam.name = "RemoteRedLaserBeam"
+	
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = remote_laser_radius
+	mesh.bottom_radius = remote_laser_radius
+	mesh.height = length
+	mesh.radial_segments = 8
+	mesh.material = remote_laser_material
+	
+	beam.mesh = mesh
+	beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	
+	var midpoint := origin + direction * 0.5
+	var basis := make_y_aligned_basis(direction.normalized())
+	beam.global_transform = Transform3D(basis, midpoint)
+	
+	var laser_parent: Node = self
+	
+	if players_parent != null and players_parent.get_parent() != null:
+		laser_parent = players_parent.get_parent()
+	
+	laser_parent.add_child(beam)
+	
+	var timer := get_tree().create_timer(remote_laser_lifetime)
+	timer.timeout.connect(
+		func() -> void:
+			if is_instance_valid(beam):
+				beam.queue_free()
+	)
+
+
+func make_y_aligned_basis(y_axis: Vector3) -> Basis:
+	y_axis = y_axis.normalized()
+	
+	var helper := Vector3.UP
+	
+	if absf(y_axis.dot(helper)) > 0.95:
+		helper = Vector3.RIGHT
+	
+	var x_axis := helper.cross(y_axis).normalized()
+	var z_axis := x_axis.cross(y_axis).normalized()
+	
+	return Basis(x_axis, y_axis, z_axis).orthonormalized()
 
 
 func find_player_from_collider(collider: Object) -> Node:
