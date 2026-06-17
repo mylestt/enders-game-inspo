@@ -5,6 +5,16 @@ extends Node
 @export var reticle_max_alpha: float = 0.45
 @export var reticle_fade_speed: float = 18.0
 
+@export var push_arrow_size: float = 48.0
+@export var push_arrow_max_alpha: float = 0.75
+@export var push_arrow_fade_speed: float = 20.0
+@export var push_arrow_vertical_offset: float = -105.0
+
+@export var impact_shadow_max_alpha: float = 0.8
+@export var impact_shadow_border_width: int = 95
+@export var impact_flash_max_alpha: float = 0.12
+@export var show_impact_value_label: bool = true
+
 @export var show_velocity_indicator: bool = true
 @export var velocity_indicator_alpha: float = 0.65
 @export var velocity_indicator_font_size: int = 18
@@ -18,6 +28,14 @@ var push_charge_bar: ProgressBar
 
 var reticle_dot: Panel
 var reticle_alpha: float = 0.0
+
+var push_direction_arrow: Label
+var push_arrow_alpha: float = 0.0
+
+var impact_shadow: Panel
+var impact_shadow_style: StyleBoxFlat
+var impact_flash: ColorRect
+var impact_value_label: Label
 
 var velocity_label: Label
 
@@ -36,8 +54,10 @@ func setup(owner_player: RigidBody3D) -> void:
 	setup_hud_root()
 	setup_push_charge_ui()
 	setup_reticle()
+	setup_push_direction_arrow()
 	setup_velocity_indicator()
 	setup_booster_ui()
+	setup_impact_effect()
 	
 	print("PlayerHUDController setup complete")
 
@@ -108,6 +128,109 @@ func setup_reticle() -> void:
 	
 	reticle_dot.add_theme_stylebox_override("panel", reticle_style)
 	reticle_dot.modulate = Color(1.0, 1.0, 1.0, 0.0)
+
+
+func setup_push_direction_arrow() -> void:
+	push_direction_arrow = hud.get_node_or_null("PushDirectionArrow") as Label
+	
+	if push_direction_arrow == null:
+		push_direction_arrow = Label.new()
+		push_direction_arrow.name = "PushDirectionArrow"
+		hud.add_child(push_direction_arrow)
+	
+	push_direction_arrow.text = "▲"
+	push_direction_arrow.visible = false
+	push_direction_arrow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	push_direction_arrow.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	push_direction_arrow.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	push_direction_arrow.add_theme_font_size_override("font_size", int(push_arrow_size))
+	push_direction_arrow.add_theme_color_override("font_color", Color.WHITE)
+	
+	push_direction_arrow.anchor_left = 0.5
+	push_direction_arrow.anchor_right = 0.5
+	push_direction_arrow.anchor_top = 0.5
+	push_direction_arrow.anchor_bottom = 0.5
+	
+	push_direction_arrow.offset_left = -push_arrow_size / 2.0
+	push_direction_arrow.offset_right = push_arrow_size / 2.0
+	push_direction_arrow.offset_top = push_arrow_vertical_offset - push_arrow_size / 2.0
+	push_direction_arrow.offset_bottom = push_arrow_vertical_offset + push_arrow_size / 2.0
+	
+	push_direction_arrow.pivot_offset = Vector2(push_arrow_size / 2.0, push_arrow_size / 2.0)
+	push_direction_arrow.modulate = Color(1.0, 1.0, 1.0, 0.0)
+
+
+func setup_impact_effect() -> void:
+	impact_flash = hud.get_node_or_null("ImpactFlash") as ColorRect
+	
+	if impact_flash == null:
+		impact_flash = ColorRect.new()
+		impact_flash.name = "ImpactFlash"
+		hud.add_child(impact_flash)
+	
+	impact_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	impact_flash.anchor_left = 0.0
+	impact_flash.anchor_top = 0.0
+	impact_flash.anchor_right = 1.0
+	impact_flash.anchor_bottom = 1.0
+	impact_flash.offset_left = 0.0
+	impact_flash.offset_top = 0.0
+	impact_flash.offset_right = 0.0
+	impact_flash.offset_bottom = 0.0
+	impact_flash.color = Color(0.0, 0.0, 0.0, 0.0)
+	impact_flash.visible = false
+	
+	impact_shadow = hud.get_node_or_null("ImpactShadow") as Panel
+	
+	if impact_shadow == null:
+		impact_shadow = Panel.new()
+		impact_shadow.name = "ImpactShadow"
+		hud.add_child(impact_shadow)
+	
+	impact_shadow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	impact_shadow.anchor_left = 0.0
+	impact_shadow.anchor_top = 0.0
+	impact_shadow.anchor_right = 1.0
+	impact_shadow.anchor_bottom = 1.0
+	impact_shadow.offset_left = 0.0
+	impact_shadow.offset_top = 0.0
+	impact_shadow.offset_right = 0.0
+	impact_shadow.offset_bottom = 0.0
+	impact_shadow.visible = false
+	
+	impact_shadow_style = StyleBoxFlat.new()
+	impact_shadow_style.bg_color = Color(0.0, 0.0, 0.0, 0.0)
+	impact_shadow_style.border_color = Color(0.0, 0.0, 0.0, 0.0)
+	impact_shadow_style.border_width_left = impact_shadow_border_width
+	impact_shadow_style.border_width_right = impact_shadow_border_width
+	impact_shadow_style.border_width_top = impact_shadow_border_width
+	impact_shadow_style.border_width_bottom = impact_shadow_border_width
+	
+	impact_shadow.add_theme_stylebox_override("panel", impact_shadow_style)
+	
+	impact_value_label = hud.get_node_or_null("ImpactValueLabel") as Label
+	
+	if impact_value_label == null:
+		impact_value_label = Label.new()
+		impact_value_label.name = "ImpactValueLabel"
+		hud.add_child(impact_value_label)
+	
+	impact_value_label.visible = false
+	impact_value_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	impact_value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	impact_value_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	impact_value_label.add_theme_font_size_override("font_size", 20)
+	impact_value_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.75))
+	
+	impact_value_label.anchor_left = 0.5
+	impact_value_label.anchor_right = 0.5
+	impact_value_label.anchor_top = 0.5
+	impact_value_label.anchor_bottom = 0.5
+	
+	impact_value_label.offset_left = -160.0
+	impact_value_label.offset_right = 160.0
+	impact_value_label.offset_top = 95.0
+	impact_value_label.offset_bottom = 145.0
 
 
 func setup_velocity_indicator() -> void:
@@ -194,13 +317,13 @@ func update_push_charge_ui(charge_percent: float, should_show: bool) -> void:
 	push_charge_bar.value = clampf(charge_percent * 100.0, 0.0, 100.0)
 
 
-func update_reticle(delta: float, surface_in_range: bool, laser_aiming: bool, buy_menu_open: bool) -> void:
+func update_reticle(delta: float, surface_in_range: bool, laser_aiming: bool, buy_menu_or_input_locked: bool) -> void:
 	if reticle_dot == null:
 		return
 	
 	var target_alpha := 0.0
 	
-	if surface_in_range and not laser_aiming and not buy_menu_open:
+	if surface_in_range and not laser_aiming and not buy_menu_or_input_locked:
 		target_alpha = reticle_max_alpha
 	
 	var fade_weight := 1.0 - exp(-reticle_fade_speed * delta)
@@ -208,6 +331,69 @@ func update_reticle(delta: float, surface_in_range: bool, laser_aiming: bool, bu
 	
 	reticle_dot.modulate = Color(1.0, 1.0, 1.0, reticle_alpha)
 	reticle_dot.visible = reticle_alpha > 0.01
+
+
+func update_push_direction_arrow(
+	delta: float,
+	should_show: bool,
+	launch_direction: Vector3,
+	camera: Camera3D
+) -> void:
+	if push_direction_arrow == null:
+		return
+	
+	var target_alpha := push_arrow_max_alpha if should_show else 0.0
+	var fade_weight := 1.0 - exp(-push_arrow_fade_speed * delta)
+	push_arrow_alpha = lerpf(push_arrow_alpha, target_alpha, fade_weight)
+	
+	push_direction_arrow.modulate = Color(1.0, 1.0, 1.0, push_arrow_alpha)
+	push_direction_arrow.visible = push_arrow_alpha > 0.01
+	
+	if camera == null:
+		return
+	
+	if launch_direction.length() < 0.001:
+		return
+	
+	var local_direction := camera.global_transform.basis.inverse() * launch_direction.normalized()
+	var screen_direction := Vector2(local_direction.x, -local_direction.y)
+	
+	if screen_direction.length() < 0.01:
+		push_direction_arrow.rotation = 0.0
+		return
+	
+	screen_direction = screen_direction.normalized()
+	push_direction_arrow.rotation = atan2(screen_direction.x, -screen_direction.y)
+
+
+func update_impact_effect(
+	_delta: float,
+	strength: float,
+	impact_value: float,
+	immobilize_time_remaining: float
+) -> void:
+	var clamped_strength := clampf(strength, 0.0, 1.0)
+	
+	if impact_flash != null:
+		var flash_alpha := impact_flash_max_alpha * clamped_strength
+		impact_flash.color = Color(0.0, 0.0, 0.0, flash_alpha)
+		impact_flash.visible = flash_alpha > 0.01
+	
+	if impact_shadow != null and impact_shadow_style != null:
+		var shadow_alpha := impact_shadow_max_alpha * clamped_strength
+		impact_shadow_style.border_color = Color(0.0, 0.0, 0.0, shadow_alpha)
+		impact_shadow.visible = shadow_alpha > 0.01
+	
+	if impact_value_label != null:
+		var label_alpha := clampf(clamped_strength * 1.25, 0.0, 1.0)
+		
+		impact_value_label.visible = show_impact_value_label and label_alpha > 0.01
+		impact_value_label.modulate = Color(1.0, 1.0, 1.0, label_alpha)
+		
+		impact_value_label.text = (
+			"IMPACT " + str(roundi(impact_value))
+			+ "\nCONTROL LOCK " + str(snappedf(immobilize_time_remaining, 0.01)) + "s"
+		)
 
 
 func update_velocity_indicator(current_velocity: Vector3) -> void:

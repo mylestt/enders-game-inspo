@@ -3,7 +3,7 @@
 [ext_resource type="PackedScene" uid="uid://f2mjnk65ihmq" path="res://scenes/player.tscn" id="1_o5qli"]
 [ext_resource type="Script" uid="uid://b4vmjnqxsjw6m" path="res://scripts/main.gd" id="1_sugp2"]
 [ext_resource type="Script" uid="uid://dat60tk8l7fsn" path="res://scripts/buy_menu.gd" id="4_jyhfs"]
-[ext_resource type="PackedScene" uid="uid://b7vdmnkbvgsqm" path="res://scenes/arena.tscn" id="4_tbgi4"]
+[ext_resource type="PackedScene" uid="uid://dj1f3wqa24gt8" path="res://scenes/arena3.tscn" id="4_tbgi4"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_0wfyh"]
 sky_horizon_color = Color(0.66224277, 0.6717428, 0.6867428, 1)
@@ -24,7 +24,9 @@ player_path = NodePath("Player RigidBody3D")
 debug_camera = NodePath("DebugTopCamera Camera3D")
 
 [node name="Player RigidBody3D" parent="." unique_id=1389672182 instance=ExtResource("1_o5qli")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.3772135, 4.274663, -46.397392)
+transform = Transform3D(0.034725077, 0, -0.9993969, 0, 1, 0, 0.9993969, 0, 0.034725077, 60.733257, 17.169582, -47.25548)
+linear_damp_value = 0.0
+angular_damp_value = 1.2
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=316877635]
 environment = SubResource("Environment_jyhfs")
@@ -40,5 +42,5 @@ transform = Transform3D(0.7711914, 2.7826815e-08, -0.6366033, 0.6366033, -3.3709
 script = ExtResource("4_jyhfs")
 player_path = NodePath("../Player RigidBody3D")
 
-[node name="Arena" parent="." unique_id=1319072193 instance=ExtResource("4_tbgi4")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -9)
+[node name="Arena" parent="." unique_id=1659737674 instance=ExtResource("4_tbgi4")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6848607, -56.527985)

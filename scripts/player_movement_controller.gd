@@ -10,11 +10,6 @@ const GRAB_RANGE_BY_LEVEL := [2.5, 3.25, 4.25, 5.5]
 @export var push_range: float = 2.5
 @export var grab_range: float = 2.5
 
-# 0.0 = push only from wall normal.
-# 1.0 = push only from the player's backward-facing direction.
-# Recommended: 0.25 - 0.45
-@export var push_angle_influence: float = 0.35
-
 @export var max_speed: float = 18.0
 @export var max_angular_speed: float = 8.0
 
@@ -23,16 +18,25 @@ const GRAB_RANGE_BY_LEVEL := [2.5, 3.25, 4.25, 5.5]
 @export var roll_torque: float = 4.0
 @export var stabilize_strength: float = 2.0
 
+@export var free_look_sensitivity: float = 0.006
+@export var free_look_max_angle_degrees: float = 80.0
+@export var free_look_return_speed: float = 12.0
+
 @export var grab_wall_offset: float = 0.75
 @export var grab_roll_speed: float = 2.5
 @export var grab_position_snap_speed: float = 10.0
 @export var grab_rotation_snap_speed: float = 8.0
 
 var player: RigidBody3D
+var camera: Camera3D
 var hud_controller: PlayerHUDController
 var push_ray: RayCast3D
 
 var mouse_motion: Vector2 = Vector2.ZERO
+var free_look_mouse_motion: Vector2 = Vector2.ZERO
+var free_look_yaw: float = 0.0
+var free_look_pitch: float = 0.0
+var camera_default_rotation: Vector3 = Vector3.ZERO
 
 var is_charging_push: bool = false
 var push_charge_time: float = 0.0
@@ -50,11 +54,18 @@ func setup(owner_player: RigidBody3D, owner_hud: PlayerHUDController) -> void:
 	player = owner_player
 	hud_controller = owner_hud
 	
+	camera = player.get_node_or_null("Camera3D") as Camera3D
 	push_ray = player.get_node_or_null("Camera3D/RayCast3D") as RayCast3D
+	
+	if camera == null:
+		push_error("MovementController could not find Camera3D.")
+		return
 	
 	if push_ray == null:
 		push_error("MovementController could not find Camera3D/RayCast3D.")
 		return
+	
+	camera_default_rotation = camera.rotation
 	
 	grab_range = GRAB_RANGE_BY_LEVEL[grab_distance_level]
 	
@@ -72,18 +83,67 @@ func clear_mouse_motion() -> void:
 	mouse_motion = Vector2.ZERO
 
 
-func physics_update(delta: float, laser_aiming: bool) -> void:
+func add_free_look_mouse_motion(relative_motion: Vector2) -> void:
+	free_look_mouse_motion += relative_motion
+
+
+func clear_free_look_mouse_motion() -> void:
+	free_look_mouse_motion = Vector2.ZERO
+
+
+func physics_update(
+	delta: float,
+	laser_aiming: bool,
+	free_look_active: bool,
+	input_locked: bool
+) -> void:
 	if player == null or push_ray == null:
 		return
 	
+	if input_locked:
+		cancel_push_charge()
+		clear_mouse_motion()
+		clear_free_look_mouse_motion()
+		update_free_look(delta, false)
+		return
+	
+	update_free_look(delta, free_look_active)
 	handle_grab_input(laser_aiming)
 	
 	if is_grabbing:
 		handle_grab_rotation(delta)
+	elif free_look_active:
+		clear_mouse_motion()
+		handle_roll_and_stabilize()
 	else:
 		handle_rotation(delta)
 	
 	handle_push_charge(delta, laser_aiming)
+
+
+func update_free_look(delta: float, free_look_active: bool) -> void:
+	if camera == null:
+		return
+	
+	if free_look_active:
+		free_look_yaw -= free_look_mouse_motion.x * free_look_sensitivity
+		free_look_pitch -= free_look_mouse_motion.y * free_look_sensitivity
+		
+		var max_angle := deg_to_rad(free_look_max_angle_degrees)
+		free_look_yaw = clampf(free_look_yaw, -max_angle, max_angle)
+		free_look_pitch = clampf(free_look_pitch, -max_angle, max_angle)
+		
+		free_look_mouse_motion = Vector2.ZERO
+	else:
+		var return_weight := 1.0 - exp(-free_look_return_speed * delta)
+		free_look_yaw = lerpf(free_look_yaw, 0.0, return_weight)
+		free_look_pitch = lerpf(free_look_pitch, 0.0, return_weight)
+	
+	camera.rotation = Vector3(
+		camera_default_rotation.x + free_look_pitch,
+		camera_default_rotation.y + free_look_yaw,
+		camera_default_rotation.z
+	)
 
 
 func set_push_ray_range(ray_range: float) -> void:
@@ -164,6 +224,12 @@ func handle_rotation(_delta: float) -> void:
 		
 		mouse_motion = Vector2.ZERO
 	
+	handle_roll_and_stabilize()
+
+
+func handle_roll_and_stabilize() -> void:
+	var body_basis := player.global_transform.basis
+	
 	var roll := Input.get_axis("roll_right", "roll_left")
 	var roll_torque_vector := -body_basis.z * roll * roll_torque
 	
@@ -213,7 +279,10 @@ func handle_push_charge(delta: float, laser_aiming: bool) -> void:
 		if is_grabbing:
 			is_grabbing = false
 		
-		try_push_off(final_push_strength, charge_percent)
+		if is_ctrl_push_active():
+			try_ctrl_push_off(final_push_strength, charge_percent)
+		else:
+			try_push_off(final_push_strength, charge_percent)
 		
 		is_charging_push = false
 		push_charge_time = 0.0
@@ -237,27 +306,18 @@ func get_push_charge_percent() -> float:
 	return clampf(push_charge_time / max_charge_time, 0.0, 1.0)
 
 
-func get_push_direction(surface_normal: Vector3) -> Vector3:
-	var wall_direction := surface_normal.normalized()
-	
-	var player_backward_direction := player.global_transform.basis.z.normalized()
-	
-	var angle_weight := clampf(push_angle_influence, 0.0, 1.0)
-	
-	var push_direction := (
-		wall_direction * (1.0 - angle_weight)
-		+ player_backward_direction * angle_weight
-	)
-	
-	if push_direction.length() < 0.001:
-		return wall_direction
-	
-	push_direction = push_direction.normalized()
-	
-	if push_direction.dot(wall_direction) <= 0.05:
-		push_direction = wall_direction
-	
-	return push_direction
+func is_ctrl_push_active() -> bool:
+	return Input.is_action_pressed("ctrl_push")
+
+
+func get_normal_push_direction() -> Vector3:
+	# Player faces -Z, so +Z is directly behind the player.
+	return player.global_transform.basis.z.normalized()
+
+
+func get_ctrl_push_direction() -> Vector3:
+	# Ctrl push launches in the direction the player is facing.
+	return (-player.global_transform.basis.z).normalized()
 
 
 func try_push_off(final_push_strength: float, charge_percent: float) -> void:
@@ -269,10 +329,9 @@ func try_push_off(final_push_strength: float, charge_percent: float) -> void:
 		return
 	
 	var collider := push_ray.get_collider()
-	var normal := push_ray.get_collision_normal().normalized()
 	var collision_point := push_ray.get_collision_point()
 	
-	var push_direction := get_push_direction(normal)
+	var push_direction := get_normal_push_direction()
 	var impulse := push_direction * final_push_strength
 	
 	player.apply_central_impulse(impulse)
@@ -280,12 +339,84 @@ func try_push_off(final_push_strength: float, charge_percent: float) -> void:
 	print("Push released")
 	print("Charge: ", round(charge_percent * 100.0), "%")
 	print("Strength: ", final_push_strength)
-	print("Wall normal: ", normal)
 	print("Push direction: ", push_direction)
-	print("Pushed off: ", collider)
+	print("Pushed from: ", collider)
 	
 	if collider is RigidBody3D:
 		collider.apply_impulse(-impulse, collision_point - collider.global_position)
+
+
+func try_ctrl_push_off(final_push_strength: float, charge_percent: float) -> void:
+	var result := get_back_push_result()
+	
+	if result.is_empty():
+		print("No surface behind you for ctrl push")
+		return
+	
+	var collider = result["collider"]
+	var collision_point: Vector3 = result["position"]
+	
+	var push_direction := get_ctrl_push_direction()
+	var impulse := push_direction * final_push_strength
+	
+	player.apply_central_impulse(impulse)
+	
+	print("Ctrl push released")
+	print("Charge: ", round(charge_percent * 100.0), "%")
+	print("Strength: ", final_push_strength)
+	print("Ctrl push direction: ", push_direction)
+	print("Pushed from behind surface: ", collider)
+	
+	if collider is RigidBody3D:
+		collider.apply_impulse(-impulse, collision_point - collider.global_position)
+
+
+func get_back_push_result() -> Dictionary:
+	if player == null:
+		return {}
+	
+	var from := player.global_position
+	var backward_direction := player.global_transform.basis.z.normalized()
+	var to := from + backward_direction * push_range
+	
+	var query := PhysicsRayQueryParameters3D.create(from, to)
+	query.collide_with_bodies = true
+	query.collide_with_areas = true
+	
+	if player is CollisionObject3D:
+		query.exclude = [player.get_rid()]
+	
+	var result := player.get_world_3d().direct_space_state.intersect_ray(query)
+	
+	return result
+
+
+func should_show_ctrl_push_arrow(
+	buy_menu_open: bool,
+	free_look_active: bool,
+	laser_aiming: bool,
+	input_locked: bool
+) -> bool:
+	if buy_menu_open:
+		return false
+	
+	if free_look_active:
+		return false
+	
+	if laser_aiming:
+		return false
+	
+	if input_locked:
+		return false
+	
+	if not is_ctrl_push_active():
+		return false
+	
+	return not get_back_push_result().is_empty()
+
+
+func get_predicted_ctrl_push_direction() -> Vector3:
+	return get_ctrl_push_direction()
 
 
 func make_grab_basis(surface_normal: Vector3, roll_angle: float) -> Basis:

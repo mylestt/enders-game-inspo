@@ -5,6 +5,7 @@
 [ext_resource type="Script" uid="uid://dxpqy5hokl06c" path="res://scripts/player_movement_controller.gd" id="3_qlg0r"]
 [ext_resource type="Script" uid="uid://5vqw82uk1ke2" path="res://scripts/suit_boosters.gd" id="4_tuyoq"]
 [ext_resource type="Script" uid="uid://bge7xypp4io2b" path="res://scripts/player_hud.gd" id="5_fjrip"]
+[ext_resource type="Script" uid="uid://dfkxxwjk335qe" path="res://scripts/impact_controller.gd" id="6_tuyoq"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_g2els"]
 
@@ -55,3 +56,9 @@ shape = SubResource("CapsuleShape3D_g2els")
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=1557973964]
 mesh = SubResource("CapsuleMesh_qhqgy")
+
+[node name="ImpactController" type="Node" parent="." unique_id=1918983541]
+script = ExtResource("6_tuyoq")
+heavy_impact_speed = 10.0
+min_immobilize_time = 0.4
+max_immobilize_time = 2.5
