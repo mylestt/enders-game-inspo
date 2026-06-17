@@ -8,6 +8,11 @@ extends RigidBody3D
 @export var fallback_laser_range: float = 120.0
 @export var fallback_laser_fire_cooldown: float = 0.2
 
+@export var body_slam_min_speed: float = 3.0
+@export var body_slam_impulse_multiplier: float = 1.35
+@export var body_slam_max_impulse: float = 18.0
+@export var body_slam_local_cooldown: float = 0.2
+
 var buy_menu_open: bool = false
 
 var peer_id: int = 0
@@ -21,6 +26,8 @@ var network_target_transform: Transform3D
 var network_target_linear_velocity: Vector3 = Vector3.ZERO
 var network_target_angular_velocity: Vector3 = Vector3.ZERO
 var has_network_target: bool = false
+
+var last_body_slam_time_by_target_peer_id: Dictionary = {}
 
 @onready var camera: Camera3D = get_node_or_null("Camera3D") as Camera3D
 @onready var movement_controller: PlayerMovementController = get_node_or_null("MovementController") as PlayerMovementController
@@ -37,6 +44,9 @@ func _ready() -> void:
 	angular_damp = angular_damp_value
 	can_sleep = false
 	continuous_cd = true
+	
+	contact_monitor = true
+	max_contacts_reported = max(max_contacts_reported, 12)
 	
 	network_target_transform = global_transform
 	
@@ -203,6 +213,113 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	
 	if movement_controller != null:
 		movement_controller.integrate_forces(state)
+	
+	detect_player_body_slam_contacts(state)
+
+
+func detect_player_body_slam_contacts(state: PhysicsDirectBodyState3D) -> void:
+	if network_manager == null:
+		return
+	
+	if is_combat_disabled():
+		return
+	
+	var current_speed := linear_velocity.length()
+	
+	if current_speed < body_slam_min_speed:
+		return
+	
+	for contact_index in range(state.get_contact_count()):
+		var collider_object := state.get_contact_collider_object(contact_index)
+		var hit_player := find_player_from_collider(collider_object)
+		
+		if hit_player == null:
+			continue
+		
+		if hit_player == self:
+			continue
+		
+		if not hit_player.has_method("get_peer_id"):
+			continue
+		
+		var target_peer_id: int = int(hit_player.call("get_peer_id"))
+		
+		if target_peer_id == peer_id or target_peer_id == 0:
+			continue
+		
+		if not can_send_body_slam_to_target(target_peer_id):
+			continue
+		
+		var slam_direction := linear_velocity.normalized()
+		var impulse := linear_velocity * body_slam_impulse_multiplier
+		
+		if impulse.length() > body_slam_max_impulse:
+			impulse = impulse.normalized() * body_slam_max_impulse
+		
+		var contact_position := state.get_contact_collider_position(contact_index)
+		
+		mark_body_slam_sent(target_peer_id)
+		
+		if network_manager.has_method("request_body_slam"):
+			network_manager.call(
+				"request_body_slam",
+				peer_id,
+				target_peer_id,
+				impulse,
+				contact_position
+			)
+		
+		return
+
+
+func can_send_body_slam_to_target(target_peer_id: int) -> bool:
+	var current_time := Time.get_ticks_msec() / 1000.0
+	
+	if last_body_slam_time_by_target_peer_id.has(target_peer_id):
+		var last_time: float = last_body_slam_time_by_target_peer_id[target_peer_id]
+		
+		if current_time - last_time < body_slam_local_cooldown:
+			return false
+	
+	return true
+
+
+func mark_body_slam_sent(target_peer_id: int) -> void:
+	last_body_slam_time_by_target_peer_id[target_peer_id] = Time.get_ticks_msec() / 1000.0
+
+
+func find_player_from_collider(collider: Object) -> Node:
+	if collider == null:
+		return null
+	
+	var current = collider
+	
+	while current != null:
+		if current is Node and current.has_method("get_peer_id"):
+			return current
+		
+		if current is Node:
+			current = current.get_parent()
+		else:
+			break
+	
+	return null
+
+
+func apply_network_body_slam_impulse(impulse: Vector3, contact_position: Vector3) -> void:
+	if not is_local_player:
+		return
+	
+	sleeping = false
+	
+	var local_contact_position := contact_position - global_position
+	
+	if local_contact_position.length() > 4.0:
+		apply_central_impulse(impulse)
+	else:
+		apply_impulse(impulse, local_contact_position)
+	
+	print("Applied body slam impulse: ", impulse)
 
 
 func update_remote_network_state(delta: float) -> void:

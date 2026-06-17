@@ -18,12 +18,17 @@ extends Node
 @export var remote_laser_lifetime: float = 0.08
 @export var remote_laser_radius: float = 0.045
 
+@export var body_slam_server_cooldown: float = 0.2
+@export var body_slam_validation_distance: float = 4.0
+@export var body_slam_max_impulse: float = 18.0
+
 var players_parent: Node3D
 var buy_menu: Node
 
 var players_by_peer_id: Dictionary = {}
 var spawn_index_by_peer_id: Dictionary = {}
 var last_fire_time_by_peer_id: Dictionary = {}
+var last_body_slam_time_by_pair: Dictionary = {}
 
 var remote_laser_material: StandardMaterial3D
 
@@ -40,7 +45,10 @@ func _ready() -> void:
 	
 	setup_remote_laser_material()
 	connect_multiplayer_signals()
-	print("NetworkManager ready. Press H to host, J to join localhost.")
+	
+	print("NetworkManager ready.")
+	print("Current multiplayer peer active: ", has_active_multiplayer_peer())
+	print("Press H to host, J to join.")
 
 
 func setup_remote_laser_material() -> void:
@@ -53,11 +61,31 @@ func setup_remote_laser_material() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event.is_echo():
+		return
+	
+	var wants_host := false
+	var wants_join := false
+	
 	if InputMap.has_action("host_game") and event.is_action_pressed("host_game"):
-		host_game()
+		wants_host = true
 	
 	if InputMap.has_action("join_game") and event.is_action_pressed("join_game"):
+		wants_join = true
+	
+	if wants_host and wants_join:
+		push_warning("host_game and join_game are both triggered by this key. Fix Project Settings > Input Map.")
+		return
+	
+	if wants_host:
+		host_game()
+		get_viewport().set_input_as_handled()
+		return
+	
+	if wants_join:
 		join_game(default_join_ip)
+		get_viewport().set_input_as_handled()
+		return
 
 
 func connect_multiplayer_signals() -> void:
@@ -83,7 +111,15 @@ func has_active_multiplayer_peer() -> bool:
 	if peer == null:
 		return false
 	
-	return peer.get_connection_status() != MultiplayerPeer.CONNECTION_DISCONNECTED
+	if peer is OfflineMultiplayerPeer:
+		return false
+	
+	var status := peer.get_connection_status()
+	
+	return (
+		status == MultiplayerPeer.CONNECTION_CONNECTING
+		or status == MultiplayerPeer.CONNECTION_CONNECTED
+	)
 
 
 func host_game() -> void:
@@ -95,20 +131,17 @@ func host_game() -> void:
 		print("Already connected to an active multiplayer peer.")
 		return
 	
-	multiplayer.multiplayer_peer = null
+	clear_runtime_multiplayer_state()
 	
 	var peer := ENetMultiplayerPeer.new()
 	var error := peer.create_server(port, max_players - 1)
 	
 	if error != OK:
 		push_error("Failed to host game. Error: " + str(error))
+		multiplayer.multiplayer_peer = null
 		return
 	
 	multiplayer.multiplayer_peer = peer
-	
-	players_by_peer_id.clear()
-	spawn_index_by_peer_id.clear()
-	last_fire_time_by_peer_id.clear()
 	
 	spawn_index_by_peer_id[1] = 0
 	client_spawn_player(1, 0)
@@ -119,20 +152,43 @@ func host_game() -> void:
 func join_game(ip: String) -> void:
 	if has_active_multiplayer_peer():
 		print("Already connected to an active multiplayer peer.")
+		print("Peer type: ", multiplayer.multiplayer_peer.get_class())
+		print("Peer status: ", multiplayer.multiplayer_peer.get_connection_status())
 		return
 	
-	multiplayer.multiplayer_peer = null
+	clear_runtime_multiplayer_state()
 	
 	var peer := ENetMultiplayerPeer.new()
 	var error := peer.create_client(ip, port)
 	
 	if error != OK:
 		push_error("Failed to join game. Error: " + str(error))
+		multiplayer.multiplayer_peer = null
 		return
 	
 	multiplayer.multiplayer_peer = peer
 	
 	print("Joining ", ip, ":", port)
+
+
+func clear_runtime_multiplayer_state() -> void:
+	for existing_peer_id in players_by_peer_id.keys():
+		var existing_player = players_by_peer_id[existing_peer_id]
+		
+		if is_instance_valid(existing_player):
+			existing_player.queue_free()
+	
+	players_by_peer_id.clear()
+	spawn_index_by_peer_id.clear()
+	last_fire_time_by_peer_id.clear()
+	last_body_slam_time_by_pair.clear()
+	
+	var peer := multiplayer.multiplayer_peer
+	
+	if peer != null and not (peer is OfflineMultiplayerPeer):
+		peer.close()
+	
+	multiplayer.multiplayer_peer = null
 
 
 func _on_connected_to_server() -> void:
@@ -141,12 +197,12 @@ func _on_connected_to_server() -> void:
 
 func _on_connection_failed() -> void:
 	push_error("Connection failed.")
-	multiplayer.multiplayer_peer = null
+	clear_runtime_multiplayer_state()
 
 
 func _on_server_disconnected() -> void:
 	print("Disconnected from server.")
-	multiplayer.multiplayer_peer = null
+	clear_runtime_multiplayer_state()
 
 
 func _on_peer_connected(peer_id: int) -> void:
@@ -175,7 +231,21 @@ func _on_peer_disconnected(peer_id: int) -> void:
 	
 	spawn_index_by_peer_id.erase(peer_id)
 	last_fire_time_by_peer_id.erase(peer_id)
+	clear_body_slam_pairs_for_peer(peer_id)
 	rpc("client_remove_player", peer_id)
+
+
+func clear_body_slam_pairs_for_peer(peer_id: int) -> void:
+	var keys_to_remove: Array = []
+	
+	for key in last_body_slam_time_by_pair.keys():
+		var key_text := String(key)
+		
+		if key_text.begins_with(str(peer_id) + "_") or key_text.ends_with("_" + str(peer_id)):
+			keys_to_remove.append(key)
+	
+	for key in keys_to_remove:
+		last_body_slam_time_by_pair.erase(key)
 
 
 @rpc("authority", "call_local", "reliable")
@@ -320,6 +390,100 @@ func client_receive_player_state(
 		player.call("receive_network_state", player_transform, linear_velocity, angular_velocity)
 
 
+func request_body_slam(
+	attacker_peer_id: int,
+	target_peer_id: int,
+	impulse: Vector3,
+	contact_position: Vector3
+) -> void:
+	if multiplayer.multiplayer_peer == null:
+		return
+	
+	if multiplayer.is_server():
+		server_process_body_slam(attacker_peer_id, target_peer_id, impulse, contact_position)
+	else:
+		rpc_id(1, "server_request_body_slam", target_peer_id, impulse, contact_position)
+
+
+@rpc("any_peer", "reliable")
+func server_request_body_slam(
+	target_peer_id: int,
+	impulse: Vector3,
+	contact_position: Vector3
+) -> void:
+	if not multiplayer.is_server():
+		return
+	
+	var attacker_peer_id := multiplayer.get_remote_sender_id()
+	server_process_body_slam(attacker_peer_id, target_peer_id, impulse, contact_position)
+
+
+func server_process_body_slam(
+	attacker_peer_id: int,
+	target_peer_id: int,
+	impulse: Vector3,
+	contact_position: Vector3
+) -> void:
+	if not multiplayer.is_server():
+		return
+	
+	if attacker_peer_id == target_peer_id:
+		return
+	
+	if not players_by_peer_id.has(attacker_peer_id):
+		return
+	
+	if not players_by_peer_id.has(target_peer_id):
+		return
+	
+	var attacker: Node3D = players_by_peer_id[attacker_peer_id] as Node3D
+	var target: Node3D = players_by_peer_id[target_peer_id] as Node3D
+	
+	if attacker == null or target == null:
+		return
+	
+	if attacker.has_method("is_combat_disabled") and attacker.call("is_combat_disabled"):
+		return
+	
+	if attacker.global_position.distance_to(target.global_position) > body_slam_validation_distance:
+		return
+	
+	var pair_key := str(attacker_peer_id) + "_" + str(target_peer_id)
+	var current_time := Time.get_ticks_msec() / 1000.0
+	
+	if last_body_slam_time_by_pair.has(pair_key):
+		var last_time: float = last_body_slam_time_by_pair[pair_key]
+		
+		if current_time - last_time < body_slam_server_cooldown:
+			return
+	
+	last_body_slam_time_by_pair[pair_key] = current_time
+	
+	var clamped_impulse := impulse
+	
+	if clamped_impulse.length() > body_slam_max_impulse:
+		clamped_impulse = clamped_impulse.normalized() * body_slam_max_impulse
+	
+	rpc("client_apply_body_slam_impulse", target_peer_id, clamped_impulse, contact_position)
+	
+	print("Body slam: ", attacker_peer_id, " shoved ", target_peer_id, " impulse ", clamped_impulse)
+
+
+@rpc("authority", "call_local", "reliable")
+func client_apply_body_slam_impulse(
+	target_peer_id: int,
+	impulse: Vector3,
+	contact_position: Vector3
+) -> void:
+	if not players_by_peer_id.has(target_peer_id):
+		return
+	
+	var target = players_by_peer_id[target_peer_id]
+	
+	if target != null and target.has_method("apply_network_body_slam_impulse"):
+		target.call("apply_network_body_slam_impulse", impulse, contact_position)
+
+
 func request_laser_fire(
 	shooter_peer_id: int,
 	origin: Vector3,
@@ -459,8 +623,8 @@ func create_remote_laser_beam(origin: Vector3, end: Vector3) -> void:
 	beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	
 	var midpoint := origin + direction * 0.5
-	var basis := make_y_aligned_basis(direction.normalized())
-	beam.global_transform = Transform3D(basis, midpoint)
+	var beam_basis := make_y_aligned_basis(direction.normalized())
+	beam.global_transform = Transform3D(beam_basis, midpoint)
 	
 	var laser_parent: Node = self
 	
