@@ -14,7 +14,9 @@ const GRAB_RANGE_BY_LEVEL := [2.5, 3.25, 4.25, 5.5]
 @export var max_angular_speed: float = 8.0
 
 @export var mouse_sensitivity: float = 0.01
-@export var mouse_rotation_strength: float = 0.3
+@export var aim_turn_rate: float = 6.0     # rad/s per unit of (sensitivity-scaled) mouse motion
+@export var aim_response: float = 14.0     # how fast angular_velocity eases toward target (higher = snappier)
+@export var aim_float_decay: float = 6.0   # how fast the target decays to 0 after mouse stops (lower = more float)
 @export var roll_torque: float = 4.0
 @export var stabilize_strength: float = 2.0
 
@@ -33,6 +35,7 @@ var hud_controller: PlayerHUDController
 var push_ray: RayCast3D
 
 var mouse_motion: Vector2 = Vector2.ZERO
+var target_angular_velocity: Vector3 = Vector3.ZERO
 var free_look_mouse_motion: Vector2 = Vector2.ZERO
 var free_look_yaw: float = 0.0
 var free_look_pitch: float = 0.0
@@ -104,6 +107,7 @@ func physics_update(
 		cancel_push_charge()
 		clear_mouse_motion()
 		clear_free_look_mouse_motion()
+		target_angular_velocity = Vector3.ZERO
 		update_free_look(delta, false)
 		return
 	
@@ -209,21 +213,22 @@ func release_grab() -> void:
 	print("Released wall")
 
 
-func handle_rotation(_delta: float) -> void:
+func handle_rotation(delta: float) -> void:
 	var body_basis := player.global_transform.basis
-	
+
+	# Decay the aim target toward rest so the view always settles (short float).
+	var decay_weight := 1.0 - exp(-aim_float_decay * delta)
+	target_angular_velocity = target_angular_velocity.lerp(Vector3.ZERO, decay_weight)
+
+	# Replace (not accumulate) the target so a fresh flick overrides residual spin.
 	if mouse_motion != Vector2.ZERO:
-		var pitch := -mouse_motion.y * mouse_sensitivity * mouse_rotation_strength
-		var yaw := -mouse_motion.x * mouse_sensitivity * mouse_rotation_strength
-		
-		var mouse_torque := Vector3.ZERO
-		mouse_torque += body_basis.x * pitch
-		mouse_torque += body_basis.y * yaw
-		
-		player.apply_torque_impulse(mouse_torque)
-		
+		var pitch := -mouse_motion.y * mouse_sensitivity * aim_turn_rate
+		var yaw := -mouse_motion.x * mouse_sensitivity * aim_turn_rate
+
+		target_angular_velocity = body_basis.x * pitch + body_basis.y * yaw
+
 		mouse_motion = Vector2.ZERO
-	
+
 	handle_roll_and_stabilize()
 
 
@@ -263,11 +268,11 @@ func handle_push_charge(delta: float, laser_aiming: bool) -> void:
 	if is_charging_push and Input.is_action_pressed("push"):
 		push_charge_time += delta
 		push_charge_time = min(push_charge_time, max_charge_time)
-		
+
 		var charge_percent := get_push_charge_percent()
-		
+
 		if hud_controller != null:
-			hud_controller.update_push_charge_ui(charge_percent, true)
+			hud_controller.update_push_charge_ui(charge_percent, true, has_push_target())
 	
 	if is_charging_push and Input.is_action_just_released("push"):
 		var charge_percent := get_push_charge_percent()
@@ -308,6 +313,16 @@ func get_push_charge_percent() -> float:
 
 func is_ctrl_push_active() -> bool:
 	return Input.is_action_pressed("ctrl_push")
+
+
+# Whether releasing now would actually push off a surface (ahead, or behind for ctrl push).
+func has_push_target() -> bool:
+	if is_ctrl_push_active():
+		return not get_back_push_result().is_empty()
+
+	set_push_ray_range(push_range)
+	push_ray.force_raycast_update()
+	return push_ray.is_colliding()
 
 
 func get_normal_push_direction() -> Vector3:
@@ -465,7 +480,11 @@ func integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	
 	if state.linear_velocity.length() > max_speed:
 		state.linear_velocity = state.linear_velocity.normalized() * max_speed
-	
+
+	# Zero-G aim: ease body spin toward the desired aim velocity (1:1 with a little float).
+	var aim_weight := 1.0 - exp(-aim_response * state.step)
+	state.angular_velocity = state.angular_velocity.lerp(target_angular_velocity, aim_weight)
+
 	if state.angular_velocity.length() > max_angular_speed:
 		state.angular_velocity = state.angular_velocity.normalized() * max_angular_speed
 

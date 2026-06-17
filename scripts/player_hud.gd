@@ -309,12 +309,13 @@ func setup_booster_ui() -> void:
 	update_booster_ui(false, 0.0, 100.0)
 
 
-func update_push_charge_ui(charge_percent: float, should_show: bool) -> void:
+func update_push_charge_ui(charge_percent: float, should_show: bool, can_push: bool = true) -> void:
 	if push_charge_bar == null:
 		return
-	
+
 	push_charge_bar.visible = should_show
 	push_charge_bar.value = clampf(charge_percent * 100.0, 0.0, 100.0)
+	push_charge_bar.modulate = Color.WHITE if can_push else Color(1.0, 0.5, 0.5, 0.55)
 
 
 func update_reticle(delta: float, surface_in_range: bool, laser_aiming: bool, buy_menu_or_input_locked: bool) -> void:

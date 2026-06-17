@@ -1,7 +1,7 @@
 extends RigidBody3D
 
 @export var linear_damp_value: float = 0.0
-@export var angular_damp_value: float = 1.2
+@export var angular_damp_value: float = 0.5
 
 @export var network_send_rate: float = 30.0
 @export var network_interpolation_speed: float = 18.0
@@ -12,6 +12,8 @@ extends RigidBody3D
 @export var body_slam_impulse_multiplier: float = 1.35
 @export var body_slam_max_impulse: float = 18.0
 @export var body_slam_local_cooldown: float = 0.2
+
+@export var camera_wall_margin: float = 0.2
 
 var buy_menu_open: bool = false
 
@@ -149,7 +151,9 @@ func _physics_process(delta: float) -> void:
 	
 	if impact_controller != null:
 		impact_controller.physics_update(delta)
-	
+
+	clamp_camera_out_of_walls()
+
 	if network_laser_cooldown_remaining > 0.0:
 		network_laser_cooldown_remaining -= delta
 		network_laser_cooldown_remaining = maxf(network_laser_cooldown_remaining, 0.0)
@@ -322,6 +326,32 @@ func apply_network_body_slam_impulse(impulse: Vector3, contact_position: Vector3
 	print("Applied body slam impulse: ", impulse)
 
 
+# Pull the camera in if geometry sits between the body and the camera, so a fast
+# impact can't poke the view through a wall. Visual only — physics is untouched.
+func clamp_camera_out_of_walls() -> void:
+	if camera == null:
+		return
+
+	var from := global_position
+	var desired := camera.global_position
+	var to_camera := desired - from
+	var distance := to_camera.length()
+
+	if distance < 0.001:
+		return
+
+	var query := PhysicsRayQueryParameters3D.create(from, desired)
+	query.exclude = [get_rid()]
+
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+
+	if hit.is_empty():
+		return
+
+	var safe_distance := maxf(from.distance_to(hit["position"]) - camera_wall_margin, 0.0)
+	camera.global_position = from + (to_camera / distance) * safe_distance
+
+
 func update_remote_network_state(delta: float) -> void:
 	if not has_network_target:
 		return
@@ -391,10 +421,10 @@ func handle_network_laser_fire() -> void:
 	
 	if not Input.is_action_pressed("laser_fire"):
 		return
-	
-	if not is_laser_aiming():
+
+	if buy_menu_open or is_free_look_active():
 		return
-	
+
 	var origin := get_network_laser_origin()
 	var direction := get_network_laser_direction()
 	var laser_range := get_network_laser_range()
@@ -420,8 +450,8 @@ func get_network_laser_origin() -> Vector3:
 
 
 func get_network_laser_direction() -> Vector3:
-	if laser_controller != null and laser_controller.has_method("get_actual_laser_direction"):
-		return laser_controller.call("get_actual_laser_direction")
+	if laser_controller != null and laser_controller.has_method("get_fire_direction"):
+		return laser_controller.call("get_fire_direction")
 	
 	if camera != null:
 		return (-camera.global_transform.basis.z).normalized()

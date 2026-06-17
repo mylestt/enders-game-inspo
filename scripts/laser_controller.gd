@@ -18,6 +18,11 @@ const LASER_FIRE_COOLDOWN_BY_LEVEL := [0.20, 0.16, 0.12, 0.085]
 @export var shot_laser_thickness: float = 0.055
 @export var shot_laser_lifetime: float = 0.08
 
+@export var hipfire_bloom: float = 0.025      # base random spread when not aiming
+@export var hipfire_move_bloom: float = 0.04  # extra spread at full speed
+@export var hipfire_move_bias: float = 0.01   # how much movement drifts the shot
+@export var hipfire_speed_ref: float = 18.0   # speed treated as "full" (matches max_speed)
+
 @export var actual_dot_size: float = 8.0
 @export var desired_circle_size: float = 22.0
 @export var desired_circle_border_width: int = 2
@@ -30,10 +35,12 @@ var laser_attack_speed_level: int = 0
 
 var camera: Camera3D
 var owning_player: Node
+var weapon: Node
 
 var screen_aim_position: Vector2 = Vector2.ZERO
 var desired_aim_direction: Vector3 = Vector3.FORWARD
 var actual_aim_direction: Vector3 = Vector3.FORWARD
+var last_fire_direction: Vector3 = Vector3.FORWARD
 
 var fire_cooldown_remaining: float = 0.0
 
@@ -52,7 +59,8 @@ func _ready() -> void:
 		return
 	
 	owning_player = camera.get_parent()
-	
+	weapon = camera.get_node_or_null("HandHolster")
+
 	var center := get_viewport().get_visible_rect().size * 0.5
 	screen_aim_position = center
 	
@@ -171,11 +179,12 @@ func _process(delta: float) -> void:
 	if is_aiming:
 		update_aim_direction(delta)
 		update_aim_visuals()
-		
-		if Input.is_action_pressed("laser_fire"):
-			try_fire_laser()
 	else:
 		hide_aim_visuals()
+
+	# Fire in both modes; not aiming just means no reticle, so it's inaccurate.
+	if Input.is_action_pressed("laser_fire"):
+		try_fire_laser()
 
 
 func start_laser_aim() -> void:
@@ -283,12 +292,16 @@ func get_laser_visual_end(origin: Vector3, direction: Vector3) -> Vector3:
 func try_fire_laser() -> void:
 	if fire_cooldown_remaining > 0.0:
 		return
-	
+
 	var origin := get_muzzle_position()
-	var end := get_laser_visual_end(origin, actual_aim_direction)
-	
+	last_fire_direction = compute_fire_direction()
+	var end := get_laser_visual_end(origin, last_fire_direction)
+
 	create_shot_beam(origin, end)
-	
+
+	if weapon != null and weapon.has_method("fire"):
+		weapon.call("fire")
+
 	fire_cooldown_remaining = laser_fire_cooldown
 
 
@@ -360,9 +373,12 @@ func make_y_aligned_basis(y_axis: Vector3) -> Basis:
 
 
 func get_muzzle_position() -> Vector3:
+	if weapon != null and weapon.has_method("get_muzzle_world_position"):
+		return weapon.call("get_muzzle_world_position")
+
 	if camera == null:
 		return global_position
-	
+
 	var camera_basis := camera.global_transform.basis
 	
 	return (
@@ -412,6 +428,37 @@ func get_laser_fire_cooldown() -> float:
 
 func get_actual_laser_direction() -> Vector3:
 	return actual_aim_direction.normalized()
+
+
+# Returns the direction of the most recent shot, so the local beam and the
+# networked hit-reg use the exact same (bloomed) ray.
+func get_fire_direction() -> Vector3:
+	return last_fire_direction
+
+
+# Accurate down the reticle when aiming; loose hip-fire with movement-driven
+# spread otherwise. Movement bias is deterministic; only a little is random.
+func compute_fire_direction() -> Vector3:
+	if is_aiming:
+		return actual_aim_direction.normalized()
+
+	if camera == null:
+		return actual_aim_direction.normalized()
+
+	var cam_basis := camera.global_transform.basis
+	var velocity := Vector3.ZERO
+	if owning_player is RigidBody3D:
+		velocity = (owning_player as RigidBody3D).linear_velocity
+
+	var speed_factor := clampf(velocity.length() / hipfire_speed_ref, 0.0, 1.0)
+	var spread := hipfire_bloom + speed_factor * hipfire_move_bloom
+
+	var offset := Vector2(
+		cam_basis.x.dot(velocity) * hipfire_move_bias + randf_range(-spread, spread),
+		cam_basis.y.dot(velocity) * hipfire_move_bias + randf_range(-spread, spread)
+	)
+
+	return (-cam_basis.z + cam_basis.x * offset.x + cam_basis.y * offset.y).normalized()
 
 
 func get_laser_muzzle_world_position() -> Vector3:
