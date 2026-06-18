@@ -15,8 +15,14 @@ extends Node
 @export var min_server_laser_cooldown: float = 0.08
 @export var max_laser_origin_distance_from_player: float = 4.0
 
-@export var remote_laser_lifetime: float = 0.08
+@export var remote_laser_lifetime: float = 0.09
 @export var remote_laser_radius: float = 0.045
+@export var remote_laser_radial_segments: int = 32
+@export var remote_laser_glow_radius_multiplier: float = 3.0
+@export var remote_laser_core_emission_energy: float = 8.0
+@export var remote_laser_glow_emission_energy: float = 3.0
+@export var remote_laser_core_color: Color = Color(1.0, 0.08, 0.02, 1.0)
+@export var remote_laser_glow_color: Color = Color(1.0, 0.02, 0.0, 0.22)
 
 @export var body_slam_server_cooldown: float = 0.2
 @export var body_slam_validation_distance: float = 4.0
@@ -31,6 +37,7 @@ var last_fire_time_by_peer_id: Dictionary = {}
 var last_body_slam_time_by_pair: Dictionary = {}
 
 var remote_laser_material: StandardMaterial3D
+var remote_laser_glow_material: StandardMaterial3D
 
 
 func _ready() -> void:
@@ -52,12 +59,38 @@ func _ready() -> void:
 
 
 func setup_remote_laser_material() -> void:
-	remote_laser_material = StandardMaterial3D.new()
-	remote_laser_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	remote_laser_material.albedo_color = Color(1.0, 0.0, 0.0, 0.95)
-	remote_laser_material.emission_enabled = true
-	remote_laser_material.emission = Color(1.0, 0.0, 0.0, 1.0)
-	remote_laser_material.emission_energy_multiplier = 5.0
+	remote_laser_material = create_remote_laser_material(
+		remote_laser_core_color,
+		remote_laser_core_emission_energy,
+		false
+	)
+	
+	remote_laser_glow_material = create_remote_laser_material(
+		remote_laser_glow_color,
+		remote_laser_glow_emission_energy,
+		true
+	)
+
+
+func create_remote_laser_material(
+	color: Color,
+	emission_energy: float,
+	use_additive_blend: bool
+) -> StandardMaterial3D:
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.albedo_color = color
+	material.emission_enabled = true
+	material.emission = Color(color.r, color.g, color.b, 1.0)
+	material.emission_energy_multiplier = emission_energy
+	
+	if color.a < 1.0 or use_additive_blend:
+		material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	
+	if use_additive_blend:
+		material.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	
+	return material
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -609,36 +642,102 @@ func create_remote_laser_beam(origin: Vector3, end: Vector3) -> void:
 	if length < 0.05:
 		return
 	
-	var beam := MeshInstance3D.new()
-	beam.name = "RemoteRedLaserBeam"
-	
-	var mesh := CylinderMesh.new()
-	mesh.top_radius = remote_laser_radius
-	mesh.bottom_radius = remote_laser_radius
-	mesh.height = length
-	mesh.radial_segments = 8
-	mesh.material = remote_laser_material
-	
-	beam.mesh = mesh
-	beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	
-	var midpoint := origin + direction * 0.5
-	var beam_basis := make_y_aligned_basis(direction.normalized())
-	beam.global_transform = Transform3D(beam_basis, midpoint)
+	var beam_root := Node3D.new()
+	beam_root.name = "RemoteRedLaserBeam"
 	
 	var laser_parent: Node = self
 	
 	if players_parent != null and players_parent.get_parent() != null:
 		laser_parent = players_parent.get_parent()
 	
-	laser_parent.add_child(beam)
+	laser_parent.add_child(beam_root)
+	
+	var glow_beam := create_remote_laser_part(
+		"RemoteRedLaserGlow",
+		remote_laser_glow_material,
+		remote_laser_radius * remote_laser_glow_radius_multiplier
+	)
+	
+	var core_beam := create_remote_laser_part(
+		"RemoteRedLaserCore",
+		remote_laser_material,
+		remote_laser_radius
+	)
+	
+	beam_root.add_child(glow_beam)
+	beam_root.add_child(core_beam)
+	
+	draw_remote_laser_part(
+		glow_beam,
+		glow_beam.mesh as CylinderMesh,
+		origin,
+		end,
+		remote_laser_radius * remote_laser_glow_radius_multiplier
+	)
+	
+	draw_remote_laser_part(
+		core_beam,
+		core_beam.mesh as CylinderMesh,
+		origin,
+		end,
+		remote_laser_radius
+	)
 	
 	var timer := get_tree().create_timer(remote_laser_lifetime)
 	timer.timeout.connect(
 		func() -> void:
-			if is_instance_valid(beam):
-				beam.queue_free()
+			if is_instance_valid(beam_root):
+				beam_root.queue_free()
 	)
+
+
+func create_remote_laser_part(
+	part_name: String,
+	material: StandardMaterial3D,
+	radius: float
+) -> MeshInstance3D:
+	var beam := MeshInstance3D.new()
+	beam.name = part_name
+	
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = radius
+	mesh.bottom_radius = radius
+	mesh.height = 1.0
+	mesh.radial_segments = max(remote_laser_radial_segments, 8)
+	mesh.rings = 1
+	mesh.material = material
+	
+	beam.mesh = mesh
+	beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	
+	return beam
+
+
+func draw_remote_laser_part(
+	beam: MeshInstance3D,
+	mesh: CylinderMesh,
+	origin: Vector3,
+	end: Vector3,
+	radius: float
+) -> void:
+	if beam == null or mesh == null:
+		return
+	
+	var direction := end - origin
+	var length := direction.length()
+	
+	if length < 0.05:
+		beam.visible = false
+		return
+	
+	mesh.height = length
+	mesh.top_radius = radius
+	mesh.bottom_radius = radius
+	
+	var midpoint := origin + direction * 0.5
+	var beam_basis := make_y_aligned_basis(direction.normalized())
+	beam.global_transform = Transform3D(beam_basis, midpoint)
+	beam.visible = true
 
 
 func make_y_aligned_basis(y_axis: Vector3) -> Basis:

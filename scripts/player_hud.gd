@@ -8,7 +8,12 @@ var root: Control
 
 var velocity_label: Label
 var jump_force_label: Label
+var fps_label: Label
 var booster_label: Label
+var limb_push_label: Label
+
+var health_panel: PanelContainer
+var health_label: Label
 
 var reticle: Panel
 var ctrl_push_arrow: Label
@@ -19,6 +24,10 @@ var impact_value_label: Label
 
 var current_jump_force: float = 10.0
 
+var health_hits: int = 0
+var health_max_hits: int = 3
+var health_disabled: bool = false
+
 
 func setup(owner_player: RigidBody3D) -> void:
 	player = owner_player
@@ -26,6 +35,12 @@ func setup(owner_player: RigidBody3D) -> void:
 	hide_old_push_charge_bar()
 	build_hud()
 	update_jump_force(current_jump_force)
+	update_health_status(health_hits, health_max_hits, health_disabled)
+
+
+func _process(_delta: float) -> void:
+	update_fps_label()
+	layout_dynamic_controls()
 
 
 func hide_old_push_charge_bar() -> void:
@@ -51,9 +66,14 @@ func build_hud() -> void:
 	root.name = "GeneratedHUDRoot"
 	hud_layer.add_child(root)
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.offset_left = 0.0
+	root.offset_top = 0.0
+	root.offset_right = 0.0
+	root.offset_bottom = 0.0
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	
 	build_top_left_stats()
+	build_top_right_health()
 	build_center_reticle()
 	build_ctrl_push_arrow()
 	build_impact_effects()
@@ -67,8 +87,10 @@ func build_top_left_stats() -> void:
 	stats_box.anchor_top = 0.0
 	stats_box.anchor_right = 0.0
 	stats_box.anchor_bottom = 0.0
-	stats_box.position = Vector2(16.0, 14.0)
-	stats_box.size = Vector2(360.0, 120.0)
+	stats_box.offset_left = 16.0
+	stats_box.offset_top = 14.0
+	stats_box.offset_right = 436.0
+	stats_box.offset_bottom = 190.0
 	stats_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	stats_box.add_theme_constant_override("separation", 4)
 	
@@ -88,6 +110,14 @@ func build_top_left_stats() -> void:
 	jump_force_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.92))
 	jump_force_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	
+	fps_label = Label.new()
+	fps_label.name = "FPSLabel"
+	stats_box.add_child(fps_label)
+	fps_label.text = "FPS: 0"
+	fps_label.add_theme_font_size_override("font_size", 16)
+	fps_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.85))
+	fps_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	
 	booster_label = Label.new()
 	booster_label.name = "BoosterLabel"
 	stats_box.add_child(booster_label)
@@ -96,6 +126,51 @@ func build_top_left_stats() -> void:
 	booster_label.add_theme_font_size_override("font_size", 16)
 	booster_label.add_theme_color_override("font_color", Color(0.75, 0.9, 1.0, 0.88))
 	booster_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	
+	limb_push_label = Label.new()
+	limb_push_label.name = "LimbPushLabel"
+	stats_box.add_child(limb_push_label)
+	limb_push_label.text = ""
+	limb_push_label.visible = false
+	limb_push_label.add_theme_font_size_override("font_size", 16)
+	limb_push_label.add_theme_color_override("font_color", Color(0.75, 1.0, 0.75, 0.9))
+	limb_push_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+
+func build_top_right_health() -> void:
+	health_panel = PanelContainer.new()
+	health_panel.name = "HealthPanel"
+	root.add_child(health_panel)
+	health_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	
+	var panel_style := StyleBoxFlat.new()
+	panel_style.bg_color = Color(0.0, 0.0, 0.0, 0.42)
+	panel_style.border_color = Color(1.0, 1.0, 1.0, 0.22)
+	panel_style.border_width_left = 1
+	panel_style.border_width_right = 1
+	panel_style.border_width_top = 1
+	panel_style.border_width_bottom = 1
+	panel_style.corner_radius_top_left = 8
+	panel_style.corner_radius_top_right = 8
+	panel_style.corner_radius_bottom_left = 8
+	panel_style.corner_radius_bottom_right = 8
+	panel_style.content_margin_left = 12
+	panel_style.content_margin_right = 12
+	panel_style.content_margin_top = 8
+	panel_style.content_margin_bottom = 8
+	health_panel.add_theme_stylebox_override("panel", panel_style)
+	
+	health_label = Label.new()
+	health_label.name = "HealthLabel"
+	health_panel.add_child(health_label)
+	health_label.text = "Hits: 0 / 3"
+	health_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	health_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	health_label.add_theme_font_size_override("font_size", 18)
+	health_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.92))
+	health_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	
+	place_top_right_control(health_panel, 230.0, 58.0, 16.0)
 
 
 func build_center_reticle() -> void:
@@ -137,6 +212,10 @@ func build_impact_effects() -> void:
 	impact_shadow.name = "ImpactShadow"
 	root.add_child(impact_shadow)
 	impact_shadow.set_anchors_preset(Control.PRESET_FULL_RECT)
+	impact_shadow.offset_left = 0.0
+	impact_shadow.offset_top = 0.0
+	impact_shadow.offset_right = 0.0
+	impact_shadow.offset_bottom = 0.0
 	impact_shadow.color = Color(0.0, 0.0, 0.0, 0.0)
 	impact_shadow.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	
@@ -144,6 +223,10 @@ func build_impact_effects() -> void:
 	impact_flash.name = "ImpactFlash"
 	root.add_child(impact_flash)
 	impact_flash.set_anchors_preset(Control.PRESET_FULL_RECT)
+	impact_flash.offset_left = 0.0
+	impact_flash.offset_top = 0.0
+	impact_flash.offset_right = 0.0
+	impact_flash.offset_bottom = 0.0
 	impact_flash.color = Color(1.0, 1.0, 1.0, 0.0)
 	impact_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	
@@ -163,12 +246,54 @@ func build_impact_effects() -> void:
 	impact_value_label.position.y += 120.0
 
 
+func layout_dynamic_controls() -> void:
+	if root == null:
+		return
+	
+	if reticle != null:
+		center_control(reticle)
+	
+	if impact_value_label != null:
+		center_control(impact_value_label)
+		impact_value_label.position.y += 120.0
+	
+	if health_panel != null:
+		place_top_right_control(health_panel, 230.0, 58.0, 16.0)
+
+
 func center_control(control: Control) -> void:
 	if control == null:
 		return
 	
 	var viewport_size := get_viewport().get_visible_rect().size
 	control.position = viewport_size * 0.5 - control.size * 0.5
+
+
+func place_top_right_control(
+	control: Control,
+	width: float,
+	height: float,
+	margin: float
+) -> void:
+	if control == null:
+		return
+	
+	control.anchor_left = 1.0
+	control.anchor_top = 0.0
+	control.anchor_right = 1.0
+	control.anchor_bottom = 0.0
+	
+	control.offset_left = -width - margin
+	control.offset_top = margin
+	control.offset_right = -margin
+	control.offset_bottom = margin + height
+
+
+func update_fps_label() -> void:
+	if fps_label == null:
+		return
+	
+	fps_label.text = "FPS: " + str(Engine.get_frames_per_second())
 
 
 func update_velocity_indicator(velocity: Vector3) -> void:
@@ -193,6 +318,61 @@ func update_jump_force(force: float) -> void:
 		return
 	
 	jump_force_label.text = "Jump Force: " + format_number(force)
+
+
+func update_health_status(hits: int, max_hits: int, disabled: bool) -> void:
+	health_hits = hits
+	health_max_hits = max_hits
+	health_disabled = disabled
+	
+	if health_panel == null or health_label == null:
+		return
+	
+	health_panel.visible = true
+	
+	if disabled:
+		health_label.text = "DISABLED\nHits: " + str(hits) + " / " + str(max_hits)
+		health_label.add_theme_color_override("font_color", Color(1.0, 0.35, 0.35, 0.96))
+	else:
+		health_label.text = "Hits: " + str(hits) + " / " + str(max_hits)
+		health_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.92))
+
+
+func update_limb_push_indicator(should_show: bool, limb_state: Dictionary) -> void:
+	if limb_push_label == null:
+		return
+	
+	if not should_show:
+		limb_push_label.visible = false
+		return
+	
+	if limb_state.is_empty():
+		limb_push_label.visible = false
+		return
+	
+	var mode_text := String(limb_state.get("mode_text", "Push"))
+	var summary_text := String(limb_state.get("summary_text", "No Limbs Near"))
+	var has_limb_contact := bool(limb_state.get("has_limb_contact", false))
+	var force_multiplier := float(limb_state.get("force_multiplier", 0.0))
+	var limb_count := int(limb_state.get("valid_limb_count", 0))
+	
+	limb_push_label.visible = true
+	
+	if has_limb_contact:
+		limb_push_label.text = (
+			"Limb Push: " + mode_text +
+			"\n" + summary_text +
+			"\nForce: " + format_number(force_multiplier) + "x" +
+			"   Limbs: " + str(limb_count)
+		)
+		limb_push_label.add_theme_color_override("font_color", Color(0.65, 1.0, 0.65, 0.92))
+	else:
+		limb_push_label.text = (
+			"Limb Push: " + mode_text +
+			"\nNo Limbs Near" +
+			"\nForce: 0.0x"
+		)
+		limb_push_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.45))
 
 
 func update_reticle(

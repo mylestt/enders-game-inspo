@@ -15,14 +15,25 @@ const LASER_FIRE_COOLDOWN_BY_LEVEL := [0.20, 0.16, 0.12, 0.085]
 @export var laser_follow_speed: float = 7.0
 @export var laser_fire_cooldown: float = 0.20
 
-@export var shot_laser_thickness: float = 0.055
-@export var shot_laser_lifetime: float = 0.08
+@export var shot_laser_thickness: float = 0.045
+@export var shot_laser_lifetime: float = 0.09
+
+@export var shot_laser_radial_segments: int = 32
+@export var shot_laser_glow_thickness_multiplier: float = 3.0
+@export var shot_laser_core_emission_energy: float = 9.0
+@export var shot_laser_glow_emission_energy: float = 3.5
+
+@export var shot_laser_core_color: Color = Color(1.0, 0.08, 0.02, 1.0)
+@export var shot_laser_glow_color: Color = Color(1.0, 0.02, 0.0, 0.22)
 
 @export var actual_dot_size: float = 8.0
 @export var desired_circle_size: float = 22.0
 @export var desired_circle_border_width: int = 2
 
 @export var surface_center_reticle_size: float = 10.0
+
+@export var reticle_core_color: Color = Color(1.0, 1.0, 1.0, 0.96)
+@export var reticle_soft_color: Color = Color(0.75, 0.95, 1.0, 0.65)
 
 var input_enabled: bool = true
 var is_aiming: bool = false
@@ -43,7 +54,8 @@ var actual_aim_direction: Vector3 = Vector3.FORWARD
 
 var fire_cooldown_remaining: float = 0.0
 
-var shot_beam_material: StandardMaterial3D
+var shot_beam_core_material: StandardMaterial3D
+var shot_beam_glow_material: StandardMaterial3D
 
 var ui_layer: CanvasLayer
 var actual_laser_dot: Panel
@@ -71,13 +83,38 @@ func _ready() -> void:
 
 
 func setup_materials() -> void:
-	shot_beam_material = StandardMaterial3D.new()
-	shot_beam_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	shot_beam_material.albedo_color = Color(1.0, 0.0, 0.0, 0.95)
-	shot_beam_material.emission_enabled = true
-	shot_beam_material.emission = Color(1.0, 0.0, 0.0, 1.0)
-	shot_beam_material.emission_energy_multiplier = 6.0
-	shot_beam_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	shot_beam_core_material = create_laser_material(
+		shot_laser_core_color,
+		shot_laser_core_emission_energy,
+		false
+	)
+	
+	shot_beam_glow_material = create_laser_material(
+		shot_laser_glow_color,
+		shot_laser_glow_emission_energy,
+		true
+	)
+
+
+func create_laser_material(
+	color: Color,
+	emission_energy: float,
+	use_additive_blend: bool
+) -> StandardMaterial3D:
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.albedo_color = color
+	material.emission_enabled = true
+	material.emission = Color(color.r, color.g, color.b, 1.0)
+	material.emission_energy_multiplier = emission_energy
+	
+	if color.a < 1.0 or use_additive_blend:
+		material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	
+	if use_additive_blend:
+		material.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	
+	return material
 
 
 func setup_ui() -> void:
@@ -89,20 +126,20 @@ func setup_ui() -> void:
 	actual_laser_dot = create_filled_reticle(
 		"ActualLaserDot",
 		actual_dot_size,
-		Color(1.0, 1.0, 1.0, 0.95)
+		reticle_core_color
 	)
 	
 	desired_aim_circle = create_hollow_reticle(
 		"DesiredAimCircle",
 		desired_circle_size,
-		Color(1.0, 1.0, 1.0, 0.8),
+		reticle_soft_color,
 		desired_circle_border_width
 	)
 	
 	surface_center_reticle = create_filled_reticle(
 		"SurfaceCenterReticle",
 		surface_center_reticle_size,
-		Color(1.0, 1.0, 1.0, 0.95)
+		reticle_core_color
 	)
 	
 	ui_layer.visible = false
@@ -121,6 +158,11 @@ func create_filled_reticle(reticle_name: String, size: float, color: Color) -> P
 	
 	var style := StyleBoxFlat.new()
 	style.bg_color = color
+	style.border_color = Color(0.75, 0.95, 1.0, 0.55)
+	style.border_width_left = 1
+	style.border_width_right = 1
+	style.border_width_top = 1
+	style.border_width_bottom = 1
 	style.corner_radius_top_left = 100
 	style.corner_radius_top_right = 100
 	style.corner_radius_bottom_left = 100
@@ -142,7 +184,7 @@ func create_hollow_reticle(reticle_name: String, size: float, color: Color, bord
 	reticle.pivot_offset = Vector2(size * 0.5, size * 0.5)
 	
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color(1.0, 1.0, 1.0, 0.0)
+	style.bg_color = Color(0.35, 0.8, 1.0, 0.05)
 	style.border_color = color
 	style.border_width_left = border_width
 	style.border_width_right = border_width
@@ -162,7 +204,6 @@ func _input(event: InputEvent) -> void:
 	if not input_enabled:
 		return
 	
-	# Surface-walk force aiming ignores RMB and ignores mouse reticle movement.
 	if force_aiming:
 		return
 	
@@ -273,8 +314,6 @@ func clamp_screen_aim_position() -> void:
 	)
 
 
-# Normal zero-G aiming:
-# desired circle can move, actual laser dot follows behind.
 func update_follow_aim_direction(delta: float) -> void:
 	desired_aim_direction = camera.project_ray_normal(screen_aim_position).normalized()
 	
@@ -321,8 +360,6 @@ func update_actual_laser_dot() -> void:
 	actual_laser_dot.position = actual_screen_position - actual_laser_dot.size * 0.5
 
 
-# Surface-walk aiming:
-# one reticle, centered, no follow lag.
 func update_surface_center_aim() -> void:
 	if camera == null:
 		return
@@ -385,28 +422,91 @@ func try_fire_laser() -> void:
 
 
 func create_shot_beam(origin: Vector3, end: Vector3) -> void:
-	var beam := MeshInstance3D.new()
-	beam.name = "LocalShotLaserBeam"
+	var direction := end - origin
 	
-	var mesh := CylinderMesh.new()
-	mesh.top_radius = shot_laser_thickness
-	mesh.bottom_radius = shot_laser_thickness
-	mesh.height = 1.0
-	mesh.radial_segments = 8
-	mesh.material = shot_beam_material
+	if direction.length() < 0.05:
+		return
 	
-	beam.mesh = mesh
-	beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var beam_root := Node3D.new()
+	beam_root.name = "LocalShotLaserBeam"
 	
-	add_child(beam)
-	draw_beam(beam, mesh, origin, end, shot_laser_thickness)
+	var beam_parent := get_laser_beam_parent()
+	beam_parent.add_child(beam_root)
+	
+	var glow_beam := create_beam_part(
+		"LocalShotLaserGlow",
+		shot_beam_glow_material,
+		shot_laser_thickness * shot_laser_glow_thickness_multiplier
+	)
+	
+	var core_beam := create_beam_part(
+		"LocalShotLaserCore",
+		shot_beam_core_material,
+		shot_laser_thickness
+	)
+	
+	beam_root.add_child(glow_beam)
+	beam_root.add_child(core_beam)
+	
+	draw_beam(
+		glow_beam,
+		glow_beam.mesh as CylinderMesh,
+		origin,
+		end,
+		shot_laser_thickness * shot_laser_glow_thickness_multiplier
+	)
+	
+	draw_beam(
+		core_beam,
+		core_beam.mesh as CylinderMesh,
+		origin,
+		end,
+		shot_laser_thickness
+	)
 	
 	var timer := get_tree().create_timer(shot_laser_lifetime)
 	timer.timeout.connect(
 		func() -> void:
-			if is_instance_valid(beam):
-				beam.queue_free()
+			if is_instance_valid(beam_root):
+				beam_root.queue_free()
 	)
+
+
+func get_laser_beam_parent() -> Node:
+	if owning_player != null:
+		var player_parent := owning_player.get_parent()
+		
+		if player_parent != null:
+			var world_parent := player_parent.get_parent()
+			
+			if world_parent != null:
+				return world_parent
+			
+			return player_parent
+	
+	return self
+
+
+func create_beam_part(
+	part_name: String,
+	material: StandardMaterial3D,
+	radius: float
+) -> MeshInstance3D:
+	var beam := MeshInstance3D.new()
+	beam.name = part_name
+	
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = radius
+	mesh.bottom_radius = radius
+	mesh.height = 1.0
+	mesh.radial_segments = max(shot_laser_radial_segments, 8)
+	mesh.rings = 1
+	mesh.material = material
+	
+	beam.mesh = mesh
+	beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	
+	return beam
 
 
 func draw_beam(

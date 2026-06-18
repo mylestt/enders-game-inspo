@@ -22,6 +22,15 @@ enum MovementMode {
 
 @export var max_grab_speed: float = 10.0
 
+@export var use_limb_push_system: bool = true
+@export var auto_create_limb_push_controller: bool = true
+@export var limb_push_controller_path: NodePath
+@export var use_limb_push_force_scaling: bool = true
+@export var allow_legacy_center_push_fallback: bool = true
+@export var show_limb_push_debug_ui: bool = true
+@export var show_limb_push_ui_when_no_limb_near: bool = true
+@export var debug_print_limb_pushes: bool = true
+
 @export var grab_distance_base: float = 2.1
 @export var grab_distance_level_1: float = 2.75
 @export var grab_distance_level_2: float = 3.4
@@ -57,6 +66,7 @@ enum MovementMode {
 var player: RigidBody3D
 var camera: Camera3D
 var hud_controller: PlayerHUDController
+var limb_push_controller: LimbPushController
 
 var movement_mode: int = MovementMode.ZERO_G
 
@@ -83,6 +93,7 @@ var surface_walk_no_surface_timer: float = 0.0
 
 var last_surface_result: Dictionary = {}
 var last_ctrl_push_result: Dictionary = {}
+var last_limb_push_state: Dictionary = {}
 
 
 func setup(owner_player: RigidBody3D, owner_hud_controller: PlayerHUDController) -> void:
@@ -93,10 +104,39 @@ func setup(owner_player: RigidBody3D, owner_hud_controller: PlayerHUDController)
 	if camera != null:
 		camera_base_position = camera.position
 	
+	setup_limb_push_controller()
+	
 	jump_force = clampf(jump_force, min_jump_force, max_jump_force)
 	
 	if hud_controller != null:
 		hud_controller.update_jump_force(jump_force)
+
+
+func setup_limb_push_controller() -> void:
+	if not use_limb_push_system:
+		return
+	
+	if String(limb_push_controller_path) != "":
+		limb_push_controller = get_node_or_null(limb_push_controller_path) as LimbPushController
+		
+		if limb_push_controller == null and player != null:
+			limb_push_controller = player.get_node_or_null(limb_push_controller_path) as LimbPushController
+	
+	if limb_push_controller == null:
+		limb_push_controller = get_node_or_null("LimbPushController") as LimbPushController
+	
+	if limb_push_controller == null and player != null:
+		limb_push_controller = player.get_node_or_null("LimbPushController") as LimbPushController
+	
+	if limb_push_controller == null and auto_create_limb_push_controller and player != null:
+		limb_push_controller = LimbPushController.new()
+		limb_push_controller.name = "LimbPushController"
+		player.add_child(limb_push_controller)
+		limb_push_controller.position = Vector3.ZERO
+		limb_push_controller.rotation = Vector3.ZERO
+	
+	if limb_push_controller != null:
+		limb_push_controller.setup(player)
 
 
 func _input(event: InputEvent) -> void:
@@ -172,7 +212,8 @@ func physics_update(
 	
 	update_surface_cache()
 	update_ctrl_push_cache()
-	update_hud_values()
+	update_limb_push_cache()
+	update_hud_values(laser_aiming, input_locked)
 	handle_movement_mode_toggle(input_locked)
 	update_surface_walk_entry_shake(delta)
 	
@@ -193,9 +234,22 @@ func physics_update(
 	clear_free_look_mouse_motion()
 
 
-func update_hud_values() -> void:
+func update_hud_values(laser_aiming: bool, input_locked: bool) -> void:
 	if hud_controller != null:
 		hud_controller.update_jump_force(jump_force)
+		
+		var should_show_limb_ui := (
+			show_limb_push_debug_ui
+			and movement_mode == MovementMode.ZERO_G
+			and not laser_aiming
+			and not input_locked
+		)
+		
+		if not show_limb_push_ui_when_no_limb_near:
+			should_show_limb_ui = should_show_limb_ui and bool(last_limb_push_state.get("has_limb_contact", false))
+		
+		if hud_controller.has_method("update_limb_push_indicator"):
+			hud_controller.update_limb_push_indicator(should_show_limb_ui, last_limb_push_state)
 
 
 func handle_input_locked_state() -> void:
@@ -665,23 +719,51 @@ func handle_jump_input() -> void:
 
 
 func try_normal_push() -> void:
+	var surface_check_direction := get_normal_surface_check_direction()
+	var desired_push_direction := get_normal_push_direction()
+	var limb_state := get_limb_push_state_for_direction(
+		surface_check_direction,
+		desired_push_direction,
+		get_current_grab_distance(),
+		false,
+		true
+	)
+	
+	if should_use_limb_push_state(limb_state):
+		apply_limb_jump_impulse(desired_push_direction, limb_state)
+		return
+	
 	var result := get_normal_push_result()
 	
 	if result.is_empty():
 		return
 	
-	var direction := get_normal_push_direction()
-	apply_jump_impulse(direction, result)
+	if allow_legacy_center_push_fallback:
+		apply_jump_impulse(desired_push_direction, result)
 
 
 func try_ctrl_push() -> void:
+	var surface_check_direction := get_ctrl_surface_check_direction()
+	var desired_push_direction := get_ctrl_push_direction()
+	var limb_state := get_limb_push_state_for_direction(
+		surface_check_direction,
+		desired_push_direction,
+		ctrl_push_check_distance,
+		true,
+		true
+	)
+	
+	if should_use_limb_push_state(limb_state):
+		apply_limb_jump_impulse(desired_push_direction, limb_state)
+		return
+	
 	var result := get_ctrl_push_result()
 	
 	if result.is_empty():
 		return
 	
-	var direction := get_ctrl_push_direction()
-	apply_jump_impulse(direction, result)
+	if allow_legacy_center_push_fallback:
+		apply_jump_impulse(desired_push_direction, result)
 
 
 func apply_jump_impulse(direction: Vector3, surface_result: Dictionary) -> void:
@@ -697,6 +779,67 @@ func apply_jump_impulse(direction: Vector3, surface_result: Dictionary) -> void:
 	player.sleeping = false
 	player.apply_central_impulse(impulse)
 	
+	apply_reaction_impulse_to_surface(impulse, surface_result)
+
+
+func apply_limb_jump_impulse(fallback_direction: Vector3, limb_state: Dictionary) -> void:
+	if player == null:
+		return
+	
+	var impulse_direction := get_limb_push_direction_from_state(limb_state, fallback_direction)
+	
+	if impulse_direction.length() < 0.01:
+		return
+	
+	release_grab()
+	
+	var force_multiplier := 1.0
+	
+	if use_limb_push_force_scaling:
+		force_multiplier = float(limb_state.get("force_multiplier", 1.0))
+	
+	force_multiplier = maxf(force_multiplier, 0.0)
+	
+	if force_multiplier <= 0.0:
+		return
+	
+	var impulse := impulse_direction.normalized() * jump_force * force_multiplier
+	
+	player.sleeping = false
+	player.apply_central_impulse(impulse)
+	
+	var surface_result: Dictionary = limb_state.get("primary_surface_result", {})
+	apply_reaction_impulse_to_surface(impulse, surface_result)
+	
+	if debug_print_limb_pushes:
+		print(
+			"Limb push: ",
+			limb_state.get("summary_text", "Unknown"),
+			" | Final force: ",
+			snappedf(force_multiplier, 0.01),
+			"x | Angle alignment: ",
+			snappedf(float(limb_state.get("angle_alignment", 0.0)), 0.01),
+			" | Direction: ",
+			impulse_direction
+		)
+
+
+func get_limb_push_direction_from_state(limb_state: Dictionary, fallback_direction: Vector3) -> Vector3:
+	var push_direction: Vector3 = limb_state.get("push_direction", Vector3.ZERO)
+	
+	if push_direction.length() >= 0.01:
+		return push_direction.normalized()
+	
+	if fallback_direction.length() >= 0.01:
+		return fallback_direction.normalized()
+	
+	return Vector3.ZERO
+
+
+func apply_reaction_impulse_to_surface(impulse: Vector3, surface_result: Dictionary) -> void:
+	if surface_result.is_empty():
+		return
+	
 	var collider = surface_result.get("collider", null)
 	var collision_position: Vector3 = surface_result.get("position", player.global_position)
 	
@@ -704,6 +847,90 @@ func apply_jump_impulse(direction: Vector3, surface_result: Dictionary) -> void:
 		var rigid_collider := collider as RigidBody3D
 		rigid_collider.sleeping = false
 		rigid_collider.apply_impulse(-impulse, collision_position - rigid_collider.global_position)
+
+
+func should_use_limb_push_state(limb_state: Dictionary) -> bool:
+	if not use_limb_push_system:
+		return false
+	
+	if limb_push_controller == null:
+		return false
+	
+	return bool(limb_state.get("has_limb_contact", false))
+
+
+func get_limb_push_state_for_direction(
+	surface_check_direction: Vector3,
+	desired_push_direction: Vector3,
+	max_check_distance: float,
+	using_ctrl_push: bool,
+	refresh_now: bool
+) -> Dictionary:
+	if not use_limb_push_system:
+		return {}
+	
+	if limb_push_controller == null:
+		return {}
+	
+	if refresh_now:
+		last_limb_push_state = limb_push_controller.update_limb_push_state(
+			surface_check_direction,
+			desired_push_direction,
+			max_check_distance,
+			using_ctrl_push
+		)
+	
+	return last_limb_push_state
+
+
+func update_limb_push_cache() -> void:
+	if not use_limb_push_system:
+		last_limb_push_state = {}
+		clear_limb_push_controller_debug(false)
+		return
+	
+	if limb_push_controller == null:
+		last_limb_push_state = {}
+		return
+	
+	if movement_mode != MovementMode.ZERO_G:
+		last_limb_push_state = {}
+		clear_limb_push_controller_debug(false)
+		return
+	
+	var using_ctrl_push := is_action_pressed_if_exists("ctrl_push")
+	var surface_check_direction := get_ctrl_surface_check_direction() if using_ctrl_push else get_normal_surface_check_direction()
+	var desired_push_direction := get_ctrl_push_direction() if using_ctrl_push else get_normal_push_direction()
+	var max_check_distance := ctrl_push_check_distance if using_ctrl_push else get_current_grab_distance()
+	
+	last_limb_push_state = limb_push_controller.update_limb_push_state(
+		surface_check_direction,
+		desired_push_direction,
+		max_check_distance,
+		using_ctrl_push
+	)
+
+
+func clear_limb_push_controller_debug(using_ctrl_push: bool) -> void:
+	if limb_push_controller == null:
+		return
+	
+	if limb_push_controller.has_method("clear_limb_push_state"):
+		limb_push_controller.clear_limb_push_state(using_ctrl_push)
+
+
+func get_normal_surface_check_direction() -> Vector3:
+	if player == null:
+		return Vector3.ZERO
+	
+	return (-player.global_transform.basis.z).normalized()
+
+
+func get_ctrl_surface_check_direction() -> Vector3:
+	if player == null:
+		return Vector3.ZERO
+	
+	return player.global_transform.basis.z.normalized()
 
 
 func get_normal_push_direction() -> Vector3:
@@ -791,7 +1018,7 @@ func get_normal_push_result() -> Dictionary:
 		return {}
 	
 	var origin := player.global_position
-	var direction := (-player.global_transform.basis.z).normalized()
+	var direction := get_normal_surface_check_direction()
 	var end := origin + direction * get_current_grab_distance()
 	
 	return raycast_from_player(origin, end)
@@ -802,7 +1029,7 @@ func get_ctrl_push_result() -> Dictionary:
 		return {}
 	
 	var origin := player.global_position
-	var direction := player.global_transform.basis.z.normalized()
+	var direction := get_ctrl_surface_check_direction()
 	var end := origin + direction * ctrl_push_check_distance
 	
 	return raycast_from_player(origin, end)
@@ -820,7 +1047,13 @@ func raycast_from_player(origin: Vector3, end: Vector3) -> Dictionary:
 
 
 func is_surface_in_interaction_range() -> bool:
-	return not last_surface_result.is_empty()
+	if not last_surface_result.is_empty():
+		return true
+	
+	if bool(last_limb_push_state.get("has_limb_contact", false)):
+		return true
+	
+	return false
 
 
 func is_grabbing_wall() -> bool:
@@ -851,10 +1084,13 @@ func should_show_ctrl_push_arrow(
 	if not is_action_pressed_if_exists("ctrl_push"):
 		return false
 	
-	return not last_ctrl_push_result.is_empty()
+	return not last_ctrl_push_result.is_empty() or bool(last_limb_push_state.get("has_limb_contact", false))
 
 
 func get_predicted_ctrl_push_direction() -> Vector3:
+	if bool(last_limb_push_state.get("has_limb_contact", false)):
+		return get_limb_push_direction_from_state(last_limb_push_state, get_ctrl_push_direction())
+	
 	return get_ctrl_push_direction()
 
 
@@ -877,6 +1113,24 @@ func get_current_grab_distance() -> float:
 			return grab_distance_level_3
 	
 	return grab_distance_base
+
+
+func get_last_limb_push_state() -> Dictionary:
+	return last_limb_push_state
+
+
+func set_limb_disabled(limb_id: String, disabled: bool) -> void:
+	if limb_push_controller == null:
+		return
+	
+	limb_push_controller.set_limb_disabled(limb_id, disabled)
+
+
+func is_limb_disabled(limb_id: String) -> bool:
+	if limb_push_controller == null:
+		return false
+	
+	return limb_push_controller.is_limb_disabled(limb_id)
 
 
 func is_action_pressed_if_exists(action_name: String) -> bool:

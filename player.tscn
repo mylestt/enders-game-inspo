@@ -7,6 +7,7 @@
 [ext_resource type="Script" uid="uid://dfkxxwjk335qe" path="res://scripts/impact_controller.gd" id="5_n7ghd"]
 [ext_resource type="Script" uid="uid://qkmgx5x0dg60" path="res://health_controller.gd" id="6_1jxqw"]
 [ext_resource type="Script" uid="uid://cukcin0no108i" path="res://scripts/laser_controller.gd" id="6_nvl01"]
+[ext_resource type="Script" uid="uid://dn41x1pava75b" path="res://scripts/limb_pusher_controller.gd" id="7_dw050"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_g2els"]
 
@@ -19,6 +20,7 @@ script = ExtResource("1_2hs0m")
 
 [node name="MovementController" type="Node" parent="." unique_id=294609104]
 script = ExtResource("2_1jxqw")
+surface_walk_sprint_multiplier = 1.2
 
 [node name="SuitBoosters" type="Node" parent="." unique_id=2126445202]
 script = ExtResource("3_dw050")
@@ -40,6 +42,17 @@ max_contacts_reported = 3
 [node name="HealthController" type="Node" parent="." unique_id=1599111364]
 script = ExtResource("6_1jxqw")
 
+[node name="LimbPusherController" type="Node3D" parent="." unique_id=775985500]
+script = ExtResource("7_dw050")
+
+[node name="LeftArmPoint" type="Marker3D" parent="LimbPusherController" unique_id=977520567]
+
+[node name="RightArmPoint" type="Marker3D" parent="LimbPusherController" unique_id=2007771686]
+
+[node name="LeftFootPoint" type="Marker3D" parent="LimbPusherController" unique_id=508516981]
+
+[node name="RightFootPoint" type="Marker3D" parent="LimbPusherController" unique_id=1123509489]
+
 [node name="Camera3D" type="Camera3D" parent="." unique_id=782354166]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5235928, -0.18032497)
 fov = 100.0
@@ -49,6 +62,8 @@ target_position = Vector3(0, 0, -2)
 
 [node name="LaserController" type="Node3D" parent="Camera3D" unique_id=1410101425]
 script = ExtResource("6_nvl01")
+shot_laser_radial_segments = 600
+shot_laser_glow_color = Color(1, 1, 1, 0.21960784)
 
 [node name="UI" type="CanvasLayer" parent="." unique_id=855663498]
 
