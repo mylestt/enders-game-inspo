@@ -58,14 +58,14 @@ static func spawn(
 	parent.add_child(beam_root)
 
 	var glow_radius := core_radius * glow_multiplier
-	var glow := _make_part(name_prefix + "Glow", glow_material, glow_radius, radial_segments)
-	var core := _make_part(name_prefix + "Core", core_material, core_radius, radial_segments)
+	var glow := make_part(name_prefix + "Glow", glow_material, glow_radius, radial_segments)
+	var core := make_part(name_prefix + "Core", core_material, core_radius, radial_segments)
 
 	beam_root.add_child(glow)
 	beam_root.add_child(core)
 
-	_draw_part(glow, origin, end, glow_radius)
-	_draw_part(core, origin, end, core_radius)
+	draw_part(glow, origin, end, glow_radius)
+	draw_part(core, origin, end, core_radius)
 
 	var timer := parent.get_tree().create_timer(lifetime)
 	timer.timeout.connect(
@@ -75,7 +75,7 @@ static func spawn(
 	)
 
 
-static func _make_part(part_name: String, material: StandardMaterial3D, radius: float, radial_segments: int) -> MeshInstance3D:
+static func make_part(part_name: String, material: StandardMaterial3D, radius: float, radial_segments: int) -> MeshInstance3D:
 	var beam := MeshInstance3D.new()
 	beam.name = part_name
 
@@ -93,7 +93,7 @@ static func _make_part(part_name: String, material: StandardMaterial3D, radius: 
 	return beam
 
 
-static func _draw_part(beam: MeshInstance3D, origin: Vector3, end: Vector3, radius: float) -> void:
+static func draw_part(beam: MeshInstance3D, origin: Vector3, end: Vector3, radius: float) -> void:
 	var mesh := beam.mesh as CylinderMesh
 	var direction := end - origin
 	var length := direction.length()

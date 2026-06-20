@@ -1,0 +1,3 @@
+res://scripts/beam_renderer.gd
+res://scripts/laser_controller.gd
+res://scenes/main.tscn

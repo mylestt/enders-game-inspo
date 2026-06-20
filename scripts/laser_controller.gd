@@ -115,16 +115,18 @@ func setup_live_fire_beam() -> void:
 	var beam_parent := get_laser_beam_parent()
 	beam_parent.add_child(live_fire_beam_root)
 	
-	live_fire_glow_beam = create_beam_part(
+	live_fire_glow_beam = BeamRenderer.make_part(
 		"LiveFireLaserGlow",
 		shot_beam_glow_material,
-		shot_laser_thickness * shot_laser_glow_thickness_multiplier
+		shot_laser_thickness * shot_laser_glow_thickness_multiplier,
+		shot_laser_radial_segments
 	)
 	
-	live_fire_core_beam = create_beam_part(
+	live_fire_core_beam = BeamRenderer.make_part(
 		"LiveFireLaserCore",
 		shot_beam_core_material,
-		shot_laser_thickness
+		shot_laser_thickness,
+		shot_laser_radial_segments
 	)
 	
 	live_fire_beam_root.add_child(live_fire_glow_beam)
@@ -494,17 +496,15 @@ func update_live_fire_visual(should_show: bool) -> void:
 	var core_radius := shot_laser_thickness * pulse_multiplier
 	var glow_radius := shot_laser_thickness * shot_laser_glow_thickness_multiplier * pulse_multiplier
 	
-	draw_beam(
+	BeamRenderer.draw_part(
 		live_fire_glow_beam,
-		live_fire_glow_beam.mesh as CylinderMesh,
 		origin,
 		end,
 		glow_radius
 	)
 	
-	draw_beam(
+	BeamRenderer.draw_part(
 		live_fire_core_beam,
-		live_fire_core_beam.mesh as CylinderMesh,
 		origin,
 		end,
 		core_radius
