@@ -1,3 +1,4 @@
+class_name LaserController
 extends Node3D
 
 const LASER_FOLLOW_SPEED_BY_LEVEL := [7.0, 10.0, 14.0, 20.0]
@@ -70,7 +71,9 @@ func _ready() -> void:
 		push_error("LaserController must be a child of Camera3D.")
 		return
 	
-	owning_player = camera.get_parent()
+	owning_player = camera
+	while owning_player != null and not (owning_player is CollisionObject3D):
+		owning_player = owning_player.get_parent()
 	
 	var center := get_viewport().get_visible_rect().size * 0.5
 	screen_aim_position = center
@@ -83,38 +86,8 @@ func _ready() -> void:
 
 
 func setup_materials() -> void:
-	shot_beam_core_material = create_laser_material(
-		shot_laser_core_color,
-		shot_laser_core_emission_energy,
-		false
-	)
-	
-	shot_beam_glow_material = create_laser_material(
-		shot_laser_glow_color,
-		shot_laser_glow_emission_energy,
-		true
-	)
-
-
-func create_laser_material(
-	color: Color,
-	emission_energy: float,
-	use_additive_blend: bool
-) -> StandardMaterial3D:
-	var material := StandardMaterial3D.new()
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.albedo_color = color
-	material.emission_enabled = true
-	material.emission = Color(color.r, color.g, color.b, 1.0)
-	material.emission_energy_multiplier = emission_energy
-	
-	if color.a < 1.0 or use_additive_blend:
-		material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	
-	if use_additive_blend:
-		material.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	
-	return material
+	shot_beam_core_material = BeamRenderer.make_material(shot_laser_core_color, shot_laser_core_emission_energy, false)
+	shot_beam_glow_material = BeamRenderer.make_material(shot_laser_glow_color, shot_laser_glow_emission_energy, true)
 
 
 func setup_ui() -> void:
@@ -422,53 +395,17 @@ func try_fire_laser() -> void:
 
 
 func create_shot_beam(origin: Vector3, end: Vector3) -> void:
-	var direction := end - origin
-	
-	if direction.length() < 0.05:
-		return
-	
-	var beam_root := Node3D.new()
-	beam_root.name = "LocalShotLaserBeam"
-	
-	var beam_parent := get_laser_beam_parent()
-	beam_parent.add_child(beam_root)
-	
-	var glow_beam := create_beam_part(
-		"LocalShotLaserGlow",
-		shot_beam_glow_material,
-		shot_laser_thickness * shot_laser_glow_thickness_multiplier
-	)
-	
-	var core_beam := create_beam_part(
-		"LocalShotLaserCore",
+	BeamRenderer.spawn(
+		get_laser_beam_parent(),
+		origin,
+		end,
 		shot_beam_core_material,
-		shot_laser_thickness
-	)
-	
-	beam_root.add_child(glow_beam)
-	beam_root.add_child(core_beam)
-	
-	draw_beam(
-		glow_beam,
-		glow_beam.mesh as CylinderMesh,
-		origin,
-		end,
-		shot_laser_thickness * shot_laser_glow_thickness_multiplier
-	)
-	
-	draw_beam(
-		core_beam,
-		core_beam.mesh as CylinderMesh,
-		origin,
-		end,
-		shot_laser_thickness
-	)
-	
-	var timer := get_tree().create_timer(shot_laser_lifetime)
-	timer.timeout.connect(
-		func() -> void:
-			if is_instance_valid(beam_root):
-				beam_root.queue_free()
+		shot_beam_glow_material,
+		shot_laser_thickness,
+		shot_laser_glow_thickness_multiplier,
+		shot_laser_radial_segments,
+		shot_laser_lifetime,
+		"LocalShotLaser"
 	)
 
 
@@ -485,70 +422,6 @@ func get_laser_beam_parent() -> Node:
 			return player_parent
 	
 	return self
-
-
-func create_beam_part(
-	part_name: String,
-	material: StandardMaterial3D,
-	radius: float
-) -> MeshInstance3D:
-	var beam := MeshInstance3D.new()
-	beam.name = part_name
-	
-	var mesh := CylinderMesh.new()
-	mesh.top_radius = radius
-	mesh.bottom_radius = radius
-	mesh.height = 1.0
-	mesh.radial_segments = max(shot_laser_radial_segments, 8)
-	mesh.rings = 1
-	mesh.material = material
-	
-	beam.mesh = mesh
-	beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	
-	return beam
-
-
-func draw_beam(
-	beam: MeshInstance3D,
-	mesh: CylinderMesh,
-	origin: Vector3,
-	end: Vector3,
-	radius: float
-) -> void:
-	if beam == null or mesh == null:
-		return
-	
-	var direction := end - origin
-	var length := direction.length()
-	
-	if length < 0.05:
-		beam.visible = false
-		return
-	
-	mesh.height = length
-	mesh.top_radius = radius
-	mesh.bottom_radius = radius
-	
-	var midpoint := origin + direction * 0.5
-	var beam_basis := make_y_aligned_basis(direction.normalized())
-	
-	beam.global_transform = Transform3D(beam_basis, midpoint)
-	beam.visible = true
-
-
-func make_y_aligned_basis(y_axis: Vector3) -> Basis:
-	y_axis = y_axis.normalized()
-	
-	var helper := Vector3.UP
-	
-	if absf(y_axis.dot(helper)) > 0.95:
-		helper = Vector3.RIGHT
-	
-	var x_axis := helper.cross(y_axis).normalized()
-	var z_axis := x_axis.cross(y_axis).normalized()
-	
-	return Basis(x_axis, y_axis, z_axis).orthonormalized()
 
 
 func get_muzzle_position() -> Vector3:

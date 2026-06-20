@@ -1,7 +1,7 @@
 extends Node3D
 
 @export var players_parent_path: NodePath = NodePath("Players")
-@export var player_camera_name: String = "Camera3D"
+@export var player_camera_name: String = "CameraRig/Camera3D"
 @export var debug_camera: Camera3D
 
 var debug_camera_active: bool = false

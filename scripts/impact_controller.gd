@@ -21,6 +21,7 @@ extends Node
 
 var player: RigidBody3D
 var camera: Camera3D
+var camera_rig: CameraRig
 var hud_controller: PlayerHUDController
 
 var camera_default_position: Vector3 = Vector3.ZERO
@@ -43,7 +44,8 @@ func setup(owner_player: RigidBody3D, owner_hud: PlayerHUDController) -> void:
 	player = owner_player
 	hud_controller = owner_hud
 	
-	camera = player.get_node_or_null("Camera3D") as Camera3D
+	camera = player.get_node_or_null("CameraRig/Camera3D") as Camera3D
+	camera_rig = player.get_node_or_null("CameraRig") as CameraRig
 	
 	if camera == null:
 		push_error("ImpactController could not find Camera3D.")
@@ -114,7 +116,10 @@ func trigger_impact(impact_speed: float) -> void:
 	
 	last_impact_value = impact_value
 	last_impact_speed = impact_speed
-	
+
+	if camera_rig != null:
+		camera_rig.kick_landing(impact_speed)
+
 	immobilize_time_remaining = maxf(immobilize_time_remaining, stun_time)
 	impact_cooldown_remaining = impact_cooldown_time
 	
@@ -186,6 +191,11 @@ func update_impact_effect(delta: float) -> void:
 
 func is_immobilized() -> bool:
 	return immobilize_time_remaining > 0.0
+
+
+# Briefly skip impact detection (e.g. launching off a wall-walk surface).
+func ignore_impacts_briefly() -> void:
+	impact_cooldown_remaining = maxf(impact_cooldown_remaining, impact_cooldown_time)
 
 
 func get_impact_value() -> float:

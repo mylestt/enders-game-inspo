@@ -1,7 +1,7 @@
 extends CanvasLayer
 
 @export var player_path: NodePath
-@export var laser_controller_relative_path: NodePath = NodePath("Camera3D/LaserController")
+@export var laser_controller_relative_path: NodePath = NodePath("CameraRig/Camera3D/LaserController")
 
 @export var starting_cash: int = 20000
 @export var pause_game_when_open: bool = false
@@ -552,62 +552,53 @@ func get_item_state(item: Dictionary) -> Dictionary:
 	}
 
 
-func can_apply_group(group: String) -> bool:
+# Maps a shop group to its target node, the method that applies the upgrade,
+# the method that reads its current level, and whether apply takes a level arg.
+func get_group_handler(group: String) -> Dictionary:
 	match group:
 		"laser_follow":
-			return laser_controller != null and laser_controller.has_method("apply_laser_follow_speed_upgrade")
+			return {"obj": laser_controller, "apply": "apply_laser_follow_speed_upgrade", "level": "get_laser_follow_speed_level", "takes_level": true}
 		"laser_attack_speed":
-			return laser_controller != null and laser_controller.has_method("apply_laser_attack_speed_upgrade")
+			return {"obj": laser_controller, "apply": "apply_laser_attack_speed_upgrade", "level": "get_laser_attack_speed_level", "takes_level": true}
 		"grab_distance":
-			return local_player != null and local_player.has_method("apply_grab_distance_upgrade")
+			return {"obj": local_player, "apply": "apply_grab_distance_upgrade", "level": "get_grab_distance_level", "takes_level": true}
 		"suit_boosters":
-			return local_player != null and local_player.has_method("purchase_suit_boosters")
-	
-	return false
+			return {"obj": local_player, "apply": "purchase_suit_boosters", "level": "", "takes_level": false}
+
+	return {}
+
+
+func can_apply_group(group: String) -> bool:
+	var handler := get_group_handler(group)
+	var obj = handler.get("obj", null)
+
+	return obj != null and obj.has_method(String(handler.get("apply", "")))
 
 
 func apply_item_upgrade(item: Dictionary) -> bool:
-	var group := String(item["group"])
-	var level := int(item["level"])
-	
-	match group:
-		"laser_follow":
-			if laser_controller != null and laser_controller.has_method("apply_laser_follow_speed_upgrade"):
-				laser_controller.call("apply_laser_follow_speed_upgrade", level)
-				return true
-		
-		"laser_attack_speed":
-			if laser_controller != null and laser_controller.has_method("apply_laser_attack_speed_upgrade"):
-				laser_controller.call("apply_laser_attack_speed_upgrade", level)
-				return true
-		
-		"grab_distance":
-			if local_player != null and local_player.has_method("apply_grab_distance_upgrade"):
-				local_player.call("apply_grab_distance_upgrade", level)
-				return true
-		
-		"suit_boosters":
-			if local_player != null and local_player.has_method("purchase_suit_boosters"):
-				local_player.call("purchase_suit_boosters")
-				return true
-	
-	return false
+	var handler := get_group_handler(String(item["group"]))
+	var obj = handler.get("obj", null)
+	var apply_method := String(handler.get("apply", ""))
+
+	if obj == null or not obj.has_method(apply_method):
+		return false
+
+	if bool(handler.get("takes_level", false)):
+		obj.call(apply_method, int(item["level"]))
+	else:
+		obj.call(apply_method)
+
+	return true
 
 
 func get_current_group_level(group: String) -> int:
-	match group:
-		"laser_follow":
-			if laser_controller != null and laser_controller.has_method("get_laser_follow_speed_level"):
-				return int(laser_controller.call("get_laser_follow_speed_level"))
-		
-		"laser_attack_speed":
-			if laser_controller != null and laser_controller.has_method("get_laser_attack_speed_level"):
-				return int(laser_controller.call("get_laser_attack_speed_level"))
-		
-		"grab_distance":
-			if local_player != null and local_player.has_method("get_grab_distance_level"):
-				return int(local_player.call("get_grab_distance_level"))
-	
+	var handler := get_group_handler(group)
+	var obj = handler.get("obj", null)
+	var level_method := String(handler.get("level", ""))
+
+	if obj != null and level_method != "" and obj.has_method(level_method):
+		return int(obj.call(level_method))
+
 	return 0
 
 
