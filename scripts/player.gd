@@ -3,6 +3,12 @@ extends RigidBody3D
 @export var linear_damp_value: float = 0.0
 @export var angular_damp_value: float = 1.2
 
+# Uniform (isotropic) rotational inertia. The capsule's natural inertia is anisotropic, which
+# made torque-driven roll spin cleanly only around the body's own axes; once the look/neck tilts
+# off them, roll precessed instead of banking. A uniform value rolls the same around any axis.
+# 0.3 matches the capsule's old perpendicular inertia, so roll feel is unchanged.
+@export var rotational_inertia: float = 0.3
+
 @export var network_send_rate: float = 30.0
 @export var network_interpolation_speed: float = 18.0
 @export var fallback_laser_range: float = 120.0
@@ -29,19 +35,20 @@ var has_network_target: bool = false
 
 var last_body_slam_time_by_target_peer_id: Dictionary = {}
 
-@onready var camera: Camera3D = get_node_or_null("Camera3D") as Camera3D
+@onready var camera: Camera3D = get_node_or_null("CameraRig/Camera3D") as Camera3D
 @onready var movement_controller: PlayerMovementController = get_node_or_null("MovementController") as PlayerMovementController
 @onready var suit_boosters: SuitBoosterController = get_node_or_null("SuitBoosters") as SuitBoosterController
 @onready var hud_controller: PlayerHUDController = get_node_or_null("PlayerHUD") as PlayerHUDController
 @onready var impact_controller: PlayerImpactController = get_node_or_null("ImpactController") as PlayerImpactController
 @onready var health_controller: PlayerHealthController = get_node_or_null("HealthController") as PlayerHealthController
-@onready var laser_controller: Node = get_node_or_null("Camera3D/LaserController")
+@onready var laser_controller: LaserController = get_node_or_null("CameraRig/Camera3D/LaserController") as LaserController
 
 
 func _ready() -> void:
 	gravity_scale = 0.0
 	linear_damp = linear_damp_value
 	angular_damp = angular_damp_value
+	inertia = Vector3.ONE * rotational_inertia
 	can_sleep = false
 	continuous_cd = true
 	
@@ -99,8 +106,8 @@ func set_multiplayer_player(new_peer_id: int, new_is_local_player: bool, new_net
 	if health_controller != null:
 		health_controller.set_is_local_player(is_local_player)
 	
-	if laser_controller != null and laser_controller.has_method("set_input_enabled"):
-		laser_controller.call("set_input_enabled", is_local_player)
+	if laser_controller != null:
+		laser_controller.set_input_enabled(is_local_player)
 	
 	if is_local_player:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -324,10 +331,8 @@ func apply_network_body_slam_impulse(impulse: Vector3, contact_position: Vector3
 	
 	sleeping = false
 	
-	if movement_controller != null:
-		if movement_controller.has_method("is_surface_walk_active") and movement_controller.call("is_surface_walk_active"):
-			if movement_controller.has_method("exit_surface_walk_mode"):
-				movement_controller.call("exit_surface_walk_mode")
+	if movement_controller != null and movement_controller.is_surface_walk_active():
+		movement_controller.exit_surface_walk_mode()
 	
 	var local_contact_position := contact_position - global_position
 	
@@ -427,36 +432,36 @@ func handle_network_laser_fire() -> void:
 
 
 func get_network_laser_origin() -> Vector3:
-	if laser_controller != null and laser_controller.has_method("get_laser_muzzle_world_position"):
-		return laser_controller.call("get_laser_muzzle_world_position")
-	
+	if laser_controller != null:
+		return laser_controller.get_laser_muzzle_world_position()
+
 	if camera != null:
 		return camera.global_position
-	
+
 	return global_position
 
 
 func get_network_laser_direction() -> Vector3:
-	if laser_controller != null and laser_controller.has_method("get_actual_laser_direction"):
-		return laser_controller.call("get_actual_laser_direction")
-	
+	if laser_controller != null:
+		return laser_controller.get_actual_laser_direction()
+
 	if camera != null:
 		return (-camera.global_transform.basis.z).normalized()
-	
+
 	return (-global_transform.basis.z).normalized()
 
 
 func get_network_laser_range() -> float:
-	if laser_controller != null and laser_controller.has_method("get_laser_range"):
-		return laser_controller.call("get_laser_range")
-	
+	if laser_controller != null:
+		return laser_controller.get_laser_range()
+
 	return fallback_laser_range
 
 
 func get_network_laser_fire_cooldown() -> float:
-	if laser_controller != null and laser_controller.has_method("get_laser_fire_cooldown"):
-		return laser_controller.call("get_laser_fire_cooldown")
-	
+	if laser_controller != null:
+		return laser_controller.get_laser_fire_cooldown()
+
 	return fallback_laser_fire_cooldown
 
 
@@ -497,20 +502,17 @@ func is_combat_disabled() -> bool:
 func is_surface_walk_mode_active() -> bool:
 	if movement_controller == null:
 		return false
-	
-	if movement_controller.has_method("is_surface_walk_active"):
-		return bool(movement_controller.call("is_surface_walk_active"))
-	
-	return false
+
+	return movement_controller.is_surface_walk_active()
 
 
 func is_laser_aiming() -> bool:
 	if is_input_locked():
 		return false
 	
-	if laser_controller != null and laser_controller.has_method("is_laser_aiming"):
-		return laser_controller.call("is_laser_aiming") == true
-	
+	if laser_controller != null:
+		return laser_controller.is_laser_aiming()
+
 	if is_surface_walk_mode_active():
 		return true
 	
@@ -521,13 +523,13 @@ func is_laser_aiming() -> bool:
 
 
 func set_laser_input_enabled(value: bool) -> void:
-	if laser_controller != null and laser_controller.has_method("set_input_enabled"):
-		laser_controller.call("set_input_enabled", value)
+	if laser_controller != null:
+		laser_controller.set_input_enabled(value)
 
 
 func set_laser_force_aiming(value: bool) -> void:
-	if laser_controller != null and laser_controller.has_method("set_force_aiming"):
-		laser_controller.call("set_force_aiming", value)
+	if laser_controller != null:
+		laser_controller.set_force_aiming(value)
 
 
 func set_buy_menu_open(value: bool) -> void:
@@ -617,6 +619,11 @@ func get_has_suit_boosters() -> bool:
 		return false
 	
 	return suit_boosters.get_has_suit_boosters()
+
+
+func suppress_launch_impact() -> void:
+	if impact_controller != null:
+		impact_controller.ignore_impacts_briefly()
 
 
 func refill_booster_fuel() -> void:

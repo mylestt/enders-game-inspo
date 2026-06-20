@@ -52,20 +52,37 @@ var disabled_material: StandardMaterial3D
 
 var last_limb_push_state: Dictionary = {}
 
+# Built once in setup() — these never change at runtime, so rebuilding the array
+# and a fresh ray query every push tick was pure churn on the hot path.
+var _limb_definitions: Array[Dictionary] = []
+var _ray_query: PhysicsRayQueryParameters3D
+var _sphere_near_by_id: Dictionary = {}
+
 
 func setup(owner_player: RigidBody3D) -> void:
 	player = owner_player
-	
+
 	limb_disabled_by_id[LIMB_LEFT_ARM] = false
 	limb_disabled_by_id[LIMB_RIGHT_ARM] = false
 	limb_disabled_by_id[LIMB_LEFT_FOOT] = false
 	limb_disabled_by_id[LIMB_RIGHT_FOOT] = false
-	
+
+	_limb_definitions = build_limb_definitions()
+	_setup_ray_query()
 	setup_debug_materials()
 	setup_limb_points()
 	clear_limb_push_state(false)
-	
+
 	print("LimbPushController setup complete")
+
+
+func _setup_ray_query() -> void:
+	_ray_query = PhysicsRayQueryParameters3D.new()
+	_ray_query.collide_with_bodies = true
+	_ray_query.collide_with_areas = true
+
+	if player is CollisionObject3D:
+		_ray_query.exclude = [player.get_rid()]
 
 
 func _process(_delta: float) -> void:
@@ -170,8 +187,9 @@ func setup_debug_sphere_for_marker(limb_id: String, marker: Node3D) -> void:
 	existing_sphere.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	existing_sphere.visible = show_debug_limb_spheres
 	existing_sphere.material_override = inactive_material
-	
+
 	debug_sphere_by_limb_id[limb_id] = existing_sphere
+	_sphere_near_by_id[limb_id] = false
 
 
 func update_limb_push_state(
@@ -197,8 +215,8 @@ func update_limb_push_state(
 	max_check_distance = maxf(max_check_distance, 0.01)
 	
 	var valid_limb_results: Array[Dictionary] = []
-	
-	for limb_definition in get_limb_definitions():
+
+	for limb_definition in _limb_definitions:
 		var limb_id: String = limb_definition.get("id", "")
 		
 		if is_limb_disabled(limb_id):
@@ -237,7 +255,7 @@ func update_limb_push_state(
 	return last_limb_push_state
 
 
-func get_limb_definitions() -> Array[Dictionary]:
+func build_limb_definitions() -> Array[Dictionary]:
 	return [
 		{
 			"id": LIMB_LEFT_ARM,
@@ -366,14 +384,10 @@ func build_limb_hit_result(
 
 
 func raycast_limb(origin: Vector3, end: Vector3) -> Dictionary:
-	var query := PhysicsRayQueryParameters3D.create(origin, end)
-	query.collide_with_bodies = true
-	query.collide_with_areas = true
-	
-	if player is CollisionObject3D:
-		query.exclude = [player.get_rid()]
-	
-	return player.get_world_3d().direct_space_state.intersect_ray(query)
+	_ray_query.from = origin
+	_ray_query.to = end
+
+	return player.get_world_3d().direct_space_state.intersect_ray(_ray_query)
 
 
 func get_limb_probe_directions(
@@ -675,17 +689,15 @@ func update_debug_sphere_state(limb_id: String, is_near: bool) -> void:
 		return
 	
 	sphere.visible = show_debug_limb_spheres
-	
-	if sphere.mesh is SphereMesh:
+
+	if sphere.mesh is SphereMesh and bool(_sphere_near_by_id.get(limb_id, false)) != is_near:
 		var sphere_mesh := sphere.mesh as SphereMesh
-		
-		if is_near:
-			sphere_mesh.radius = debug_sphere_near_radius
-			sphere_mesh.height = debug_sphere_near_radius * 2.0
-		else:
-			sphere_mesh.radius = debug_sphere_radius
-			sphere_mesh.height = debug_sphere_radius * 2.0
-	
+		var radius := debug_sphere_near_radius if is_near else debug_sphere_radius
+		sphere_mesh.radius = radius
+		sphere_mesh.height = radius * 2.0
+
+	_sphere_near_by_id[limb_id] = is_near
+
 	if is_limb_disabled(limb_id):
 		sphere.material_override = disabled_material
 	elif is_near:

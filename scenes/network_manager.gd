@@ -59,38 +59,8 @@ func _ready() -> void:
 
 
 func setup_remote_laser_material() -> void:
-	remote_laser_material = create_remote_laser_material(
-		remote_laser_core_color,
-		remote_laser_core_emission_energy,
-		false
-	)
-	
-	remote_laser_glow_material = create_remote_laser_material(
-		remote_laser_glow_color,
-		remote_laser_glow_emission_energy,
-		true
-	)
-
-
-func create_remote_laser_material(
-	color: Color,
-	emission_energy: float,
-	use_additive_blend: bool
-) -> StandardMaterial3D:
-	var material := StandardMaterial3D.new()
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.albedo_color = color
-	material.emission_enabled = true
-	material.emission = Color(color.r, color.g, color.b, 1.0)
-	material.emission_energy_multiplier = emission_energy
-	
-	if color.a < 1.0 or use_additive_blend:
-		material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	
-	if use_additive_blend:
-		material.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	
-	return material
+	remote_laser_material = BeamRenderer.make_material(remote_laser_core_color, remote_laser_core_emission_energy, false)
+	remote_laser_glow_material = BeamRenderer.make_material(remote_laser_glow_color, remote_laser_glow_emission_energy, true)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -303,6 +273,7 @@ func client_spawn_player(peer_id: int, spawn_index: int) -> void:
 	
 	if player is Node3D:
 		player.global_transform = get_spawn_transform(spawn_index)
+		player.reset_physics_interpolation()
 	
 	var is_local := peer_id == multiplayer.get_unique_id()
 	
@@ -636,122 +607,23 @@ func client_show_remote_laser(shooter_peer_id: int, origin: Vector3, end: Vector
 
 
 func create_remote_laser_beam(origin: Vector3, end: Vector3) -> void:
-	var direction := end - origin
-	var length := direction.length()
-	
-	if length < 0.05:
-		return
-	
-	var beam_root := Node3D.new()
-	beam_root.name = "RemoteRedLaserBeam"
-	
 	var laser_parent: Node = self
-	
+
 	if players_parent != null and players_parent.get_parent() != null:
 		laser_parent = players_parent.get_parent()
-	
-	laser_parent.add_child(beam_root)
-	
-	var glow_beam := create_remote_laser_part(
-		"RemoteRedLaserGlow",
-		remote_laser_glow_material,
-		remote_laser_radius * remote_laser_glow_radius_multiplier
-	)
-	
-	var core_beam := create_remote_laser_part(
-		"RemoteRedLaserCore",
+
+	BeamRenderer.spawn(
+		laser_parent,
+		origin,
+		end,
 		remote_laser_material,
-		remote_laser_radius
+		remote_laser_glow_material,
+		remote_laser_radius,
+		remote_laser_glow_radius_multiplier,
+		remote_laser_radial_segments,
+		remote_laser_lifetime,
+		"RemoteRedLaser"
 	)
-	
-	beam_root.add_child(glow_beam)
-	beam_root.add_child(core_beam)
-	
-	draw_remote_laser_part(
-		glow_beam,
-		glow_beam.mesh as CylinderMesh,
-		origin,
-		end,
-		remote_laser_radius * remote_laser_glow_radius_multiplier
-	)
-	
-	draw_remote_laser_part(
-		core_beam,
-		core_beam.mesh as CylinderMesh,
-		origin,
-		end,
-		remote_laser_radius
-	)
-	
-	var timer := get_tree().create_timer(remote_laser_lifetime)
-	timer.timeout.connect(
-		func() -> void:
-			if is_instance_valid(beam_root):
-				beam_root.queue_free()
-	)
-
-
-func create_remote_laser_part(
-	part_name: String,
-	material: StandardMaterial3D,
-	radius: float
-) -> MeshInstance3D:
-	var beam := MeshInstance3D.new()
-	beam.name = part_name
-	
-	var mesh := CylinderMesh.new()
-	mesh.top_radius = radius
-	mesh.bottom_radius = radius
-	mesh.height = 1.0
-	mesh.radial_segments = max(remote_laser_radial_segments, 8)
-	mesh.rings = 1
-	mesh.material = material
-	
-	beam.mesh = mesh
-	beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	
-	return beam
-
-
-func draw_remote_laser_part(
-	beam: MeshInstance3D,
-	mesh: CylinderMesh,
-	origin: Vector3,
-	end: Vector3,
-	radius: float
-) -> void:
-	if beam == null or mesh == null:
-		return
-	
-	var direction := end - origin
-	var length := direction.length()
-	
-	if length < 0.05:
-		beam.visible = false
-		return
-	
-	mesh.height = length
-	mesh.top_radius = radius
-	mesh.bottom_radius = radius
-	
-	var midpoint := origin + direction * 0.5
-	var beam_basis := make_y_aligned_basis(direction.normalized())
-	beam.global_transform = Transform3D(beam_basis, midpoint)
-	beam.visible = true
-
-
-func make_y_aligned_basis(y_axis: Vector3) -> Basis:
-	y_axis = y_axis.normalized()
-	
-	var helper := Vector3.UP
-	
-	if absf(y_axis.dot(helper)) > 0.95:
-		helper = Vector3.RIGHT
-	
-	var x_axis := helper.cross(y_axis).normalized()
-	var z_axis := x_axis.cross(y_axis).normalized()
-	
-	return Basis(x_axis, y_axis, z_axis).orthonormalized()
 
 
 func find_player_from_collider(collider: Object) -> Node:

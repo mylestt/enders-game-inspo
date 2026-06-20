@@ -8,8 +8,13 @@ enum MovementMode {
 
 @export var mouse_sensitivity: float = 0.0025
 @export var free_look_sensitivity: float = 0.0025
+@export var look_neck_limit_degrees: float = 70.0
+@export var body_follow_speed: float = 6.0
 
 @export var roll_torque: float = 10.0
+@export var roll_start_torque: float = 1.5
+@export var roll_ramp_time: float = 1.2
+@export var roll_settle_rate: float = 8.0
 @export var stabilize_strength: float = 7.5
 
 @export var surface_check_distance: float = 2.25
@@ -39,8 +44,8 @@ enum MovementMode {
 @export var grabbed_linear_damp: float = 12.0
 @export var grabbed_angular_damp: float = 4.0
 
-@export var surface_walk_speed: float = 10.0
-@export var surface_walk_sprint_multiplier: float = 1.75
+@export var surface_walk_speed: float = 3.0
+@export var surface_walk_sprint_multiplier: float = 1.6
 
 @export var surface_walk_use_auto_acceleration: bool = true
 @export var surface_walk_time_to_full_speed: float = 0.18
@@ -62,6 +67,7 @@ enum MovementMode {
 @export var surface_walk_edge_check_extra_distance: float = 0.35
 @export var surface_walk_edge_grace_time: float = 0.06
 @export var surface_walk_surface_normal_min_dot: float = 0.65
+@export var surface_walk_friction: float = 0.0
 
 var player: RigidBody3D
 var camera: Camera3D
@@ -72,6 +78,11 @@ var movement_mode: int = MovementMode.ZERO_G
 
 var mouse_motion: Vector2 = Vector2.ZERO
 var free_look_mouse_motion: Vector2 = Vector2.ZERO
+
+var roll_hold_time: float = 0.0
+
+var look_pitch: float = 0.0
+var view_initialized: bool = false
 
 var grabbing_wall: bool = false
 var grab_position: Vector3 = Vector3.ZERO
@@ -90,6 +101,7 @@ var surface_walk_transition_target_transform: Transform3D
 var camera_base_position: Vector3 = Vector3.ZERO
 var surface_walk_shake_timer: float = 0.0
 var surface_walk_no_surface_timer: float = 0.0
+var _pre_surface_walk_material: PhysicsMaterial = null
 
 var last_surface_result: Dictionary = {}
 var last_ctrl_push_result: Dictionary = {}
@@ -99,7 +111,7 @@ var last_limb_push_state: Dictionary = {}
 func setup(owner_player: RigidBody3D, owner_hud_controller: PlayerHUDController) -> void:
 	player = owner_player
 	hud_controller = owner_hud_controller
-	camera = player.get_node_or_null("Camera3D") as Camera3D
+	camera = player.get_node_or_null("CameraRig/Camera3D") as Camera3D
 	
 	if camera != null:
 		camera_base_position = camera.position
@@ -225,7 +237,7 @@ func physics_update(
 	
 	match movement_mode:
 		MovementMode.ZERO_G:
-			physics_update_zero_g(laser_aiming, free_look_active)
+			physics_update_zero_g(delta, laser_aiming, free_look_active)
 		
 		MovementMode.SURFACE_WALK:
 			physics_update_surface_walk(delta)
@@ -280,16 +292,17 @@ func integrate_surface_walk_forces() -> void:
 	player.angular_velocity = Vector3.ZERO
 
 
-func physics_update_zero_g(laser_aiming: bool, free_look_active: bool) -> void:
+func physics_update_zero_g(delta: float, laser_aiming: bool, free_look_active: bool) -> void:
 	if free_look_active:
 		handle_free_look_rotation()
 	else:
 		handle_body_mouse_rotation()
-	
+		update_body_follow(delta)
+
 	if not laser_aiming:
 		handle_jump_input()
 		handle_grab_input()
-		handle_roll_input()
+		handle_roll_input(delta)
 		handle_stabilize_input()
 	else:
 		release_grab()
@@ -346,7 +359,15 @@ func enter_surface_walk_mode(hit_position: Vector3, surface_normal: Vector3) -> 
 	release_grab()
 	
 	movement_mode = MovementMode.SURFACE_WALK
-	
+
+	# Surface-walk drives the body's velocity directly each frame; contact friction
+	# with the walked surface fights that and drags walk speed below target (sprint's
+	# higher accel hides it). Suspend friction while walking, restore it on exit.
+	_pre_surface_walk_material = player.physics_material_override
+	var walk_material := PhysicsMaterial.new()
+	walk_material.friction = surface_walk_friction
+	player.physics_material_override = walk_material
+
 	surface_walk_normal = surface_normal.normalized()
 	surface_walk_anchor_point = hit_position
 	surface_walk_no_surface_timer = 0.0
@@ -518,11 +539,15 @@ func exit_surface_walk_mode() -> void:
 		player.global_transform = Transform3D(camera_basis, player.global_position)
 		camera.rotation = Vector3.ZERO
 		camera.position = camera_base_position
+		player.reset_physics_interpolation()
 	
+	player.physics_material_override = _pre_surface_walk_material
+
 	movement_mode = MovementMode.ZERO_G
+	view_initialized = false   # re-sync head-up to the post-exit orientation
 	player.angular_velocity = Vector3.ZERO
 	player.sleeping = false
-	
+
 	print("Exited surface-walk mode.")
 
 
@@ -647,6 +672,9 @@ func handle_surface_walk_jump() -> void:
 	player.sleeping = false
 	player.apply_central_impulse(launch_direction * jump_force)
 
+	if player.has_method("suppress_launch_impact"):
+		player.call("suppress_launch_impact")
+
 
 func get_surface_walk_input_vector() -> Vector2:
 	var input_vector := Vector2.ZERO
@@ -698,10 +726,57 @@ func get_movement_mode() -> int:
 func handle_body_mouse_rotation() -> void:
 	if mouse_motion == Vector2.ZERO:
 		return
-	
-	player.rotate_object_local(Vector3.UP, -mouse_motion.x * mouse_sensitivity)
-	player.rotate_object_local(Vector3.RIGHT, -mouse_motion.y * mouse_sensitivity)
-	player.global_transform.basis = player.global_transform.basis.orthonormalized()
+
+	if not view_initialized:
+		look_pitch = 0.0
+		view_initialized = true
+
+	var basis := player.global_transform.basis.orthonormalized()
+
+	# Yaw around the body's OWN up axis, so a left flick always turns the view left no matter how
+	# the body is oriented. (Yawing around a fixed world-up inverts left/right when upside down.)
+	if mouse_motion.x != 0.0:
+		basis = basis.rotated(basis.y, -mouse_motion.x * mouse_sensitivity).orthonormalized()
+
+	# Pitch first articulates the neck (camera) up to a limit; the overflow past it tumbles the
+	# whole body around its right axis — a free 0g flip — so up/down never hits a hard stop.
+	if mouse_motion.y != 0.0:
+		var neck_limit := deg_to_rad(look_neck_limit_degrees)
+		var desired := look_pitch - mouse_motion.y * mouse_sensitivity
+		var overflow := 0.0
+
+		if desired > neck_limit:
+			overflow = desired - neck_limit
+			look_pitch = neck_limit
+		elif desired < -neck_limit:
+			overflow = desired + neck_limit
+			look_pitch = -neck_limit
+		else:
+			look_pitch = desired
+
+		if overflow != 0.0:
+			basis = basis.rotated(basis.x, overflow).orthonormalized()
+
+	player.global_transform.basis = basis
+
+	if camera != null:
+		camera.rotation = Vector3(look_pitch, 0.0, 0.0)
+
+
+# Each frame the body eases toward the head: the neck pitch bleeds into real body rotation so the
+# whole person follows where they look (feet trailing) instead of a swivelling head on a frozen
+# torso. The view doesn't move — the body gains exactly the pitch the neck gives up (same axis).
+func update_body_follow(delta: float) -> void:
+	if camera == null:
+		return
+
+	if absf(look_pitch) < 0.0001:
+		return
+
+	var follow := look_pitch * (1.0 - exp(-body_follow_speed * delta))
+	player.global_transform.basis = player.global_transform.basis.rotated(player.global_transform.basis.x, follow).orthonormalized()
+	look_pitch -= follow
+	camera.rotation = Vector3(look_pitch, 0.0, 0.0)
 
 
 func handle_free_look_rotation() -> void:
@@ -981,20 +1056,39 @@ func release_grab() -> void:
 	grabbing_wall = false
 
 
-func handle_roll_input() -> void:
+func handle_roll_input(delta: float) -> void:
 	var roll_input := 0.0
-	
+
 	if is_action_pressed_if_exists("roll_left"):
 		roll_input += 1.0
-	
+
 	if is_action_pressed_if_exists("roll_right"):
 		roll_input -= 1.0
-	
-	if roll_input == 0.0:
-		return
-	
+
+	# Roll around the camera's LOOK axis, not the body's forward. With the neck pitched the two
+	# differ, which made A/D bank inconsistently. Rolling the body around its own look direction
+	# leaves that direction fixed, so it's always a clean screen-roll: A banks right, D banks left.
 	var roll_axis := (-player.global_transform.basis.z).normalized()
-	player.apply_torque(roll_axis * roll_input * roll_torque)
+	if camera != null:
+		roll_axis = (-camera.global_transform.basis.z).normalized()
+
+	if roll_input == 0.0:
+		roll_hold_time = 0.0
+
+		# Constant decel on the roll axis: drift-angle ~ spin^2, so small turns settle
+		# almost instantly while fast spins still coast. Skip while stabilizing.
+		if not is_action_pressed_if_exists("stabilize_rotation"):
+			var roll_velocity := roll_axis * player.angular_velocity.dot(roll_axis)
+			var settled := roll_velocity.move_toward(Vector3.ZERO, roll_settle_rate * delta)
+			player.angular_velocity += settled - roll_velocity
+
+		return
+
+	roll_hold_time += delta
+	var ramp := clampf(roll_hold_time / maxf(roll_ramp_time, 0.001), 0.0, 1.0)
+	var torque := lerpf(roll_start_torque, roll_torque, ramp)
+
+	player.apply_torque(roll_axis * roll_input * torque)
 
 
 func handle_stabilize_input() -> void:

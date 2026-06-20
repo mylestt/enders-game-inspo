@@ -24,6 +24,8 @@ var impact_value_label: Label
 
 var current_jump_force: float = 10.0
 
+var _last_viewport_size: Vector2 = Vector2.ZERO
+
 var health_hits: int = 0
 var health_max_hits: int = 3
 var health_disabled: bool = false
@@ -40,7 +42,12 @@ func setup(owner_player: RigidBody3D) -> void:
 
 func _process(_delta: float) -> void:
 	update_fps_label()
-	layout_dynamic_controls()
+
+	var viewport_size := get_viewport().get_visible_rect().size
+
+	if viewport_size != _last_viewport_size:
+		_last_viewport_size = viewport_size
+		layout_dynamic_controls()
 
 
 func hide_old_push_charge_bar() -> void:
@@ -93,48 +100,24 @@ func build_top_left_stats() -> void:
 	stats_box.offset_bottom = 190.0
 	stats_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	stats_box.add_theme_constant_override("separation", 4)
-	
-	velocity_label = Label.new()
-	velocity_label.name = "VelocityLabel"
-	stats_box.add_child(velocity_label)
-	velocity_label.text = "Speed: 0.0"
-	velocity_label.add_theme_font_size_override("font_size", 18)
-	velocity_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.92))
-	velocity_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	
-	jump_force_label = Label.new()
-	jump_force_label.name = "JumpForceLabel"
-	stats_box.add_child(jump_force_label)
-	jump_force_label.text = "Jump Force: 10.0"
-	jump_force_label.add_theme_font_size_override("font_size", 18)
-	jump_force_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.92))
-	jump_force_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	
-	fps_label = Label.new()
-	fps_label.name = "FPSLabel"
-	stats_box.add_child(fps_label)
-	fps_label.text = "FPS: 0"
-	fps_label.add_theme_font_size_override("font_size", 16)
-	fps_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.85))
-	fps_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	
-	booster_label = Label.new()
-	booster_label.name = "BoosterLabel"
-	stats_box.add_child(booster_label)
-	booster_label.text = ""
-	booster_label.visible = false
-	booster_label.add_theme_font_size_override("font_size", 16)
-	booster_label.add_theme_color_override("font_color", Color(0.75, 0.9, 1.0, 0.88))
-	booster_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	
-	limb_push_label = Label.new()
-	limb_push_label.name = "LimbPushLabel"
-	stats_box.add_child(limb_push_label)
-	limb_push_label.text = ""
-	limb_push_label.visible = false
-	limb_push_label.add_theme_font_size_override("font_size", 16)
-	limb_push_label.add_theme_color_override("font_color", Color(0.75, 1.0, 0.75, 0.9))
-	limb_push_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	velocity_label = add_stat_label(stats_box, "VelocityLabel", "Speed: 0.0", 18, Color(1.0, 1.0, 1.0, 0.92), true)
+	jump_force_label = add_stat_label(stats_box, "JumpForceLabel", "Jump Force: 10.0", 18, Color(1.0, 1.0, 1.0, 0.92), true)
+	fps_label = add_stat_label(stats_box, "FPSLabel", "FPS: 0", 16, Color(1.0, 1.0, 1.0, 0.85), true)
+	booster_label = add_stat_label(stats_box, "BoosterLabel", "", 16, Color(0.75, 0.9, 1.0, 0.88), false)
+	limb_push_label = add_stat_label(stats_box, "LimbPushLabel", "", 16, Color(0.75, 1.0, 0.75, 0.9), false)
+
+
+func add_stat_label(parent: Node, label_name: String, text: String, font_size: int, color: Color, visible: bool) -> Label:
+	var label := Label.new()
+	label.name = label_name
+	parent.add_child(label)
+	label.text = text
+	label.visible = visible
+	label.add_theme_font_size_override("font_size", font_size)
+	label.add_theme_color_override("font_color", color)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return label
 
 
 func build_top_right_health() -> void:
@@ -292,8 +275,11 @@ func place_top_right_control(
 func update_fps_label() -> void:
 	if fps_label == null:
 		return
-	
-	fps_label.text = "FPS: " + str(Engine.get_frames_per_second())
+
+	var text := "FPS: " + str(Engine.get_frames_per_second())
+
+	if text != fps_label.text:
+		fps_label.text = text
 
 
 func update_velocity_indicator(velocity: Vector3) -> void:
