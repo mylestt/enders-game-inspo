@@ -62,8 +62,9 @@ target_position = Vector3(0, 0, -2)
 
 [node name="LaserController" type="Node3D" parent="Camera3D" unique_id=1410101425]
 script = ExtResource("6_nvl01")
-shot_laser_radial_segments = 600
-shot_laser_glow_color = Color(1, 1, 1, 0.21960784)
+muzzle_right_offset = 0.47
+muzzle_up_offset = 0.555
+shot_laser_glow_color = Color(1, 0.7345044, 0.6886292, 1)
 
 [node name="UI" type="CanvasLayer" parent="." unique_id=855663498]
 

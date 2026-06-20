@@ -26,6 +26,9 @@ const LASER_FIRE_COOLDOWN_BY_LEVEL := [0.20, 0.16, 0.12, 0.085]
 @export var shot_laser_core_color: Color = Color(1.0, 0.08, 0.02, 1.0)
 @export var shot_laser_glow_color: Color = Color(1.0, 0.02, 0.0, 0.22)
 
+@export var live_fire_beam_enabled: bool = true
+@export var live_fire_pulse_thickness_multiplier: float = 1.35
+
 @export var actual_dot_size: float = 8.0
 @export var desired_circle_size: float = 22.0
 @export var desired_circle_border_width: int = 2
@@ -53,9 +56,14 @@ var desired_aim_direction: Vector3 = Vector3.FORWARD
 var actual_aim_direction: Vector3 = Vector3.FORWARD
 
 var fire_cooldown_remaining: float = 0.0
+var shot_flash_timer: float = 0.0
 
 var shot_beam_core_material: StandardMaterial3D
 var shot_beam_glow_material: StandardMaterial3D
+
+var live_fire_beam_root: Node3D
+var live_fire_glow_beam: MeshInstance3D
+var live_fire_core_beam: MeshInstance3D
 
 var ui_layer: CanvasLayer
 var actual_laser_dot: Panel
@@ -80,6 +88,12 @@ func _ready() -> void:
 	
 	setup_materials()
 	setup_ui()
+	setup_live_fire_beam()
+
+
+func _exit_tree() -> void:
+	if is_instance_valid(live_fire_beam_root):
+		live_fire_beam_root.queue_free()
 
 
 func setup_materials() -> void:
@@ -115,6 +129,33 @@ func create_laser_material(
 		material.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	
 	return material
+
+
+func setup_live_fire_beam() -> void:
+	if not live_fire_beam_enabled:
+		return
+	
+	live_fire_beam_root = Node3D.new()
+	live_fire_beam_root.name = "LiveFireLaserBeam"
+	live_fire_beam_root.visible = false
+	
+	var beam_parent := get_laser_beam_parent()
+	beam_parent.add_child(live_fire_beam_root)
+	
+	live_fire_glow_beam = create_beam_part(
+		"LiveFireLaserGlow",
+		shot_beam_glow_material,
+		shot_laser_thickness * shot_laser_glow_thickness_multiplier
+	)
+	
+	live_fire_core_beam = create_beam_part(
+		"LiveFireLaserCore",
+		shot_beam_core_material,
+		shot_laser_thickness
+	)
+	
+	live_fire_beam_root.add_child(live_fire_glow_beam)
+	live_fire_beam_root.add_child(live_fire_core_beam)
 
 
 func setup_ui() -> void:
@@ -204,6 +245,7 @@ func _input(event: InputEvent) -> void:
 	if not input_enabled:
 		return
 	
+	# Surface-walk force aiming ignores RMB and ignores mouse reticle movement.
 	if force_aiming:
 		return
 	
@@ -219,12 +261,11 @@ func _input(event: InputEvent) -> void:
 
 
 func _process(delta: float) -> void:
-	if fire_cooldown_remaining > 0.0:
-		fire_cooldown_remaining -= delta
-		fire_cooldown_remaining = maxf(fire_cooldown_remaining, 0.0)
+	update_timers(delta)
 	
 	if not input_enabled:
 		stop_laser_aim()
+		hide_live_fire_beam()
 		return
 	
 	if force_aiming:
@@ -233,19 +274,41 @@ func _process(delta: float) -> void:
 		
 		update_surface_center_aim()
 		
-		if Input.is_action_pressed("laser_fire"):
+		var fire_held := is_fire_button_down()
+		
+		if fire_held:
 			try_fire_laser()
 		
+		update_live_fire_visual(fire_held)
 		return
 	
 	if is_aiming:
 		update_follow_aim_direction(delta)
 		update_follow_aim_visuals()
 		
-		if Input.is_action_pressed("laser_fire"):
+		var fire_held := is_fire_button_down()
+		
+		if fire_held:
 			try_fire_laser()
+		
+		update_live_fire_visual(fire_held)
 	else:
 		hide_aim_visuals()
+		hide_live_fire_beam()
+
+
+func update_timers(delta: float) -> void:
+	if fire_cooldown_remaining > 0.0:
+		fire_cooldown_remaining -= delta
+		fire_cooldown_remaining = maxf(fire_cooldown_remaining, 0.0)
+	
+	if shot_flash_timer > 0.0:
+		shot_flash_timer -= delta
+		shot_flash_timer = maxf(shot_flash_timer, 0.0)
+
+
+func is_fire_button_down() -> bool:
+	return InputMap.has_action("laser_fire") and Input.is_action_pressed("laser_fire")
 
 
 func start_laser_aim() -> void:
@@ -274,6 +337,7 @@ func stop_laser_aim() -> void:
 	
 	is_aiming = false
 	hide_aim_visuals()
+	hide_live_fire_beam()
 
 
 func hide_aim_visuals() -> void:
@@ -314,6 +378,8 @@ func clamp_screen_aim_position() -> void:
 	)
 
 
+# Normal zero-G aiming:
+# desired circle can move, actual laser dot follows behind.
 func update_follow_aim_direction(delta: float) -> void:
 	desired_aim_direction = camera.project_ray_normal(screen_aim_position).normalized()
 	
@@ -360,6 +426,8 @@ func update_actual_laser_dot() -> void:
 	actual_laser_dot.position = actual_screen_position - actual_laser_dot.size * 0.5
 
 
+# Surface-walk aiming:
+# one reticle, centered, no follow lag.
 func update_surface_center_aim() -> void:
 	if camera == null:
 		return
@@ -392,6 +460,9 @@ func update_surface_center_reticle() -> void:
 
 
 func get_laser_visual_end(origin: Vector3, direction: Vector3) -> Vector3:
+	if direction.length() < 0.01:
+		return origin
+	
 	var end := origin + direction.normalized() * laser_range
 	
 	var query := PhysicsRayQueryParameters3D.create(origin, end)
@@ -416,9 +487,62 @@ func try_fire_laser() -> void:
 	var origin := get_muzzle_position()
 	var end := get_laser_visual_end(origin, actual_aim_direction)
 	
-	create_shot_beam(origin, end)
+	# If live-fire visuals are disabled, fall back to old cooldown-spawned beam.
+	# If enabled, the persistent beam is already being updated every frame.
+	if not live_fire_beam_enabled:
+		create_shot_beam(origin, end)
 	
+	shot_flash_timer = shot_laser_lifetime
 	fire_cooldown_remaining = laser_fire_cooldown
+
+
+func update_live_fire_visual(should_show: bool) -> void:
+	if not live_fire_beam_enabled:
+		return
+	
+	if not should_show:
+		hide_live_fire_beam()
+		return
+	
+	if live_fire_beam_root == null or not is_instance_valid(live_fire_beam_root):
+		setup_live_fire_beam()
+	
+	if live_fire_beam_root == null:
+		return
+	
+	var origin := get_muzzle_position()
+	var end := get_laser_visual_end(origin, actual_aim_direction)
+	
+	var pulse_multiplier := 1.0
+	
+	if shot_flash_timer > 0.0:
+		pulse_multiplier = live_fire_pulse_thickness_multiplier
+	
+	var core_radius := shot_laser_thickness * pulse_multiplier
+	var glow_radius := shot_laser_thickness * shot_laser_glow_thickness_multiplier * pulse_multiplier
+	
+	draw_beam(
+		live_fire_glow_beam,
+		live_fire_glow_beam.mesh as CylinderMesh,
+		origin,
+		end,
+		glow_radius
+	)
+	
+	draw_beam(
+		live_fire_core_beam,
+		live_fire_core_beam.mesh as CylinderMesh,
+		origin,
+		end,
+		core_radius
+	)
+	
+	live_fire_beam_root.visible = true
+
+
+func hide_live_fire_beam() -> void:
+	if live_fire_beam_root != null and is_instance_valid(live_fire_beam_root):
+		live_fire_beam_root.visible = false
 
 
 func create_shot_beam(origin: Vector3, end: Vector3) -> void:
@@ -571,6 +695,7 @@ func set_input_enabled(value: bool) -> void:
 	if not input_enabled:
 		force_aiming = false
 		stop_laser_aim()
+		hide_live_fire_beam()
 
 
 func set_force_aiming(value: bool) -> void:
@@ -583,6 +708,7 @@ func set_force_aiming(value: bool) -> void:
 		if not Input.is_action_pressed("laser_aim"):
 			is_aiming = false
 			hide_aim_visuals()
+			hide_live_fire_beam()
 
 
 func is_laser_aiming() -> bool:
