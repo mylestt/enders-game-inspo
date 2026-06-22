@@ -573,7 +573,7 @@ func exit_surface_walk_mode() -> void:
 	surface_walk_no_surface_timer = 0.0
 	
 	if camera != null:
-		var camera_basis := camera.global_transform.basis.orthonormalized()
+		var camera_basis := get_control_look_basis()
 		player.global_transform = Transform3D(camera_basis, player.global_position)
 		camera.rotation = Vector3.ZERO
 		camera.position = camera_base_position
@@ -759,6 +759,21 @@ func is_surface_walk_active() -> bool:
 
 func get_movement_mode() -> int:
 	return movement_mode
+
+
+func get_control_look_basis() -> Basis:
+	var look_basis := player.global_transform.basis.orthonormalized()
+	
+	if camera != null:
+		look_basis = (look_basis * camera.transform.basis).orthonormalized()
+	
+	return look_basis
+
+
+func get_screen_roll_axis() -> Vector3:
+	# Positive rotation around camera-back moves screen-up toward screen-left,
+	# so `roll_left`/A can stay positive regardless of player orientation.
+	return get_control_look_basis().z.normalized()
 
 
 func handle_body_mouse_rotation() -> void:
@@ -1103,12 +1118,7 @@ func handle_roll_input(delta: float) -> void:
 	if is_action_pressed_if_exists("roll_right"):
 		roll_input -= 1.0
 
-	# Roll around the camera's LOOK axis, not the body's forward. With the neck pitched the two
-	# differ, which made A/D bank inconsistently. Rolling the body around its own look direction
-	# leaves that direction fixed, so it's always a clean screen-roll: A banks right, D banks left.
-	var roll_axis := (-player.global_transform.basis.z).normalized()
-	if camera != null:
-		roll_axis = (-camera.global_transform.basis.z).normalized()
+	var roll_axis := get_screen_roll_axis()
 
 	if roll_input == 0.0:
 		roll_hold_time = 0.0
@@ -1121,6 +1131,16 @@ func handle_roll_input(delta: float) -> void:
 			player.angular_velocity += settled - roll_velocity
 
 		return
+
+	var current_roll_speed := player.angular_velocity.dot(roll_axis)
+	
+	if current_roll_speed * roll_input < 0.0:
+		var opposing_roll_velocity := roll_axis * current_roll_speed
+		var settled := opposing_roll_velocity.move_toward(
+			Vector3.ZERO,
+			roll_settle_rate * delta * 2.0
+		)
+		player.angular_velocity += settled - opposing_roll_velocity
 
 	roll_hold_time += delta
 	var ramp := clampf(roll_hold_time / maxf(roll_ramp_time, 0.001), 0.0, 1.0)
