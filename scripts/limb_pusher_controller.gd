@@ -344,6 +344,115 @@ func check_limb_surface(
 	return best_result
 
 
+func get_feet_nearby_surface(
+	max_check_distance: float,
+	min_surface_normal_dot: float,
+	required_foot_count: int
+) -> Dictionary:
+	if player == null:
+		return {}
+	
+	var surface_normal := player.global_transform.basis.y.normalized()
+	
+	if surface_normal.length() < 0.01:
+		return {}
+	
+	max_check_distance = maxf(max_check_distance, 0.01)
+	min_surface_normal_dot = clampf(min_surface_normal_dot, -1.0, 1.0)
+	required_foot_count = clampi(required_foot_count, 1, 2)
+	
+	var foot_results: Array[Dictionary] = []
+	
+	for limb_definition in _limb_definitions:
+		var limb_id: String = limb_definition.get("id", "")
+		
+		if limb_id != LIMB_LEFT_FOOT and limb_id != LIMB_RIGHT_FOOT:
+			continue
+		
+		if is_limb_disabled(limb_id):
+			continue
+		
+		var result := get_foot_nearby_surface(
+			limb_id,
+			limb_definition,
+			surface_normal,
+			max_check_distance,
+			min_surface_normal_dot
+		)
+		
+		if not result.is_empty():
+			foot_results.append(result)
+	
+	if foot_results.size() < required_foot_count:
+		return {}
+	
+	return build_feet_nearby_surface_result(foot_results)
+
+
+func get_foot_nearby_surface(
+	limb_id: String,
+	limb_definition: Dictionary,
+	surface_normal: Vector3,
+	max_check_distance: float,
+	min_surface_normal_dot: float
+) -> Dictionary:
+	var foot_origin := get_limb_world_position(limb_id, limb_definition)
+	var ray_start := foot_origin + surface_normal * 0.05
+	var ray_end := foot_origin - surface_normal * max_check_distance
+	var ray_result := raycast_limb(ray_start, ray_end)
+	
+	if ray_result.is_empty():
+		return {}
+	
+	var hit_normal: Vector3 = ray_result.get("normal", Vector3.ZERO)
+	
+	if hit_normal.length() < 0.01:
+		return {}
+	
+	if hit_normal.normalized().dot(surface_normal) < min_surface_normal_dot:
+		return {}
+	
+	var hit_position: Vector3 = ray_result.get("position", foot_origin)
+	var hit_distance := foot_origin.distance_to(hit_position)
+	
+	if hit_distance > max_check_distance:
+		return {}
+	
+	var built_result := ray_result.duplicate()
+	built_result["limb_id"] = limb_id
+	built_result["limb_origin"] = foot_origin
+	built_result["hit_distance"] = hit_distance
+	
+	return built_result
+
+
+func build_feet_nearby_surface_result(foot_results: Array[Dictionary]) -> Dictionary:
+	var average_position := Vector3.ZERO
+	var average_normal := Vector3.ZERO
+	
+	for result in foot_results:
+		var hit_position: Vector3 = result.get("position", Vector3.ZERO)
+		var hit_normal: Vector3 = result.get("normal", Vector3.ZERO)
+		
+		average_position += hit_position
+		
+		if hit_normal.length() >= 0.01:
+			average_normal += hit_normal.normalized()
+	
+	average_position = average_position / float(foot_results.size())
+	
+	if average_normal.length() >= 0.01:
+		average_normal = average_normal.normalized()
+	
+	var built_result: Dictionary = foot_results[0].duplicate()
+	built_result["position"] = average_position
+	built_result["normal"] = average_normal
+	built_result["valid_foot_count"] = foot_results.size()
+	built_result["valid_foot_results"] = foot_results
+	
+	return built_result
+
+
 func build_limb_hit_result(
 	limb_definition: Dictionary,
 	ray_result: Dictionary,

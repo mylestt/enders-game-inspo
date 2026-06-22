@@ -35,27 +35,27 @@ Player RigidBody3D            player.gd          (gravity 0, damp set in _ready)
 | File | Role | Key API used by others |
 |---|---|---|
 | `scripts/player.gd` | Actor: input routing, per-frame orchestration, networking state, body-slam detect | `set_multiplayer_player`, `get_peer_id`, `receive_network_state`, `apply_network_*`, `server_add_hit`, `is_combat_disabled`, upgrade pass-throughs |
-| `scripts/player_movement_controller.gd` | Zero-G rotate/roll/stabilize, push-off (jump), grab, **surface-walk** mode | `physics_update`, `integrate_forces`, `is_surface_walk_active`, `apply_grab_distance_upgrade` |
-| `scripts/limb_pusher_controller.gd` | 4 limb raycasts (arms/feet) → push dir + angle-scaled force mult | `update_limb_push_state` → state Dict |
+| `scripts/player_movement_controller.gd` | Zero-G rotate/roll/stabilize, push-off (jump), grab, feet-gated **surface-walk / ground-lock** mode | `physics_update`, `integrate_forces`, `is_surface_walk_active`, `can_ground_lock`, `apply_grab_distance_upgrade` |
+| `scripts/limb_pusher_controller.gd` | 4 limb raycasts (arms/feet) → push dir + angle-scaled force mult; feet raycasts for ground-lock entry | `update_limb_push_state` → state Dict; `get_feet_nearby_surface` |
 | `scripts/laser_controller.gd` (on Camera3D) | Screen-space aim reticle w/ follow-lag; local beam VFX; upgrade levels | `get_actual_laser_direction`, `get_laser_*`, `set_input_enabled`, `set_force_aiming`, `apply_laser_*_upgrade` |
 | `scripts/suit_boosters.gd` | W/S thrust w/ fuel (purchasable) | `physics_update`, `purchase_suit_boosters`, fuel getters |
 | `scripts/impact_controller.gd` | Collision impact → stun/immobilize + cam shake + HUD flash | `integrate_forces`, `is_immobilized`, `ignore_impacts_briefly` |
 | `health_controller.gd` | Hit count, combat-disabled at `max_hits`(5) | `add_hit`, `set_network_state`, `is_combat_disabled` |
-| `scripts/player_hud.gd` | Builds all HUD UI in code (CanvasLayer 60): stats, reticle, health, push arrow, impact, limb/booster | `update_*` setters |
+| `scripts/player_hud.gd` | Builds all HUD UI in code (CanvasLayer 60): stats, reticle, health, push arrow, impact, limb/booster, ground-lock prompt | `update_*` setters |
 | `scripts/camera_rig.gd` | Procedural cam offsets between body & Camera3D (bob/dip/sway/tilt) | `kick_landing`; reads `is_surface_walk_mode_active` |
 | `scenes/network_manager.gd` | ENet host/join, server-auth spawn + state relay + laser/slam validation + damage sync | RPCs + `submit_local_player_state`, `request_laser_fire`, `request_body_slam` |
 | `scripts/buy_menu.gd` | Procedural shop (CanvasLayer 100); applies upgrades via duck-typed calls | `set_local_player` |
 | `scripts/main.gd` | World root; F1 debug top-down camera toggle | — |
 
 ## Per-frame flow (`player.gd`, local player only)
-`_physics_process`: impact tick → laser-cooldown tick → compute lock flags (`is_input_locked`, `buy_menu_open`, surface-walk, free-look) → enable/force laser → query movement (surface-in-range, grabbing, ctrl-push prediction) → HUD updates → `movement.physics_update` → `boosters.physics_update`+UI → `handle_network_laser_fire` → `update_network_send`.
+`_physics_process`: impact tick → laser-cooldown tick → compute lock flags (`is_input_locked`, `buy_menu_open`, surface-walk, free-look) → enable/force laser → query movement (surface-in-range, grabbing, ctrl-push prediction) → HUD updates → `movement.physics_update` (caches limb push + ground-lock readiness, updates limb/ground-lock HUD) → `boosters.physics_update`+UI → `handle_network_laser_fire` → `update_network_send`.
 `_integrate_forces`: impact (skip in surface-walk) → movement integrate → `detect_player_body_slam_contacts`.
 Remote player: `_physics_process` only runs `update_remote_network_state` (lerp toward target; server snaps).
 Input: `_input` routes mouse-motion to movement (body vs free-look), toggles laser on free-look, captures/releases mouse. Movement `_input` handles scroll = jump-force tune.
 
 ## Movement (two modes, `MovementMode` enum)
 - **ZERO_G**: mouse rotates body; A/D roll (eased ramp `roll_start→roll_torque` over `roll_ramp_time`); Shift stabilize; F grab (cancels velocity, only under `max_grab_speed`); **Space push** off surface in front (Ctrl = push backward). Push prefers `LimbPushController` result (per-limb raycast, force scaled by surface-normal alignment), else legacy center-raycast fallback. Reaction impulse applied to hit RigidBodies.
-- **SURFACE_WALK** (toggle **C**): snaps body to a surface (smooth transition + entry shake), FPS-style mouse-look (yaw around normal, clamped pitch on camera), WASD tangent move w/ snap-to-surface, sprint = Shift; **Space launches off**. Edge/normal checks auto-exit. While active: lasers force-centered, zero-G push/boost/free-look disabled.
+- **SURFACE_WALK / ground-lock** (toggle **C**): C toggles on/off. Entry no longer depends on where the camera is looking; it requires both feet to be within `surface_walk_foot_check_distance` of a nearby surface found by `LimbPushController.get_feet_nearby_surface`. The entry surface uses the averaged foot hit position/normal, then snaps body to that surface (smooth transition + entry shake). FPS-style mouse-look (yaw around normal, clamped pitch on camera), WASD tangent move w/ snap-to-surface, sprint = Shift; **Space launches off**. Edge/normal checks auto-exit. While active: lasers force-centered, zero-G push/boost/free-look disabled. HUD shows `Ground Lock: READY (C)` when feet can lock and `Ground Lock: ON (C)` while active.
 
 ## Combat
 - **Laser**: not hitscan-instant-aim — `screen_aim_position` moves with mouse while RMB held; `actual_aim_direction` lerps toward it at `laser_follow_speed` (upgradable). Two reticles: desired circle + actual dot. LMB fires; shooter sees instant local beam (`create_shot_beam`), cooldown `laser_fire_cooldown` (upgradable). Real hit-reg is server-side.
@@ -74,10 +74,11 @@ Each peer is `multiplayer_authority` over its own Player. Local = `freeze=false`
 In-memory `cash` (start 200000 in scene). `shop_items` array: WEAPON (laser_follow 1-3, laser_attack_speed 1-3), SUIT (grab_distance 1-3), SPECIAL (suit_boosters). Tiered: must own prev level. Applies via duck-typed calls to player/laser. No networking/persistence — purely local.
 
 ## Input map
-`push`=Space · `ctrl_push`=Ctrl · `roll_left`/`walk_left`=A · `roll_right`/`walk_right`=D · `stabilize_rotation`=Shift · `grab`=F · `laser_aim`=RMB · `laser_fire`=LMB · `toggle_buy_menu`=B · `booster_forward`=W · `booster_backward`=S · `free_look`=Alt · `toggle_surface_walk`=C · `host_game`=H · `join_game`=J · `debug_camera`=F1. (No `sprint` action despite code probing it — surface sprint falls back to Shift.)
+`push`=Space · `ctrl_push`=Ctrl · `roll_left`/`walk_left`=A · `roll_right`/`walk_right`=D · `stabilize_rotation`=Shift · `grab`=F · `laser_aim`=RMB · `laser_fire`=LMB · `toggle_buy_menu`=B · `booster_forward`=W · `booster_backward`=S · `free_look`=Alt · `toggle_surface_walk`=C (ground-lock toggle; feet-gated entry) · `host_game`=H · `join_game`=J · `debug_camera`=F1. (No `sprint` action despite code probing it — surface sprint falls back to Shift.)
 
 ## Cruft & gotchas
 - **Limb-controller name mismatch**: scene node is `LimbPusherController`; movement code searches for `LimbPushController` (no path export set) → fails to find scene node, **auto-creates a second** controller with fallback-offset markers. Scene's 4 Marker3D (all at origin) are orphaned. Functional (fallbacks are the real offsets) but the scene node is dead weight.
+- **Ground-lock uses active limb controller**: feet-gated entry uses `LimbPushController.get_feet_nearby_surface`, so with the current name mismatch it uses the auto-created controller and fallback foot offsets, not the `LimbPusherController` scene markers.
 - **Scene vs script defaults**: `player.tscn` sets RigidBody `angular_damp=0.5`, but `player.gd _ready` overwrites with `angular_damp_value=1.2`. Export/`_ready` wins over scene inspector value.
 - **Dead files**: `scripts/main_script.gd` (AI-assistant plugin stub, unreferenced), `scenes/plugin_ui.tscn` (points to nonexistent `addons/ai_assistant_plugin/...`), `_parse_check.gd.uid` (orphan, no `.gd`). `characters/Y Bot.fbx` + `scenes/y_bot.tscn` unused by main. `scenes/arena.tscn` & `arena_2.tscn` are alternates (main uses `arena3.tscn`). `*.tscn*.tmp` = Godot temp saves. `UI/HUD/PushChargeBar` + HUD `update_push_charge*` = legacy no-ops.
 - `sprint` action absent from InputMap (surface-walk sprint uses Shift via `stabilize_rotation` fallback).

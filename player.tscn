@@ -8,7 +8,7 @@
 [ext_resource type="Script" uid="uid://qkmgx5x0dg60" path="res://health_controller.gd" id="6_1jxqw"]
 [ext_resource type="Script" uid="uid://cukcin0no108i" path="res://scripts/laser_controller.gd" id="6_nvl01"]
 [ext_resource type="Script" uid="uid://dn41x1pava75b" path="res://scripts/limb_pusher_controller.gd" id="7_dw050"]
-[ext_resource type="Script" path="res://scripts/camera_rig.gd" id="8_camrig"]
+[ext_resource type="Script" uid="uid://dat7xmhcpfn2o" path="res://scripts/camera_rig.gd" id="8_camrig"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_g2els"]
 
@@ -21,6 +21,7 @@ script = ExtResource("1_2hs0m")
 
 [node name="MovementController" type="Node" parent="." unique_id=294609104]
 script = ExtResource("2_1jxqw")
+surface_walk_foot_check_distance = 1.8
 
 [node name="SuitBoosters" type="Node" parent="." unique_id=2126445202]
 script = ExtResource("3_dw050")

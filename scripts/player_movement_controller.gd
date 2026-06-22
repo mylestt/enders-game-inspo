@@ -67,6 +67,9 @@ enum MovementMode {
 @export var surface_walk_edge_check_extra_distance: float = 0.35
 @export var surface_walk_edge_grace_time: float = 0.06
 @export var surface_walk_surface_normal_min_dot: float = 0.65
+@export var surface_walk_foot_check_distance: float = 0.4
+@export var surface_walk_required_foot_count: int = 2
+@export var surface_walk_foot_surface_normal_min_dot: float = 0.75
 @export var surface_walk_friction: float = 0.0
 
 var player: RigidBody3D
@@ -106,6 +109,7 @@ var _pre_surface_walk_material: PhysicsMaterial = null
 var last_surface_result: Dictionary = {}
 var last_ctrl_push_result: Dictionary = {}
 var last_limb_push_state: Dictionary = {}
+var last_surface_walk_entry_result: Dictionary = {}
 
 
 func setup(owner_player: RigidBody3D, owner_hud_controller: PlayerHUDController) -> void:
@@ -225,6 +229,7 @@ func physics_update(
 	update_surface_cache()
 	update_ctrl_push_cache()
 	update_limb_push_cache()
+	update_surface_walk_entry_cache()
 	update_hud_values(laser_aiming, input_locked)
 	handle_movement_mode_toggle(input_locked)
 	update_surface_walk_entry_shake(delta)
@@ -262,6 +267,13 @@ func update_hud_values(laser_aiming: bool, input_locked: bool) -> void:
 		
 		if hud_controller.has_method("update_limb_push_indicator"):
 			hud_controller.update_limb_push_indicator(should_show_limb_ui, last_limb_push_state)
+		
+		if hud_controller.has_method("update_ground_lock_indicator"):
+			hud_controller.update_ground_lock_indicator(
+				not input_locked and (movement_mode == MovementMode.SURFACE_WALK or not laser_aiming),
+				can_ground_lock(),
+				movement_mode == MovementMode.SURFACE_WALK
+			)
 
 
 func handle_input_locked_state() -> void:
@@ -339,10 +351,13 @@ func handle_movement_mode_toggle(input_locked: bool) -> void:
 
 
 func try_enter_surface_walk_mode() -> void:
-	var result := get_normal_push_result()
+	var result := last_surface_walk_entry_result
 	
 	if result.is_empty():
-		print("Surface walk failed: no surface in front of player.")
+		result = get_feet_surface_walk_result()
+	
+	if result.is_empty():
+		print("Surface walk failed: feet are not close enough to a surface.")
 		return
 	
 	var surface_normal: Vector3 = result.get("normal", Vector3.ZERO)
@@ -353,6 +368,29 @@ func try_enter_surface_walk_mode() -> void:
 		return
 	
 	enter_surface_walk_mode(hit_position, surface_normal.normalized())
+
+
+func get_feet_surface_walk_result() -> Dictionary:
+	if limb_push_controller == null:
+		return {}
+	
+	return limb_push_controller.get_feet_nearby_surface(
+		surface_walk_foot_check_distance,
+		surface_walk_foot_surface_normal_min_dot,
+		surface_walk_required_foot_count
+	)
+
+
+func update_surface_walk_entry_cache() -> void:
+	if movement_mode != MovementMode.ZERO_G:
+		last_surface_walk_entry_result = {}
+		return
+	
+	last_surface_walk_entry_result = get_feet_surface_walk_result()
+
+
+func can_ground_lock() -> bool:
+	return movement_mode == MovementMode.ZERO_G and not last_surface_walk_entry_result.is_empty()
 
 
 func enter_surface_walk_mode(hit_position: Vector3, surface_normal: Vector3) -> void:

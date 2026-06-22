@@ -1,0 +1,5 @@
+res://scripts/player_movement_controller.gd
+res://scripts/limb_pusher_controller.gd
+res://scripts/player_hud.gd
+res://scenes/main.tscn
+res://player.tscn
