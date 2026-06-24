@@ -219,7 +219,6 @@ func clear_free_look_mouse_motion() -> void:
 
 func physics_update(
 	delta: float,
-	laser_aiming: bool,
 	free_look_active: bool,
 	input_locked: bool
 ) -> void:
@@ -230,7 +229,7 @@ func physics_update(
 	update_ctrl_push_cache()
 	update_limb_push_cache()
 	update_surface_walk_entry_cache()
-	update_hud_values(laser_aiming, input_locked)
+	update_hud_values(input_locked)
 	handle_movement_mode_toggle(input_locked)
 	update_surface_walk_entry_shake(delta)
 	
@@ -242,7 +241,7 @@ func physics_update(
 	
 	match movement_mode:
 		MovementMode.ZERO_G:
-			physics_update_zero_g(delta, laser_aiming, free_look_active)
+			physics_update_zero_g(delta, free_look_active)
 		
 		MovementMode.SURFACE_WALK:
 			physics_update_surface_walk(delta)
@@ -251,14 +250,13 @@ func physics_update(
 	clear_free_look_mouse_motion()
 
 
-func update_hud_values(laser_aiming: bool, input_locked: bool) -> void:
+func update_hud_values(input_locked: bool) -> void:
 	if hud_controller != null:
 		hud_controller.update_jump_force(jump_force)
 		
 		var should_show_limb_ui := (
 			show_limb_push_debug_ui
 			and movement_mode == MovementMode.ZERO_G
-			and not laser_aiming
 			and not input_locked
 		)
 		
@@ -270,7 +268,7 @@ func update_hud_values(laser_aiming: bool, input_locked: bool) -> void:
 		
 		if hud_controller.has_method("update_ground_lock_indicator"):
 			hud_controller.update_ground_lock_indicator(
-				not input_locked and (movement_mode == MovementMode.SURFACE_WALK or not laser_aiming),
+				not input_locked,
 				can_ground_lock(),
 				movement_mode == MovementMode.SURFACE_WALK
 			)
@@ -304,20 +302,17 @@ func integrate_surface_walk_forces() -> void:
 	player.angular_velocity = Vector3.ZERO
 
 
-func physics_update_zero_g(delta: float, laser_aiming: bool, free_look_active: bool) -> void:
+func physics_update_zero_g(delta: float, free_look_active: bool) -> void:
 	if free_look_active:
 		handle_free_look_rotation()
 	else:
 		handle_body_mouse_rotation()
 		update_body_follow(delta)
 
-	if not laser_aiming:
-		handle_jump_input()
-		handle_grab_input()
-		handle_roll_input(delta)
-		handle_stabilize_input()
-	else:
-		release_grab()
+	handle_jump_input()
+	handle_grab_input()
+	handle_roll_input(delta)
+	handle_stabilize_input()
 
 
 func physics_update_surface_walk(delta: float) -> void:
@@ -755,10 +750,6 @@ func get_fallback_surface_forward(up: Vector3) -> Vector3:
 
 func is_surface_walk_active() -> bool:
 	return movement_mode == MovementMode.SURFACE_WALK
-
-
-func get_movement_mode() -> int:
-	return movement_mode
 
 
 func get_control_look_basis() -> Basis:
@@ -1215,7 +1206,6 @@ func is_grabbing_wall() -> bool:
 func should_show_ctrl_push_arrow(
 	buy_menu_open: bool,
 	free_look_active: bool,
-	laser_aiming: bool,
 	input_locked: bool
 ) -> bool:
 	if movement_mode == MovementMode.SURFACE_WALK:
@@ -1225,9 +1215,6 @@ func should_show_ctrl_push_arrow(
 		return false
 	
 	if free_look_active:
-		return false
-	
-	if laser_aiming:
 		return false
 	
 	if input_locked:
@@ -1265,10 +1252,6 @@ func get_current_grab_distance() -> float:
 			return grab_distance_level_3
 	
 	return grab_distance_base
-
-
-func get_last_limb_push_state() -> Dictionary:
-	return last_limb_push_state
 
 
 func set_limb_disabled(limb_id: String, disabled: bool) -> void:

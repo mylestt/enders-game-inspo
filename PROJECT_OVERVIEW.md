@@ -146,7 +146,7 @@ The original design document gave each player one weapon:
 
 - Laser gun.
 
-That is no longer the intended final direction. The current code may still contain a laser gun, but future design should treat that as prototype or legacy implementation detail. The intended direction is normal FPS weapons, probably supported by a buy menu.
+That is no longer the intended final direction. The laser prototype has been removed from the active code path; the intended direction is normal FPS weapons supported by a buy menu and an expandable weapon inventory.
 
 Players are robots rather than people in suits. When limbs are hit, they should be damaged, destroyed, or shot off rather than merely disabled as suit sections.
 

@@ -10,34 +10,22 @@ extends Node
 @export var max_players: int = 2
 @export var default_join_ip: String = "127.0.0.1"
 
-@export var max_laser_hit_range: float = 120.0
-@export var server_laser_cooldown: float = 0.2
-@export var min_server_laser_cooldown: float = 0.08
-@export var max_laser_origin_distance_from_player: float = 4.0
-
-@export var remote_laser_lifetime: float = 0.09
-@export var remote_laser_radius: float = 0.045
-@export var remote_laser_radial_segments: int = 32
-@export var remote_laser_glow_radius_multiplier: float = 3.0
-@export var remote_laser_core_emission_energy: float = 8.0
-@export var remote_laser_glow_emission_energy: float = 3.0
-@export var remote_laser_core_color: Color = Color(1.0, 0.08, 0.02, 1.0)
-@export var remote_laser_glow_color: Color = Color(1.0, 0.02, 0.0, 0.22)
-
 @export var body_slam_server_cooldown: float = 0.2
 @export var body_slam_validation_distance: float = 4.0
 @export var body_slam_max_impulse: float = 18.0
+@export var weapon_hit_damage: float = 15.0
+@export var weapon_hit_max_range: float = 280.0
+@export var weapon_hit_origin_validation_distance: float = 8.0
+@export var weapon_hit_target_validation_radius: float = 4.0
+@export var weapon_hit_server_cooldown: float = 0.02
 
 var players_parent: Node3D
 var buy_menu: Node
 
 var players_by_peer_id: Dictionary = {}
 var spawn_index_by_peer_id: Dictionary = {}
-var last_fire_time_by_peer_id: Dictionary = {}
 var last_body_slam_time_by_pair: Dictionary = {}
-
-var remote_laser_material: StandardMaterial3D
-var remote_laser_glow_material: StandardMaterial3D
+var last_weapon_hit_time_by_pair: Dictionary = {}
 
 
 func _ready() -> void:
@@ -50,17 +38,59 @@ func _ready() -> void:
 	if buy_menu == null:
 		push_warning("NetworkManager could not find BuyMenu. Assign Buy Menu Path if you want multiplayer buy menu support.")
 	
-	setup_remote_laser_material()
 	connect_multiplayer_signals()
-	
+
 	print("NetworkManager ready.")
 	print("Current multiplayer peer active: ", has_active_multiplayer_peer())
 	print("Press H to host, J to join.")
 
+	apply_launch_mode()
 
-func setup_remote_laser_material() -> void:
-	remote_laser_material = BeamRenderer.make_material(remote_laser_core_color, remote_laser_core_emission_energy, false)
-	remote_laser_glow_material = BeamRenderer.make_material(remote_laser_glow_color, remote_laser_glow_emission_energy, true)
+
+# Acts on the choice the start menu recorded. Test Arena auto-hosts a solo session
+# (same path as pressing H); Dedicated Server hosts headless with no local player.
+func apply_launch_mode() -> void:
+	match GameLaunch.consume_mode():
+		GameLaunch.Mode.TEST_ARENA:
+			print("Launch mode: Test Arena — auto-hosting solo.")
+			call_deferred("host_game")
+
+		GameLaunch.Mode.DEDICATED_SERVER:
+			var server_port := int(GameLaunch.read_cmdline_value("--port", str(port)))
+			print("Launch mode: Dedicated server on port ", server_port, ".")
+			call_deferred("start_dedicated_server", server_port)
+
+		GameLaunch.Mode.MULTIPLAYER:
+			var ip := GameLaunch.join_ip
+
+			if ip == "":
+				ip = default_join_ip
+
+			print("Launch mode: Join ", ip, ":", port, ".")
+			call_deferred("join_game", ip)
+
+
+# Hosts an authoritative server with NO local player. Peer 1 (this process) only runs
+# the simulation and RoundManager; all real players are remote clients that join.
+func start_dedicated_server(server_port: int = port) -> void:
+	if has_active_multiplayer_peer():
+		print("Already connected to a multiplayer peer; not starting dedicated server.")
+		return
+
+	clear_runtime_multiplayer_state()
+
+	var peer := ENetMultiplayerPeer.new()
+	# Server is not a player, so all max_players slots are available to clients.
+	var error := peer.create_server(server_port, max_players)
+
+	if error != OK:
+		push_error("Failed to start dedicated server. Error: " + str(error))
+		multiplayer.multiplayer_peer = null
+		return
+
+	multiplayer.multiplayer_peer = peer
+
+	print("Dedicated server listening on port ", server_port, ". Waiting for clients.")
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -88,7 +118,6 @@ func _unhandled_input(event: InputEvent) -> void:
 	if wants_join:
 		join_game(default_join_ip)
 		get_viewport().set_input_as_handled()
-		return
 
 
 func connect_multiplayer_signals() -> void:
@@ -183,8 +212,8 @@ func clear_runtime_multiplayer_state() -> void:
 	
 	players_by_peer_id.clear()
 	spawn_index_by_peer_id.clear()
-	last_fire_time_by_peer_id.clear()
 	last_body_slam_time_by_pair.clear()
+	last_weapon_hit_time_by_pair.clear()
 	
 	var peer := multiplayer.multiplayer_peer
 	
@@ -233,7 +262,6 @@ func _on_peer_disconnected(peer_id: int) -> void:
 		return
 	
 	spawn_index_by_peer_id.erase(peer_id)
-	last_fire_time_by_peer_id.erase(peer_id)
 	clear_body_slam_pairs_for_peer(peer_id)
 	rpc("client_remove_player", peer_id)
 
@@ -249,6 +277,17 @@ func clear_body_slam_pairs_for_peer(peer_id: int) -> void:
 	
 	for key in keys_to_remove:
 		last_body_slam_time_by_pair.erase(key)
+	
+	keys_to_remove.clear()
+	
+	for key in last_weapon_hit_time_by_pair.keys():
+		var key_text := String(key)
+		
+		if key_text.begins_with(str(peer_id) + "_") or key_text.ends_with("_" + str(peer_id)):
+			keys_to_remove.append(key)
+	
+	for key in keys_to_remove:
+		last_weapon_hit_time_by_pair.erase(key)
 
 
 @rpc("authority", "call_local", "reliable")
@@ -446,9 +485,6 @@ func server_process_body_slam(
 	if attacker == null or target == null:
 		return
 	
-	if attacker.has_method("is_combat_disabled") and attacker.call("is_combat_disabled"):
-		return
-	
 	if attacker.global_position.distance_to(target.global_position) > body_slam_validation_distance:
 		return
 	
@@ -488,212 +524,152 @@ func client_apply_body_slam_impulse(
 		target.call("apply_network_body_slam_impulse", impulse, contact_position)
 
 
-func request_laser_fire(
-	shooter_peer_id: int,
-	origin: Vector3,
-	direction: Vector3,
-	requested_range: float,
-	requested_cooldown: float
+func request_weapon_hit(
+	attacker_peer_id: int,
+	target_peer_id: int,
+	_damage: float,
+	hit_position: Vector3,
+	shot_origin: Vector3,
+	shot_direction: Vector3
 ) -> void:
 	if multiplayer.multiplayer_peer == null:
 		return
 	
 	if multiplayer.is_server():
-		server_process_laser_fire(shooter_peer_id, origin, direction, requested_range, requested_cooldown)
+		server_process_weapon_hit(
+			attacker_peer_id,
+			target_peer_id,
+			hit_position,
+			shot_origin,
+			shot_direction
+		)
 	else:
-		rpc_id(1, "server_request_laser_fire", origin, direction, requested_range, requested_cooldown)
+		rpc_id(
+			1,
+			"server_request_weapon_hit",
+			target_peer_id,
+			hit_position,
+			shot_origin,
+			shot_direction
+		)
 
 
 @rpc("any_peer", "reliable")
-func server_request_laser_fire(
-	origin: Vector3,
-	direction: Vector3,
-	requested_range: float,
-	requested_cooldown: float
+func server_request_weapon_hit(
+	target_peer_id: int,
+	hit_position: Vector3,
+	shot_origin: Vector3,
+	shot_direction: Vector3
 ) -> void:
 	if not multiplayer.is_server():
 		return
 	
-	var shooter_peer_id := multiplayer.get_remote_sender_id()
-	server_process_laser_fire(shooter_peer_id, origin, direction, requested_range, requested_cooldown)
-
-
-func server_process_laser_fire(
-	shooter_peer_id: int,
-	origin: Vector3,
-	direction: Vector3,
-	requested_range: float,
-	requested_cooldown: float
-) -> void:
-	if not multiplayer.is_server():
-		return
-	
-	if direction.length() < 0.01:
-		return
-	
-	if not players_by_peer_id.has(shooter_peer_id):
-		return
-	
-	var shooter: Node3D = players_by_peer_id[shooter_peer_id] as Node3D
-	
-	if shooter == null:
-		return
-	
-	if shooter.has_method("is_combat_disabled") and shooter.call("is_combat_disabled"):
-		return
-	
-	var allowed_cooldown := clampf(requested_cooldown, min_server_laser_cooldown, server_laser_cooldown)
-	var current_time := Time.get_ticks_msec() / 1000.0
-	
-	if last_fire_time_by_peer_id.has(shooter_peer_id):
-		var last_fire_time: float = last_fire_time_by_peer_id[shooter_peer_id]
-		
-		if current_time - last_fire_time < allowed_cooldown:
-			return
-	
-	last_fire_time_by_peer_id[shooter_peer_id] = current_time
-	
-	var shooter_position: Vector3 = shooter.global_position
-	
-	if origin.distance_to(shooter_position) > max_laser_origin_distance_from_player:
-		origin = shooter_position
-	
-	var laser_range := clampf(requested_range, 1.0, max_laser_hit_range)
-	var end := origin + direction.normalized() * laser_range
-	
-	var query := PhysicsRayQueryParameters3D.create(origin, end)
-	query.collide_with_bodies = true
-	query.collide_with_areas = true
-	
-	if shooter is CollisionObject3D:
-		query.exclude = [shooter.get_rid()]
-	
-	var result: Dictionary = shooter.get_world_3d().direct_space_state.intersect_ray(query)
-	var visual_end := end
-	
-	if not result.is_empty():
-		visual_end = result["position"]
-	
-	rpc("client_show_remote_laser", shooter_peer_id, origin, visual_end)
-	
-	if result.is_empty():
-		return
-	
-	var collider = result["collider"]
-	var hit_player = find_player_from_collider(collider)
-	
-	if hit_player == null:
-		return
-	
-	if not hit_player.has_method("get_peer_id"):
-		return
-	
-	var hit_peer_id: int = int(hit_player.call("get_peer_id"))
-	
-	if hit_peer_id == shooter_peer_id:
-		return
-	
-	server_damage_player(hit_peer_id, 1)
-	
-	print("Server hit reg: ", shooter_peer_id, " hit ", hit_peer_id)
-
-
-@rpc("authority", "call_local", "unreliable")
-func client_show_remote_laser(shooter_peer_id: int, origin: Vector3, end: Vector3) -> void:
-	if shooter_peer_id == multiplayer.get_unique_id():
-		return
-	
-	create_remote_laser_beam(origin, end)
-
-
-func create_remote_laser_beam(origin: Vector3, end: Vector3) -> void:
-	var laser_parent: Node = self
-
-	if players_parent != null and players_parent.get_parent() != null:
-		laser_parent = players_parent.get_parent()
-
-	BeamRenderer.spawn(
-		laser_parent,
-		origin,
-		end,
-		remote_laser_material,
-		remote_laser_glow_material,
-		remote_laser_radius,
-		remote_laser_glow_radius_multiplier,
-		remote_laser_radial_segments,
-		remote_laser_lifetime,
-		"RemoteRedLaser"
+	var attacker_peer_id := multiplayer.get_remote_sender_id()
+	server_process_weapon_hit(
+		attacker_peer_id,
+		target_peer_id,
+		hit_position,
+		shot_origin,
+		shot_direction
 	)
 
 
-func find_player_from_collider(collider: Object) -> Node:
-	if collider == null:
-		return null
-	
-	var current = collider
-	
-	while current != null:
-		if current is Node and current.has_method("get_peer_id"):
-			return current
-		
-		if current is Node:
-			current = current.get_parent()
-		else:
-			break
-	
-	return null
-
-
-func server_damage_player(target_peer_id: int, hit_amount: int) -> void:
+func server_process_weapon_hit(
+	attacker_peer_id: int,
+	target_peer_id: int,
+	hit_position: Vector3,
+	shot_origin: Vector3,
+	shot_direction: Vector3
+) -> void:
 	if not multiplayer.is_server():
+		return
+	
+	if attacker_peer_id == target_peer_id:
+		return
+	
+	if not players_by_peer_id.has(attacker_peer_id):
 		return
 	
 	if not players_by_peer_id.has(target_peer_id):
 		return
 	
-	var target = players_by_peer_id[target_peer_id]
+	var attacker := players_by_peer_id[attacker_peer_id] as Node3D
+	var target := players_by_peer_id[target_peer_id] as Node3D
 	
-	if target == null:
+	if attacker == null or target == null:
 		return
 	
-	if target.has_method("server_add_hit"):
-		target.call("server_add_hit", hit_amount)
+	if not can_process_weapon_hit_pair(attacker_peer_id, target_peer_id):
+		return
 	
-	var hits := 0
-	var disabled := false
+	if not is_weapon_hit_plausible(attacker, target, hit_position, shot_origin, shot_direction):
+		return
 	
-	if target.has_method("get_hit_count"):
-		hits = int(target.call("get_hit_count"))
+	mark_weapon_hit_pair(attacker_peer_id, target_peer_id)
+	rpc("client_apply_weapon_damage", target_peer_id, attacker_peer_id, weapon_hit_damage)
 	
-	if target.has_method("is_combat_disabled"):
-		disabled = bool(target.call("is_combat_disabled"))
+	print(
+		"Weapon hit: ",
+		attacker_peer_id,
+		" -> ",
+		target_peer_id,
+		" damage ",
+		weapon_hit_damage
+	)
+
+
+func can_process_weapon_hit_pair(attacker_peer_id: int, target_peer_id: int) -> bool:
+	var pair_key := str(attacker_peer_id) + "_" + str(target_peer_id)
+	var current_time := Time.get_ticks_msec() / 1000.0
 	
-	rpc("client_set_player_damage_state", target_peer_id, hits, disabled)
+	if last_weapon_hit_time_by_pair.has(pair_key):
+		var last_time: float = last_weapon_hit_time_by_pair[pair_key]
+		
+		if current_time - last_time < weapon_hit_server_cooldown:
+			return false
+	
+	return true
+
+
+func mark_weapon_hit_pair(attacker_peer_id: int, target_peer_id: int) -> void:
+	var pair_key := str(attacker_peer_id) + "_" + str(target_peer_id)
+	last_weapon_hit_time_by_pair[pair_key] = Time.get_ticks_msec() / 1000.0
+
+
+func is_weapon_hit_plausible(
+	attacker: Node3D,
+	target: Node3D,
+	hit_position: Vector3,
+	shot_origin: Vector3,
+	shot_direction: Vector3
+) -> bool:
+	if shot_direction.length() < 0.001:
+		return false
+	
+	if shot_origin.distance_to(attacker.global_position) > weapon_hit_origin_validation_distance:
+		return false
+	
+	if shot_origin.distance_to(hit_position) > weapon_hit_max_range:
+		return false
+	
+	var target_distance_to_hit := target.global_position.distance_to(hit_position)
+	
+	if target_distance_to_hit > weapon_hit_target_validation_radius:
+		return false
+	
+	return true
 
 
 @rpc("authority", "call_local", "reliable")
-func client_set_player_damage_state(
+func client_apply_weapon_damage(
 	target_peer_id: int,
-	hits: int,
-	disabled: bool
+	attacker_peer_id: int,
+	damage: float
 ) -> void:
 	if not players_by_peer_id.has(target_peer_id):
 		return
 	
 	var target = players_by_peer_id[target_peer_id]
 	
-	if target != null and target.has_method("apply_network_damage_state"):
-		target.call("apply_network_damage_state", hits, disabled)
-
-
-func reset_all_players() -> void:
-	if not multiplayer.is_server():
-		return
-	
-	for peer_id in players_by_peer_id.keys():
-		var player = players_by_peer_id[peer_id]
-		
-		if player != null and player.has_method("server_reset_health"):
-			player.call("server_reset_health")
-		
-		rpc("client_set_player_damage_state", int(peer_id), 0, false)
+	if target != null and target.has_method("apply_weapon_damage"):
+		target.call("apply_weapon_damage", damage, attacker_peer_id)

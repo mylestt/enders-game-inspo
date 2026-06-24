@@ -5,10 +5,11 @@
 [ext_resource type="Script" uid="uid://5vqw82uk1ke2" path="res://scripts/suit_boosters.gd" id="3_dw050"]
 [ext_resource type="Script" uid="uid://bge7xypp4io2b" path="res://scripts/player_hud.gd" id="4_b26j0"]
 [ext_resource type="Script" uid="uid://dfkxxwjk335qe" path="res://scripts/impact_controller.gd" id="5_n7ghd"]
-[ext_resource type="Script" uid="uid://qkmgx5x0dg60" path="res://health_controller.gd" id="6_1jxqw"]
-[ext_resource type="Script" uid="uid://cukcin0no108i" path="res://scripts/laser_controller.gd" id="6_nvl01"]
+[ext_resource type="Script" uid="uid://bvli02if67of" path="res://scripts/weapons/weapon_inventory.gd" id="6_wpninv"]
 [ext_resource type="Script" uid="uid://dn41x1pava75b" path="res://scripts/limb_pusher_controller.gd" id="7_dw050"]
 [ext_resource type="Script" uid="uid://dat7xmhcpfn2o" path="res://scripts/camera_rig.gd" id="8_camrig"]
+[ext_resource type="Script" uid="uid://cxe5nvye4p0xy" path="res://scripts/weapons/weapon_spring_sway.gd" id="9_spring_sway"]
+[ext_resource type="Script" uid="uid://dh4s3fn0hi3ur" path="res://scripts/player_health.gd" id="10_health"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_g2els"]
 
@@ -30,6 +31,9 @@ script = ExtResource("3_dw050")
 [node name="PlayerHUD" type="Node" parent="." unique_id=1281244747]
 script = ExtResource("4_b26j0")
 
+[node name="PlayerHealth" type="Node" parent="." unique_id=1457164787]
+script = ExtResource("10_health")
+
 [node name="ImpactController" type="Node" parent="." unique_id=1918983541]
 script = ExtResource("5_n7ghd")
 heavy_impact_speed = 10.0
@@ -41,8 +45,8 @@ max_shake_duration = 0.5
 impact_angular_velocity_multiplier = 0.35
 max_contacts_reported = 3
 
-[node name="HealthController" type="Node" parent="." unique_id=1599111364]
-script = ExtResource("6_1jxqw")
+[node name="WeaponInventory" type="Node" parent="." unique_id=1599111364]
+script = ExtResource("6_wpninv")
 
 [node name="LimbPusherController" type="Node3D" parent="." unique_id=775985500]
 script = ExtResource("7_dw050")
@@ -60,32 +64,14 @@ script = ExtResource("8_camrig")
 
 [node name="Camera3D" type="Camera3D" parent="CameraRig" unique_id=782354166]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5235928, -0.18032497)
-fov = 100.0
+fov = 90.0
 
-[node name="RayCast3D" type="RayCast3D" parent="CameraRig/Camera3D" unique_id=1981107262]
-target_position = Vector3(0, 0, -2)
-
-[node name="LaserController" type="Node3D" parent="CameraRig/Camera3D" unique_id=1410101425]
-script = ExtResource("6_nvl01")
-muzzle_right_offset = 0.47
-muzzle_up_offset = 0.555
-shot_laser_glow_color = Color(1, 0.7345044, 0.6886292, 1)
-
-[node name="UI" type="CanvasLayer" parent="." unique_id=855663498]
-
-[node name="HUD" type="Control" parent="UI" unique_id=790996739]
-layout_mode = 3
-anchors_preset = 0
-offset_right = 40.0
-offset_bottom = 40.0
-
-[node name="PushChargeBar" type="ProgressBar" parent="UI/HUD" unique_id=668526330]
-visible = false
-layout_mode = 0
-offset_right = 4.0
-offset_bottom = 27.0
-rounded = true
-show_percentage = false
+[node name="WeaponMount" type="Node3D" parent="CameraRig/Camera3D" unique_id=1410101425]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.23349482, -0.5073596, 0.08871758)
+script = ExtResource("9_spring_sway")
+rotation_sway_strength = Vector3(0.09, 0.12, 0.05)
+max_rotation_degrees = Vector3(12, 14, 6)
+rotation_stiffness = 83.425
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=157974881]
 shape = SubResource("CapsuleShape3D_g2els")

@@ -1,7 +1,6 @@
 extends CanvasLayer
 
 @export var player_path: NodePath
-@export var laser_controller_relative_path: NodePath = NodePath("CameraRig/Camera3D/LaserController")
 
 @export var starting_cash: int = 20000
 @export var pause_game_when_open: bool = false
@@ -15,7 +14,6 @@ var cash: int = 0
 var menu_open: bool = false
 
 var local_player: Node
-var laser_controller: Node
 
 var menu_root: Control
 var dim_background: ColorRect
@@ -29,58 +27,13 @@ var item_price_labels_by_id: Dictionary = {}
 
 var shop_items: Array[Dictionary] = [
 	{
-		"id": "laser_follow_1",
-		"section": "WEAPON UPGRADES",
-		"group": "laser_follow",
+		"id": "minigun",
+		"section": "WEAPONS",
+		"group": "minigun",
 		"level": 1,
-		"title": "Laser Tracking I",
-		"description": "Laser follows your reticle faster.",
-		"price": 1000
-	},
-	{
-		"id": "laser_follow_2",
-		"section": "WEAPON UPGRADES",
-		"group": "laser_follow",
-		"level": 2,
-		"title": "Laser Tracking II",
-		"description": "Further increases laser follow speed.",
-		"price": 2750
-	},
-	{
-		"id": "laser_follow_3",
-		"section": "WEAPON UPGRADES",
-		"group": "laser_follow",
-		"level": 3,
-		"title": "Laser Tracking III",
-		"description": "Maximum laser follow speed.",
-		"price": 5000
-	},
-	{
-		"id": "laser_attack_speed_1",
-		"section": "WEAPON UPGRADES",
-		"group": "laser_attack_speed",
-		"level": 1,
-		"title": "Laser Attack Speed I",
-		"description": "Reduces laser fire cooldown.",
-		"price": 1500
-	},
-	{
-		"id": "laser_attack_speed_2",
-		"section": "WEAPON UPGRADES",
-		"group": "laser_attack_speed",
-		"level": 2,
-		"title": "Laser Attack Speed II",
-		"description": "Further reduces laser fire cooldown.",
-		"price": 3500
-	},
-	{
-		"id": "laser_attack_speed_3",
-		"section": "WEAPON UPGRADES",
-		"group": "laser_attack_speed",
-		"level": 3,
-		"title": "Laser Attack Speed III",
-		"description": "Maximum laser fire rate.",
-		"price": 6000
+		"title": "Minigun",
+		"description": "Equips a wind-up minigun. Hold left mouse to spin it up.",
+		"price": 8000
 	},
 	{
 		"id": "grab_distance_1",
@@ -157,11 +110,6 @@ func _unhandled_input(event: InputEvent) -> void:
 func set_local_player(player_node: Node) -> void:
 	local_player = player_node
 	
-	if local_player != null:
-		laser_controller = local_player.get_node_or_null(laser_controller_relative_path)
-	else:
-		laser_controller = null
-	
 	update_menu_state()
 	
 	print("BuyMenu local player set to: ", local_player)
@@ -177,10 +125,6 @@ func toggle_menu() -> void:
 func open_menu() -> void:
 	if local_player == null:
 		push_warning("BuyMenu has no local player assigned yet.")
-		return
-	
-	if local_player.has_method("is_combat_disabled") and local_player.call("is_combat_disabled"):
-		print("Cannot open buy menu while disabled.")
 		return
 	
 	menu_open = true
@@ -508,8 +452,8 @@ func get_item_state(item: Dictionary) -> Dictionary:
 			"button_text": "MISSING"
 		}
 	
-	if group == "suit_boosters":
-		if get_has_suit_boosters():
+	if group == "suit_boosters" or group == "minigun":
+		if get_has_single_purchase_item(group):
 			return {
 				"can_buy": false,
 				"button_text": "OWNED"
@@ -552,14 +496,12 @@ func get_item_state(item: Dictionary) -> Dictionary:
 	}
 
 
-# Maps a shop group to its target node, the method that applies the upgrade,
+# Maps a shop group to its target node, the method that applies the purchase/upgrade,
 # the method that reads its current level, and whether apply takes a level arg.
 func get_group_handler(group: String) -> Dictionary:
 	match group:
-		"laser_follow":
-			return {"obj": laser_controller, "apply": "apply_laser_follow_speed_upgrade", "level": "get_laser_follow_speed_level", "takes_level": true}
-		"laser_attack_speed":
-			return {"obj": laser_controller, "apply": "apply_laser_attack_speed_upgrade", "level": "get_laser_attack_speed_level", "takes_level": true}
+		"minigun":
+			return {"obj": local_player, "apply": "purchase_minigun", "level": "", "takes_level": false}
 		"grab_distance":
 			return {"obj": local_player, "apply": "apply_grab_distance_upgrade", "level": "get_grab_distance_level", "takes_level": true}
 		"suit_boosters":
@@ -583,10 +525,15 @@ func apply_item_upgrade(item: Dictionary) -> bool:
 	if obj == null or not obj.has_method(apply_method):
 		return false
 
+	var result
+	
 	if bool(handler.get("takes_level", false)):
-		obj.call(apply_method, int(item["level"]))
+		result = obj.call(apply_method, int(item["level"]))
 	else:
-		obj.call(apply_method)
+		result = obj.call(apply_method)
+	
+	if typeof(result) == TYPE_BOOL:
+		return bool(result)
 
 	return true
 
@@ -605,6 +552,23 @@ func get_current_group_level(group: String) -> int:
 func get_has_suit_boosters() -> bool:
 	if local_player != null and local_player.has_method("get_has_suit_boosters"):
 		return bool(local_player.call("get_has_suit_boosters"))
+	
+	return false
+
+
+func get_has_minigun() -> bool:
+	if local_player != null and local_player.has_method("get_has_minigun"):
+		return bool(local_player.call("get_has_minigun"))
+	
+	return false
+
+
+func get_has_single_purchase_item(group: String) -> bool:
+	match group:
+		"suit_boosters":
+			return get_has_suit_boosters()
+		"minigun":
+			return get_has_minigun()
 	
 	return false
 

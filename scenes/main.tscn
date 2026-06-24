@@ -5,6 +5,7 @@
 [ext_resource type="PackedScene" uid="uid://dj1f3wqa24gt8" path="res://scenes/arena3.tscn" id="4_tbgi4"]
 [ext_resource type="Script" uid="uid://ss27ux00fv75" path="res://scenes/network_manager.gd" id="4_tefeu"]
 [ext_resource type="PackedScene" uid="uid://f2mjnk65ihmq" path="res://player.tscn" id="5_tbgi4"]
+[ext_resource type="Script" path="res://scripts/round_manager.gd" id="6_round"]
 
 [node name="World Node3D" type="Node3D" unique_id=878825741 node_paths=PackedStringArray("debug_camera")]
 script = ExtResource("1_sugp2")
@@ -61,7 +62,12 @@ spawn_a_path = NodePath("../SpawnPointA")
 spawn_b_path = NodePath("../SpawnPointB")
 buy_menu_path = NodePath("../BuyMenu")
 
+[node name="RoundManager" type="Node" parent="."]
+script = ExtResource("6_round")
+
 [node name="Players" type="Node3D" parent="." unique_id=1147699974]
+
+[node name="WeaponEffects" type="Node3D" parent="." unique_id=292710641]
 
 [node name="SpawnPointA" type="Marker3D" parent="." unique_id=301948085]
 transform = Transform3D(-0.9967494, 0, -0.08056427, 0, 1, 0, 0.08056427, 0, -0.9967494, -56.358753, 21.572994, -54.54737)

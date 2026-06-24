@@ -7,16 +7,15 @@ var hud_layer: CanvasLayer
 var root: Control
 
 var velocity_label: Label
+var health_label: Label
 var jump_force_label: Label
 var fps_label: Label
 var booster_label: Label
 var ground_lock_label: Label
 var limb_push_label: Label
 
-var health_panel: PanelContainer
-var health_label: Label
-
 var reticle: Panel
+var weapon_aim_reticle: Panel
 var ctrl_push_arrow: Label
 
 var impact_flash: ColorRect
@@ -26,19 +25,17 @@ var impact_value_label: Label
 var current_jump_force: float = 10.0
 
 var _last_viewport_size: Vector2 = Vector2.ZERO
+var weapon_aim_reticle_screen_position: Vector2 = Vector2.ZERO
+var has_weapon_aim_reticle_screen_position: bool = false
 
-var health_hits: int = 0
-var health_max_hits: int = 3
-var health_disabled: bool = false
+@export var weapon_aim_reticle_follow_speed: float = 45.0
 
 
 func setup(owner_player: RigidBody3D) -> void:
 	player = owner_player
-	
-	hide_old_push_charge_bar()
+
 	build_hud()
 	update_jump_force(current_jump_force)
-	update_health_status(health_hits, health_max_hits, health_disabled)
 
 
 func _process(_delta: float) -> void:
@@ -49,16 +46,6 @@ func _process(_delta: float) -> void:
 	if viewport_size != _last_viewport_size:
 		_last_viewport_size = viewport_size
 		layout_dynamic_controls()
-
-
-func hide_old_push_charge_bar() -> void:
-	if player == null:
-		return
-	
-	var old_bar := player.get_node_or_null("UI/HUD/PushChargeBar")
-	
-	if old_bar is Control:
-		old_bar.visible = false
 
 
 func build_hud() -> void:
@@ -81,8 +68,8 @@ func build_hud() -> void:
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	
 	build_top_left_stats()
-	build_top_right_health()
 	build_center_reticle()
+	build_weapon_aim_reticle()
 	build_ctrl_push_arrow()
 	build_impact_effects()
 
@@ -102,6 +89,7 @@ func build_top_left_stats() -> void:
 	stats_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	stats_box.add_theme_constant_override("separation", 4)
 
+	health_label = add_stat_label(stats_box, "HealthLabel", "Health: 100 / 100", 18, Color(0.95, 1.0, 0.95, 0.94), true)
 	velocity_label = add_stat_label(stats_box, "VelocityLabel", "Speed: 0.0", 18, Color(1.0, 1.0, 1.0, 0.92), true)
 	jump_force_label = add_stat_label(stats_box, "JumpForceLabel", "Jump Force: 10.0", 18, Color(1.0, 1.0, 1.0, 0.92), true)
 	fps_label = add_stat_label(stats_box, "FPSLabel", "FPS: 0", 16, Color(1.0, 1.0, 1.0, 0.85), true)
@@ -122,42 +110,6 @@ func add_stat_label(parent: Node, label_name: String, text: String, font_size: i
 	return label
 
 
-func build_top_right_health() -> void:
-	health_panel = PanelContainer.new()
-	health_panel.name = "HealthPanel"
-	root.add_child(health_panel)
-	health_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	
-	var panel_style := StyleBoxFlat.new()
-	panel_style.bg_color = Color(0.0, 0.0, 0.0, 0.42)
-	panel_style.border_color = Color(1.0, 1.0, 1.0, 0.22)
-	panel_style.border_width_left = 1
-	panel_style.border_width_right = 1
-	panel_style.border_width_top = 1
-	panel_style.border_width_bottom = 1
-	panel_style.corner_radius_top_left = 8
-	panel_style.corner_radius_top_right = 8
-	panel_style.corner_radius_bottom_left = 8
-	panel_style.corner_radius_bottom_right = 8
-	panel_style.content_margin_left = 12
-	panel_style.content_margin_right = 12
-	panel_style.content_margin_top = 8
-	panel_style.content_margin_bottom = 8
-	health_panel.add_theme_stylebox_override("panel", panel_style)
-	
-	health_label = Label.new()
-	health_label.name = "HealthLabel"
-	health_panel.add_child(health_label)
-	health_label.text = "Hits: 0 / 3"
-	health_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	health_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	health_label.add_theme_font_size_override("font_size", 18)
-	health_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.92))
-	health_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	
-	place_top_right_control(health_panel, 230.0, 58.0, 16.0)
-
-
 func build_center_reticle() -> void:
 	reticle = Panel.new()
 	reticle.name = "InteractionReticle"
@@ -175,6 +127,29 @@ func build_center_reticle() -> void:
 	reticle.add_theme_stylebox_override("panel", style)
 	
 	center_control(reticle)
+
+
+func build_weapon_aim_reticle() -> void:
+	weapon_aim_reticle = Panel.new()
+	weapon_aim_reticle.name = "WeaponAimReticle"
+	root.add_child(weapon_aim_reticle)
+	weapon_aim_reticle.size = Vector2(24.0, 24.0)
+	weapon_aim_reticle.pivot_offset = weapon_aim_reticle.size * 0.5
+	weapon_aim_reticle.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	weapon_aim_reticle.visible = false
+	
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.0, 0.0, 0.0, 0.0)
+	style.border_color = Color(0.85, 0.95, 1.0, 0.82)
+	style.border_width_left = 2
+	style.border_width_right = 2
+	style.border_width_top = 2
+	style.border_width_bottom = 2
+	style.corner_radius_top_left = 100
+	style.corner_radius_top_right = 100
+	style.corner_radius_bottom_left = 100
+	style.corner_radius_bottom_right = 100
+	weapon_aim_reticle.add_theme_stylebox_override("panel", style)
 
 
 func build_ctrl_push_arrow() -> void:
@@ -238,13 +213,13 @@ func layout_dynamic_controls() -> void:
 	if reticle != null:
 		center_control(reticle)
 	
+	if weapon_aim_reticle != null and not weapon_aim_reticle.visible:
+		center_control(weapon_aim_reticle)
+	
 	if impact_value_label != null:
 		center_control(impact_value_label)
 		impact_value_label.position.y += 120.0
 	
-	if health_panel != null:
-		place_top_right_control(health_panel, 230.0, 58.0, 16.0)
-
 
 func center_control(control: Control) -> void:
 	if control == null:
@@ -252,26 +227,6 @@ func center_control(control: Control) -> void:
 	
 	var viewport_size := get_viewport().get_visible_rect().size
 	control.position = viewport_size * 0.5 - control.size * 0.5
-
-
-func place_top_right_control(
-	control: Control,
-	width: float,
-	height: float,
-	margin: float
-) -> void:
-	if control == null:
-		return
-	
-	control.anchor_left = 1.0
-	control.anchor_top = 0.0
-	control.anchor_right = 1.0
-	control.anchor_bottom = 0.0
-	
-	control.offset_left = -width - margin
-	control.offset_top = margin
-	control.offset_right = -margin
-	control.offset_bottom = margin + height
 
 
 func update_fps_label() -> void:
@@ -299,6 +254,30 @@ func update_velocity_indicator(velocity: Vector3) -> void:
 	)
 
 
+func update_health(current_health: float, max_health: float) -> void:
+	if health_label == null:
+		return
+	
+	health_label.text = (
+		"Health: " +
+		str(roundi(current_health)) +
+		" / " +
+		str(roundi(max_health))
+	)
+	
+	var ratio := 0.0
+	
+	if max_health > 0.0:
+		ratio = clampf(current_health / max_health, 0.0, 1.0)
+	
+	if ratio <= 0.25:
+		health_label.add_theme_color_override("font_color", Color(1.0, 0.35, 0.3, 0.96))
+	elif ratio <= 0.55:
+		health_label.add_theme_color_override("font_color", Color(1.0, 0.82, 0.35, 0.96))
+	else:
+		health_label.add_theme_color_override("font_color", Color(0.95, 1.0, 0.95, 0.94))
+
+
 func update_jump_force(force: float) -> void:
 	current_jump_force = force
 	
@@ -306,24 +285,6 @@ func update_jump_force(force: float) -> void:
 		return
 	
 	jump_force_label.text = "Jump Force: " + format_number(force)
-
-
-func update_health_status(hits: int, max_hits: int, disabled: bool) -> void:
-	health_hits = hits
-	health_max_hits = max_hits
-	health_disabled = disabled
-	
-	if health_panel == null or health_label == null:
-		return
-	
-	health_panel.visible = true
-	
-	if disabled:
-		health_label.text = "DISABLED\nHits: " + str(hits) + " / " + str(max_hits)
-		health_label.add_theme_color_override("font_color", Color(1.0, 0.35, 0.35, 0.96))
-	else:
-		health_label.text = "Hits: " + str(hits) + " / " + str(max_hits)
-		health_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.92))
 
 
 func update_limb_push_indicator(should_show: bool, limb_state: Dictionary) -> void:
@@ -388,7 +349,6 @@ func update_ground_lock_indicator(
 func update_reticle(
 	_delta: float,
 	surface_in_range: bool,
-	laser_aiming: bool,
 	hidden: bool
 ) -> void:
 	if reticle == null:
@@ -396,7 +356,7 @@ func update_reticle(
 	
 	center_control(reticle)
 	
-	if hidden or laser_aiming:
+	if hidden:
 		reticle.visible = false
 		return
 	
@@ -445,6 +405,38 @@ func update_push_direction_arrow(
 	ctrl_push_arrow.visible = true
 
 
+func update_weapon_aim_reticle(
+	delta: float,
+	camera: Camera3D,
+	world_point: Vector3,
+	hidden: bool
+) -> void:
+	if weapon_aim_reticle == null:
+		return
+	
+	if hidden or camera == null:
+		weapon_aim_reticle.visible = false
+		has_weapon_aim_reticle_screen_position = false
+		return
+	
+	if camera.is_position_behind(world_point):
+		weapon_aim_reticle.visible = false
+		has_weapon_aim_reticle_screen_position = false
+		return
+	
+	var screen_position := camera.unproject_position(world_point)
+	
+	if not has_weapon_aim_reticle_screen_position:
+		weapon_aim_reticle_screen_position = screen_position
+		has_weapon_aim_reticle_screen_position = true
+	else:
+		var follow_weight := 1.0 - exp(-weapon_aim_reticle_follow_speed * delta)
+		weapon_aim_reticle_screen_position = weapon_aim_reticle_screen_position.lerp(screen_position, follow_weight)
+	
+	weapon_aim_reticle.position = weapon_aim_reticle_screen_position - weapon_aim_reticle.size * 0.5
+	weapon_aim_reticle.visible = true
+
+
 func update_booster_ui(
 	has_boosters: bool,
 	current_fuel: float,
@@ -490,15 +482,6 @@ func update_impact_effect(
 			)
 		else:
 			impact_value_label.visible = false
-
-
-# Compatibility no-ops for old charge-bar code.
-func update_push_charge(_current_charge: float, _max_charge: float = 1.0, _is_charging: bool = false) -> void:
-	pass
-
-
-func update_push_charge_bar(_current_charge: float, _max_charge: float = 1.0, _is_charging: bool = false) -> void:
-	pass
 
 
 func format_number(value: float) -> String:

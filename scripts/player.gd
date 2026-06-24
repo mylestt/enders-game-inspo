@@ -11,13 +11,13 @@ extends RigidBody3D
 
 @export var network_send_rate: float = 30.0
 @export var network_interpolation_speed: float = 18.0
-@export var fallback_laser_range: float = 120.0
-@export var fallback_laser_fire_cooldown: float = 0.2
 
 @export var body_slam_min_speed: float = 3.0
 @export var body_slam_impulse_multiplier: float = 1.35
 @export var body_slam_max_impulse: float = 18.0
 @export var body_slam_local_cooldown: float = 0.2
+@export var weapon_aim_reticle_range: float = 200.0
+@export var weapon_aim_reticle_use_world_raycast: bool = false
 
 var buy_menu_open: bool = false
 
@@ -26,7 +26,6 @@ var is_local_player: bool = false
 var network_manager: Node
 
 var network_send_timer: float = 0.0
-var network_laser_cooldown_remaining: float = 0.0
 
 var network_target_transform: Transform3D
 var network_target_linear_velocity: Vector3 = Vector3.ZERO
@@ -39,9 +38,9 @@ var last_body_slam_time_by_target_peer_id: Dictionary = {}
 @onready var movement_controller: PlayerMovementController = get_node_or_null("MovementController") as PlayerMovementController
 @onready var suit_boosters: SuitBoosterController = get_node_or_null("SuitBoosters") as SuitBoosterController
 @onready var hud_controller: PlayerHUDController = get_node_or_null("PlayerHUD") as PlayerHUDController
+@onready var health: PlayerHealth = get_node_or_null("PlayerHealth") as PlayerHealth
 @onready var impact_controller: PlayerImpactController = get_node_or_null("ImpactController") as PlayerImpactController
-@onready var health_controller: PlayerHealthController = get_node_or_null("HealthController") as PlayerHealthController
-@onready var laser_controller: LaserController = get_node_or_null("CameraRig/Camera3D/LaserController") as LaserController
+@onready var weapon_inventory: WeaponInventory = get_node_or_null("WeaponInventory") as WeaponInventory
 
 
 func _ready() -> void:
@@ -65,6 +64,12 @@ func _ready() -> void:
 	else:
 		hud_controller.setup(self)
 	
+	if health == null:
+		push_warning("PlayerHealth node is missing; weapon damage will be ignored.")
+	else:
+		health.setup()
+		connect_health_signals()
+	
 	if movement_controller == null:
 		push_error("MovementController node is missing or does not have player_movement_controller.gd attached.")
 	else:
@@ -80,10 +85,10 @@ func _ready() -> void:
 	else:
 		impact_controller.setup(self, hud_controller)
 	
-	if health_controller == null:
-		push_error("HealthController node is missing or does not have player_health_controller.gd attached.")
+	if weapon_inventory == null:
+		push_warning("WeaponInventory node is missing; weapon purchases will be unavailable.")
 	else:
-		health_controller.setup(self)
+		weapon_inventory.setup(self)
 
 
 func set_multiplayer_player(new_peer_id: int, new_is_local_player: bool, new_network_manager: Node) -> void:
@@ -97,20 +102,11 @@ func set_multiplayer_player(new_peer_id: int, new_is_local_player: bool, new_net
 	
 	if camera != null:
 		camera.current = is_local_player
-	
-	var ui := get_node_or_null("UI")
-	
-	if ui != null:
-		ui.visible = is_local_player
-	
-	if health_controller != null:
-		health_controller.set_is_local_player(is_local_player)
-	
-	if laser_controller != null:
-		laser_controller.set_input_enabled(is_local_player)
-	
+
 	if is_local_player:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		if health != null:
+			_on_health_changed(health.current_health, health.max_health)
 	
 	print("Player ", peer_id, " multiplayer setup. Local: ", is_local_player)
 
@@ -131,13 +127,6 @@ func _input(event: InputEvent) -> void:
 	
 	var surface_walk_active := is_surface_walk_mode_active()
 	
-	if not surface_walk_active:
-		if event.is_action_pressed("free_look"):
-			set_laser_input_enabled(false)
-		
-		if event.is_action_released("free_look"):
-			set_laser_input_enabled(not buy_menu_open and not is_input_locked())
-	
 	if event is InputEventMouseMotion:
 		if movement_controller != null:
 			if is_free_look_active() and not surface_walk_active:
@@ -152,6 +141,13 @@ func _input(event: InputEvent) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
+func _process(delta: float) -> void:
+	if not is_local_player:
+		return
+	
+	update_weapon_aim_reticle(delta)
+
+
 func _physics_process(delta: float) -> void:
 	if not is_local_player:
 		update_remote_network_state(delta)
@@ -159,10 +155,6 @@ func _physics_process(delta: float) -> void:
 	
 	if impact_controller != null:
 		impact_controller.physics_update(delta)
-	
-	if network_laser_cooldown_remaining > 0.0:
-		network_laser_cooldown_remaining -= delta
-		network_laser_cooldown_remaining = maxf(network_laser_cooldown_remaining, 0.0)
 	
 	var input_locked := is_input_locked()
 	var movement_locked := input_locked or buy_menu_open
@@ -172,12 +164,6 @@ func _physics_process(delta: float) -> void:
 	if surface_walk_active:
 		free_look_active = false
 	
-	var laser_should_be_enabled := not buy_menu_open and not input_locked and (surface_walk_active or not free_look_active)
-	
-	set_laser_input_enabled(laser_should_be_enabled)
-	set_laser_force_aiming(surface_walk_active and laser_should_be_enabled)
-	
-	var laser_aiming := is_laser_aiming()
 	var surface_in_range := false
 	var grabbing := false
 	var show_ctrl_push_arrow := false
@@ -185,18 +171,16 @@ func _physics_process(delta: float) -> void:
 	
 	if movement_controller != null:
 		surface_in_range = movement_controller.is_surface_in_interaction_range()
-		grabbing = movement_controller.is_grabbing_wall()
 		show_ctrl_push_arrow = movement_controller.should_show_ctrl_push_arrow(
 			buy_menu_open,
 			free_look_active,
-			laser_aiming,
 			movement_locked
 		)
 		ctrl_push_direction = movement_controller.get_predicted_ctrl_push_direction()
 	
 	if hud_controller != null:
 		hud_controller.update_velocity_indicator(linear_velocity)
-		hud_controller.update_reticle(delta, surface_in_range, laser_aiming, buy_menu_open or input_locked)
+		hud_controller.update_reticle(delta, surface_in_range, buy_menu_open or input_locked)
 		hud_controller.update_push_direction_arrow(
 			delta,
 			show_ctrl_push_arrow,
@@ -205,8 +189,11 @@ func _physics_process(delta: float) -> void:
 		)
 	
 	if movement_controller != null:
-		movement_controller.physics_update(delta, laser_aiming, free_look_active, movement_locked)
+		movement_controller.physics_update(delta, free_look_active, movement_locked)
 		grabbing = movement_controller.is_grabbing_wall()
+	
+	if weapon_inventory != null:
+		weapon_inventory.update_weapon_input(not buy_menu_open and not input_locked)
 	
 	if suit_boosters != null:
 		var boosters_allowed := not buy_menu_open and not input_locked and not is_surface_walk_mode_active()
@@ -220,7 +207,6 @@ func _physics_process(delta: float) -> void:
 				suit_boosters.get_max_booster_fuel()
 			)
 	
-	handle_network_laser_fire()
 	update_network_send(delta)
 
 
@@ -239,9 +225,6 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 
 func detect_player_body_slam_contacts(state: PhysicsDirectBodyState3D) -> void:
 	if network_manager == null:
-		return
-	
-	if is_combat_disabled():
 		return
 	
 	var current_speed := linear_velocity.length()
@@ -344,6 +327,128 @@ func apply_network_body_slam_impulse(impulse: Vector3, contact_position: Vector3
 	print("Applied body slam impulse: ", impulse)
 
 
+# Called by RoundManager (via RPC) at the start of each round: snap back to spawn,
+# kill momentum, and reset health. Safe to call before a PlayerHealth node exists.
+func reset_for_round(spawn_transform: Transform3D) -> void:
+	if movement_controller != null and movement_controller.is_surface_walk_active():
+		movement_controller.exit_surface_walk_mode()
+
+	global_transform = spawn_transform
+	linear_velocity = Vector3.ZERO
+	angular_velocity = Vector3.ZERO
+	sleeping = false
+	reset_physics_interpolation()
+
+	network_target_transform = spawn_transform
+	network_target_linear_velocity = Vector3.ZERO
+	network_target_angular_velocity = Vector3.ZERO
+
+	if health != null and health.has_method("reset_health"):
+		health.reset_health()
+
+	if impact_controller != null:
+		impact_controller.ignore_impacts_briefly()
+
+
+func submit_weapon_hit(
+	target: Node,
+	damage: float,
+	hit_position: Vector3,
+	shot_origin: Vector3,
+	shot_direction: Vector3
+) -> void:
+	if target == null:
+		return
+	
+	if target == self:
+		return
+	
+	var target_peer_id := get_peer_id_from_node(target)
+	
+	if target_peer_id == peer_id:
+		return
+	
+	if has_active_network_session() and target_peer_id != 0:
+		if network_manager.has_method("request_weapon_hit"):
+			network_manager.call(
+				"request_weapon_hit",
+				peer_id,
+				target_peer_id,
+				damage,
+				hit_position,
+				shot_origin,
+				shot_direction
+			)
+		
+		return
+	
+	if target.has_method("apply_weapon_damage"):
+		target.call("apply_weapon_damage", damage, peer_id)
+
+
+func apply_weapon_damage(damage: float, attacker_peer_id: int = 0) -> void:
+	if health == null:
+		return
+	
+	if health.apply_damage(damage, attacker_peer_id):
+		print(
+			"Player ",
+			peer_id,
+			" took ",
+			damage,
+			" damage from ",
+			attacker_peer_id,
+			". Health: ",
+			health.current_health,
+			"/",
+			health.max_health
+		)
+
+
+func get_peer_id_from_node(node: Node) -> int:
+	if node == null:
+		return 0
+	
+	if node.has_method("get_peer_id"):
+		return int(node.call("get_peer_id"))
+	
+	return 0
+
+
+func has_active_network_session() -> bool:
+	if network_manager != null and network_manager.has_method("has_active_multiplayer_peer"):
+		return bool(network_manager.call("has_active_multiplayer_peer"))
+	
+	var peer := multiplayer.multiplayer_peer
+	
+	if peer == null:
+		return false
+	
+	return not (peer is OfflineMultiplayerPeer)
+
+
+func connect_health_signals() -> void:
+	if health == null:
+		return
+	
+	if not health.health_changed.is_connected(_on_health_changed):
+		health.health_changed.connect(_on_health_changed)
+	
+	if not health.died.is_connected(_on_died):
+		health.died.connect(_on_died)
+	
+	_on_health_changed(health.current_health, health.max_health)
+
+
+func _on_health_changed(current_health: float, max_health: float) -> void:
+	if hud_controller != null and is_local_player:
+		hud_controller.update_health(current_health, max_health)
+
+
+func _on_died(attacker_peer_id: int) -> void:
+	print("Player ", peer_id, " died. Attacker: ", attacker_peer_id)
+
+
 func update_remote_network_state(delta: float) -> void:
 	if not has_network_target:
 		return
@@ -378,7 +483,7 @@ func update_network_send(delta: float) -> void:
 	if network_manager == null:
 		return
 	
-	if multiplayer.multiplayer_peer == null:
+	if not has_active_network_session():
 		return
 	
 	if network_send_rate <= 0.0:
@@ -401,68 +506,48 @@ func update_network_send(delta: float) -> void:
 		)
 
 
-func handle_network_laser_fire() -> void:
-	if network_manager == null:
+func update_weapon_aim_reticle(delta: float) -> void:
+	if hud_controller == null:
 		return
 	
-	if is_input_locked():
+	if camera == null or weapon_inventory == null:
+		hud_controller.update_weapon_aim_reticle(delta, camera, Vector3.ZERO, true)
 		return
 	
-	if network_laser_cooldown_remaining > 0.0:
+	if buy_menu_open or not weapon_inventory.has_equipped_weapon():
+		hud_controller.update_weapon_aim_reticle(delta, camera, Vector3.ZERO, true)
 		return
 	
-	if not Input.is_action_pressed("laser_fire"):
+	var origin := weapon_inventory.get_weapon_aim_origin()
+	var direction := weapon_inventory.get_weapon_aim_direction()
+	
+	if direction.length() < 0.001:
+		hud_controller.update_weapon_aim_reticle(delta, camera, Vector3.ZERO, true)
 		return
 	
-	if not is_laser_aiming():
-		return
+	var aim_point := get_weapon_aim_visual_point(origin, direction.normalized())
+	hud_controller.update_weapon_aim_reticle(delta, camera, aim_point, false)
+
+
+func get_weapon_aim_visual_point(origin: Vector3, direction: Vector3) -> Vector3:
+	var end := origin + direction * weapon_aim_reticle_range
 	
-	var origin := get_network_laser_origin()
-	var direction := get_network_laser_direction()
-	var laser_range := get_network_laser_range()
-	var fire_cooldown := get_network_laser_fire_cooldown()
+	if not weapon_aim_reticle_use_world_raycast:
+		return end
 	
-	if direction.length() < 0.01:
-		return
+	var query := PhysicsRayQueryParameters3D.create(origin, end)
+	query.collide_with_bodies = true
+	query.collide_with_areas = true
 	
-	if network_manager.has_method("request_laser_fire"):
-		network_manager.call("request_laser_fire", peer_id, origin, direction, laser_range, fire_cooldown)
+	if self is CollisionObject3D:
+		query.exclude = [get_rid()]
 	
-	network_laser_cooldown_remaining = fire_cooldown
-
-
-func get_network_laser_origin() -> Vector3:
-	if laser_controller != null:
-		return laser_controller.get_laser_muzzle_world_position()
-
-	if camera != null:
-		return camera.global_position
-
-	return global_position
-
-
-func get_network_laser_direction() -> Vector3:
-	if laser_controller != null:
-		return laser_controller.get_actual_laser_direction()
-
-	if camera != null:
-		return (-camera.global_transform.basis.z).normalized()
-
-	return (-global_transform.basis.z).normalized()
-
-
-func get_network_laser_range() -> float:
-	if laser_controller != null:
-		return laser_controller.get_laser_range()
-
-	return fallback_laser_range
-
-
-func get_network_laser_fire_cooldown() -> float:
-	if laser_controller != null:
-		return laser_controller.get_laser_fire_cooldown()
-
-	return fallback_laser_fire_cooldown
+	var result: Dictionary = get_world_3d().direct_space_state.intersect_ray(query)
+	
+	if result.is_empty():
+		return end
+	
+	return result["position"]
 
 
 func is_free_look_active() -> bool:
@@ -476,9 +561,6 @@ func is_free_look_active() -> bool:
 
 
 func is_input_locked() -> bool:
-	if is_combat_disabled():
-		return true
-	
 	if is_surface_walk_mode_active():
 		return false
 	
@@ -492,13 +574,6 @@ func is_immobilized() -> bool:
 	return impact_controller.is_immobilized()
 
 
-func is_combat_disabled() -> bool:
-	if health_controller == null:
-		return false
-	
-	return health_controller.is_combat_disabled()
-
-
 func is_surface_walk_mode_active() -> bool:
 	if movement_controller == null:
 		return false
@@ -506,30 +581,13 @@ func is_surface_walk_mode_active() -> bool:
 	return movement_controller.is_surface_walk_active()
 
 
-func is_laser_aiming() -> bool:
-	if is_input_locked():
+# Braced = recoil should kick the weapon (normal FPS), not the body. True when
+# standing on a surface or gripping a wall; false while free-floating in zero-G.
+func is_recoil_braced() -> bool:
+	if movement_controller == null:
 		return false
-	
-	if laser_controller != null:
-		return laser_controller.is_laser_aiming()
 
-	if is_surface_walk_mode_active():
-		return true
-	
-	if is_free_look_active():
-		return false
-	
-	return Input.is_action_pressed("laser_aim")
-
-
-func set_laser_input_enabled(value: bool) -> void:
-	if laser_controller != null:
-		laser_controller.set_input_enabled(value)
-
-
-func set_laser_force_aiming(value: bool) -> void:
-	if laser_controller != null:
-		laser_controller.set_force_aiming(value)
+	return is_surface_walk_mode_active() or movement_controller.is_grabbing_wall()
 
 
 func set_buy_menu_open(value: bool) -> void:
@@ -542,48 +600,13 @@ func set_buy_menu_open(value: bool) -> void:
 		movement_controller.clear_mouse_motion()
 		movement_controller.clear_free_look_mouse_motion()
 	
-	set_laser_input_enabled(not value and not is_input_locked())
+	if weapon_inventory != null and value:
+		weapon_inventory.update_weapon_input(false)
 	
 	if value:
-		set_laser_force_aiming(false)
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	else:
-		set_laser_force_aiming(is_surface_walk_mode_active())
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-
-
-func server_add_hit(amount: int) -> void:
-	if health_controller == null:
-		return
-	
-	health_controller.add_hit(amount)
-
-
-func server_reset_health() -> void:
-	if health_controller == null:
-		return
-	
-	health_controller.reset_health()
-
-
-func apply_network_damage_state(hits: int, disabled: bool) -> void:
-	if health_controller != null:
-		health_controller.set_network_state(hits, disabled)
-	
-	if disabled:
-		set_laser_input_enabled(false)
-		set_laser_force_aiming(false)
-		
-		if movement_controller != null:
-			movement_controller.clear_mouse_motion()
-			movement_controller.clear_free_look_mouse_motion()
-
-
-func get_hit_count() -> int:
-	if health_controller == null:
-		return 0
-	
-	return health_controller.get_hit_count()
 
 
 func apply_grab_distance_upgrade(level: int) -> void:
@@ -619,6 +642,27 @@ func get_has_suit_boosters() -> bool:
 		return false
 	
 	return suit_boosters.get_has_suit_boosters()
+
+
+func purchase_minigun() -> bool:
+	if weapon_inventory == null:
+		return false
+	
+	return weapon_inventory.purchase_minigun()
+
+
+func get_has_minigun() -> bool:
+	if weapon_inventory == null:
+		return false
+	
+	return weapon_inventory.get_has_minigun()
+
+
+func get_equipped_weapon_id() -> StringName:
+	if weapon_inventory == null:
+		return &""
+	
+	return weapon_inventory.get_equipped_weapon_id()
 
 
 func suppress_launch_impact() -> void:

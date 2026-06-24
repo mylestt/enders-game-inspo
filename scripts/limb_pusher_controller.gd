@@ -847,10 +847,6 @@ func reset_disabled_limbs() -> void:
 	update_all_debug_spheres(last_limb_push_state)
 
 
-func get_last_limb_push_state() -> Dictionary:
-	return last_limb_push_state
-
-
 func join_strings(items: Array[String], separator: String) -> String:
 	var text := ""
 	

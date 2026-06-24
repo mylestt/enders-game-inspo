@@ -37,7 +37,6 @@ var shake_intensity: float = 0.0
 
 var impact_effect_strength: float = 0.0
 var last_impact_value: float = 0.0
-var last_impact_speed: float = 0.0
 
 
 func setup(owner_player: RigidBody3D, owner_hud: PlayerHUDController) -> void:
@@ -115,7 +114,6 @@ func trigger_impact(impact_speed: float) -> void:
 	var new_shake_intensity := lerpf(min_camera_shake, max_camera_shake, impact_percent)
 	
 	last_impact_value = impact_value
-	last_impact_speed = impact_speed
 
 	if camera_rig != null:
 		camera_rig.kick_landing(impact_speed)
@@ -196,15 +194,3 @@ func is_immobilized() -> bool:
 # Briefly skip impact detection (e.g. launching off a wall-walk surface).
 func ignore_impacts_briefly() -> void:
 	impact_cooldown_remaining = maxf(impact_cooldown_remaining, impact_cooldown_time)
-
-
-func get_impact_value() -> float:
-	return last_impact_value
-
-
-func get_impact_speed() -> float:
-	return last_impact_speed
-
-
-func get_immobilize_time_remaining() -> float:
-	return immobilize_time_remaining
