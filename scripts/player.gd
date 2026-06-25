@@ -58,7 +58,8 @@ func _ready() -> void:
 	
 	if camera != null:
 		camera.current = false
-	
+		camera.fov = GameSettings.fov
+
 	if hud_controller == null:
 		push_error("PlayerHUD node is missing or does not have player_hud_controller.gd attached.")
 	else:
@@ -107,8 +108,27 @@ func set_multiplayer_player(new_peer_id: int, new_is_local_player: bool, new_net
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		if health != null:
 			_on_health_changed(health.current_health, health.max_health)
-	
+
+	# Only the local player's HUD should be visible (each player instance builds one).
+	if hud_controller != null and hud_controller.has_method("set_hud_active"):
+		hud_controller.set_hud_active(is_local_player)
+
 	print("Player ", peer_id, " multiplayer setup. Local: ", is_local_player)
+
+
+# Replicates this player's weapon shot so other clients can draw the tracer.
+func report_weapon_shot(origin: Vector3, end: Vector3, did_hit: bool, normal: Vector3) -> void:
+	if not is_local_player:
+		return
+
+	if network_manager != null and network_manager.has_method("broadcast_weapon_shot"):
+		network_manager.call("broadcast_weapon_shot", peer_id, origin, end, did_hit, normal)
+
+
+# Shown to the attacker when the server confirms their shot damaged someone.
+func show_hitmarker() -> void:
+	if is_local_player and hud_controller != null and hud_controller.has_method("show_hitmarker"):
+		hud_controller.show_hitmarker()
 
 
 func get_peer_id() -> int:

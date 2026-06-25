@@ -12,18 +12,23 @@ var multiplayer_status_label: Label
 
 
 func _ready() -> void:
+	# Load + apply saved settings (keybinds, FOV, audio, video) before any launch path,
+	# so they take effect even when we boot straight into a server/client below.
+	GameSettings.load_and_apply()
+	GameLaunch.apply_cmdline_overrides()
+
 	# Headless/dedicated launch (e.g. `godot --headless -- --server --port 7000`):
 	# skip the menu entirely and boot straight into the game scene as a server.
 	if GameLaunch.read_cmdline_flag("--server"):
 		GameLaunch.pending_mode = GameLaunch.Mode.DEDICATED_SERVER
-		get_tree().change_scene_to_file("res://scenes/main.tscn")
+		get_tree().change_scene_to_file.call_deferred("res://scenes/main.tscn")
 		return
 
 	# Client launch (e.g. `godot -- --join 127.0.0.1`): connect automatically.
 	if has_join_argument():
 		GameLaunch.join_ip = resolve_join_ip()
 		GameLaunch.pending_mode = GameLaunch.Mode.MULTIPLAYER
-		get_tree().change_scene_to_file("res://scenes/main.tscn")
+		get_tree().change_scene_to_file.call_deferred("res://scenes/main.tscn")
 		return
 
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -95,30 +100,29 @@ func build_multiplayer_view() -> VBoxContainer:
 	var column := make_column()
 
 	column.add_child(make_title("MULTIPLAYER"))
-	column.add_child(make_spacer(8.0))
+	column.add_child(make_spacer(10.0))
+
+	add_menu_button(column, "Join", _on_join_pressed)
+	add_menu_button(column, "Host", _on_host_pressed)
+	add_menu_button(column, "Back", _on_back_pressed)
+
+	column.add_child(make_spacer(10.0))
 
 	var ip_label := Label.new()
-	ip_label.text = "Server IP"
-	ip_label.add_theme_font_size_override("font_size", 16)
-	ip_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.75))
+	ip_label.text = "Advanced — Direct Server IP (blank = default)"
+	ip_label.add_theme_font_size_override("font_size", 13)
+	ip_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.55))
 	column.add_child(ip_label)
 
 	ip_field = LineEdit.new()
-	ip_field.text = "127.0.0.1"
-	ip_field.placeholder_text = "127.0.0.1"
-	ip_field.custom_minimum_size = Vector2(0.0, 44.0)
-	ip_field.add_theme_font_size_override("font_size", 18)
-	ip_field.text_submitted.connect(_on_ip_submitted)
+	ip_field.placeholder_text = GameLaunch.DEFAULT_SERVER_IP
+	ip_field.custom_minimum_size = Vector2(0.0, 40.0)
+	ip_field.add_theme_font_size_override("font_size", 16)
 	column.add_child(ip_field)
 
 	column.add_child(make_spacer(6.0))
 
-	add_menu_button(column, "Join", _on_join_pressed)
-	add_menu_button(column, "Back", _on_back_pressed)
-
-	column.add_child(make_spacer(8.0))
-
-	multiplayer_status_label = make_status_label("Enter a server IP and press Join. Default port 7000.")
+	multiplayer_status_label = make_status_label("Join browses lobbies on the server. Host creates one.")
 	column.add_child(multiplayer_status_label)
 
 	return column
@@ -177,12 +181,39 @@ func show_view(view: Control) -> void:
 
 
 func _on_test_arena_pressed() -> void:
-	GameLaunch.pending_mode = GameLaunch.Mode.TEST_ARENA
-	get_tree().change_scene_to_file("res://scenes/main.tscn")
+	var menu := MapSetupMenu.new()
+	menu.launch_mode = GameLaunch.Mode.TEST_ARENA
+	menu.title_text = "TEST ARENA SETUP"
+	menu.default_min_players = 1
+	add_child(menu)
+	menu.closed.connect(_on_map_setup_closed.bind(menu))
+
+
+func _on_map_setup_closed(menu: MapSetupMenu) -> void:
+	menu.queue_free()
 
 
 func _on_multiplayer_pressed() -> void:
 	show_view(multiplayer_view)
+
+
+func _on_host_pressed() -> void:
+	GameLaunch.server_ip = _direct_server_ip()
+	var menu := MapSetupMenu.new()
+	menu.launch_mode = GameLaunch.Mode.MULTIPLAYER_HOST
+	menu.title_text = "HOST LOBBY"
+	menu.default_min_players = 2
+	menu.show_lobby_fields = true
+	add_child(menu)
+	menu.closed.connect(_on_map_setup_closed.bind(menu))
+
+
+func _direct_server_ip() -> String:
+	# Blank means "use the default server" (NetworkManager fills in DEFAULT_SERVER_IP).
+	if ip_field != null and ip_field.text.strip_edges() != "":
+		return ip_field.text.strip_edges()
+
+	return ""
 
 
 func _on_back_pressed() -> void:
@@ -190,25 +221,20 @@ func _on_back_pressed() -> void:
 
 
 func _on_settings_pressed() -> void:
-	# Placeholder until settings exist.
-	if status_label != null:
-		status_label.text = "Settings aren't implemented yet."
+	var settings := SettingsMenu.new()
+	add_child(settings)
+	settings.closed.connect(_on_settings_closed.bind(settings))
+
+
+func _on_settings_closed(settings: SettingsMenu) -> void:
+	settings.queue_free()
 
 
 func _on_quit_pressed() -> void:
 	get_tree().quit()
 
 
-func _on_ip_submitted(_text: String) -> void:
-	_on_join_pressed()
-
-
 func _on_join_pressed() -> void:
-	var ip := "127.0.0.1"
-
-	if ip_field != null and ip_field.text.strip_edges() != "":
-		ip = ip_field.text.strip_edges()
-
-	GameLaunch.join_ip = ip
-	GameLaunch.pending_mode = GameLaunch.Mode.MULTIPLAYER
-	get_tree().change_scene_to_file("res://scenes/main.tscn")
+	GameLaunch.server_ip = _direct_server_ip()
+	GameLaunch.pending_mode = GameLaunch.Mode.MULTIPLAYER_BROWSE
+	get_tree().change_scene_to_file.call_deferred("res://scenes/main.tscn")

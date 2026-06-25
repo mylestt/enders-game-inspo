@@ -22,6 +22,10 @@ var impact_flash: ColorRect
 var impact_shadow: ColorRect
 var impact_value_label: Label
 
+var hitmarker_label: Label
+var hitmarker_time: float = 0.0
+const HITMARKER_DURATION := 0.18
+
 var current_jump_force: float = 10.0
 
 var _last_viewport_size: Vector2 = Vector2.ZERO
@@ -38,14 +42,47 @@ func setup(owner_player: RigidBody3D) -> void:
 	update_jump_force(current_jump_force)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	update_fps_label()
+	update_hitmarker(delta)
 
 	var viewport_size := get_viewport().get_visible_rect().size
 
 	if viewport_size != _last_viewport_size:
 		_last_viewport_size = viewport_size
 		layout_dynamic_controls()
+
+
+# Hide the whole HUD for non-local players (each player instance builds its own HUD;
+# only the local player's should be visible).
+func set_hud_active(active: bool) -> void:
+	if hud_layer != null:
+		hud_layer.visible = active
+
+	set_process(active)
+
+
+func show_hitmarker() -> void:
+	if hitmarker_label == null:
+		return
+
+	hitmarker_time = HITMARKER_DURATION
+	hitmarker_label.visible = true
+	hitmarker_label.modulate = Color(1.0, 1.0, 1.0, 1.0)
+	center_control(hitmarker_label)
+
+
+func update_hitmarker(delta: float) -> void:
+	if hitmarker_label == null or hitmarker_time <= 0.0:
+		return
+
+	hitmarker_time -= delta
+
+	if hitmarker_time <= 0.0:
+		hitmarker_label.visible = false
+		return
+
+	hitmarker_label.modulate = Color(1.0, 1.0, 1.0, clampf(hitmarker_time / HITMARKER_DURATION, 0.0, 1.0))
 
 
 func build_hud() -> void:
@@ -72,6 +109,23 @@ func build_hud() -> void:
 	build_weapon_aim_reticle()
 	build_ctrl_push_arrow()
 	build_impact_effects()
+	build_hitmarker()
+
+
+func build_hitmarker() -> void:
+	hitmarker_label = Label.new()
+	hitmarker_label.name = "Hitmarker"
+	root.add_child(hitmarker_label)
+	hitmarker_label.text = "✕"
+	hitmarker_label.visible = false
+	hitmarker_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hitmarker_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	hitmarker_label.size = Vector2(44.0, 44.0)
+	hitmarker_label.pivot_offset = Vector2(22.0, 22.0)
+	hitmarker_label.add_theme_font_size_override("font_size", 30)
+	hitmarker_label.add_theme_color_override("font_color", Color(1.0, 0.95, 0.55, 1.0))
+	hitmarker_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	center_control(hitmarker_label)
 
 
 func build_top_left_stats() -> void:

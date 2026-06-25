@@ -237,7 +237,10 @@ func fire_hitscan() -> Dictionary:
 		submit_hitscan_damage(hit_collider, hit_position, origin, direction)
 	
 	spawn_hitscan_tracer(origin, hit_position, hit_something, hit_normal)
-	
+
+	if owner_player != null and owner_player.has_method("report_weapon_shot"):
+		owner_player.call("report_weapon_shot", origin, hit_position, hit_something, hit_normal)
+
 	return {
 		"origin": origin,
 		"end": hit_position,

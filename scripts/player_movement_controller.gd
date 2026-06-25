@@ -119,7 +119,10 @@ func setup(owner_player: RigidBody3D, owner_hud_controller: PlayerHUDController)
 	
 	if camera != null:
 		camera_base_position = camera.position
-	
+
+	if GameSettings.mouse_sensitivity > 0.0:
+		mouse_sensitivity = GameSettings.mouse_sensitivity
+
 	setup_limb_push_controller()
 	
 	jump_force = clampf(jump_force, min_jump_force, max_jump_force)

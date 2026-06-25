@@ -1,0 +1,24 @@
+[gd_scene format=3 uid="uid://dl2cjmy8ky8xq"]
+
+[ext_resource type="Script" uid="uid://c2wxkwjloh87o" path="res://scripts/map_generator.gd" id="1_mapgen"]
+
+[node name="TestMap" type="Node3D" unique_id=773544436]
+script = ExtResource("1_mapgen")
+style = 1
+designed_arena_size = null
+designed_center_size = null
+designed_cube_size = null
+designed_grid_count = null
+designed_margin = null
+cover_color = Color(0.5, 0.52, 0.56, 1)
+boundary_color = Color(0.28, 0.3, 0.34, 1)
+grid_texture = null
+grid_tiling = null
+area_light_energy = null
+area_light_range = null
+use_default_arena = null
+default_arena_transform = null
+primary_spawn_a_path = null
+primary_spawn_b_path = null
+default_spawn_a_transform = null
+default_spawn_b_transform = null

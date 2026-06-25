@@ -78,6 +78,9 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	layer = 100
 	
+	if GameLaunch.rules_configured:
+		starting_cash = GameLaunch.starting_cash
+	
 	cash = starting_cash
 	
 	build_ui()
@@ -113,6 +116,22 @@ func set_local_player(player_node: Node) -> void:
 	update_menu_state()
 	
 	print("BuyMenu local player set to: ", local_player)
+
+
+func set_starting_cash(amount: int) -> void:
+	starting_cash = maxi(amount, 0)
+	cash = starting_cash
+	update_menu_state()
+
+
+func admin_set_cash(amount: int) -> void:
+	cash = maxi(amount, 0)
+	update_menu_state()
+
+
+func admin_add_cash(amount: int) -> void:
+	cash = maxi(cash + amount, 0)
+	update_menu_state()
 
 
 func toggle_menu() -> void:

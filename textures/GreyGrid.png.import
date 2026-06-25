@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://cx6g2bygli807"
 path.s3tc="res://.godot/imported/GreyGrid.png-dc5c4e938e32f16f98728d47cd4f3569.s3tc.ctex"
+path.etc2="res://.godot/imported/GreyGrid.png-dc5c4e938e32f16f98728d47cd4f3569.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://textures/GreyGrid.png"
-dest_files=["res://.godot/imported/GreyGrid.png-dc5c4e938e32f16f98728d47cd4f3569.s3tc.ctex"]
+dest_files=["res://.godot/imported/GreyGrid.png-dc5c4e938e32f16f98728d47cd4f3569.s3tc.ctex", "res://.godot/imported/GreyGrid.png-dc5c4e938e32f16f98728d47cd4f3569.etc2.ctex"]
 
 [params]
 
