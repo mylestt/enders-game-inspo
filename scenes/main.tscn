@@ -13,16 +13,14 @@
 [ext_resource type="Script" uid="uid://dg56k8ek316nr" path="res://scripts/round_hud.gd" id="11_roundhud"]
 [ext_resource type="Script" uid="uid://cwcakba58fk0q" path="res://scripts/scoreboard.gd" id="12_scoreboard"]
 
-[node name="World Node3D" type="Node3D" unique_id=878825741 node_paths=PackedStringArray("debug_camera")]
+[node name="World Node3D" type="Node3D" unique_id=878825741]
 script = ExtResource("1_sugp2")
-debug_camera = NodePath("")
 
 [node name="BuyMenu" type="CanvasLayer" parent="." unique_id=2018399957]
 script = ExtResource("4_jyhfs")
 starting_cash = 200000
 
 [node name="GeneratedMap" parent="." unique_id=1659737674 instance=ExtResource("4_tbgi4")]
-map_id = "diamond"
 
 [node name="NetworkManager" type="Node" parent="." unique_id=925509397]
 script = ExtResource("4_tefeu")
