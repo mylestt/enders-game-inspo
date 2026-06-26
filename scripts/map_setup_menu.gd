@@ -17,17 +17,11 @@ var lobby_password_check: CheckBox
 var lobby_password_field: LineEdit
 var max_players_spin: SpinBox
 
-var style_option: OptionButton
-var seed_spin: SpinBox
+var map_option: OptionButton
 var min_players_spin: SpinBox
 var starting_cash_spin: SpinBox
 var points_to_win_spin: SpinBox
 var round_time_spin: SpinBox
-var length_slider: HSlider
-var width_slider: HSlider
-var height_slider: HSlider
-var density_slider: HSlider
-var boundary_check: CheckBox
 
 
 func _ready() -> void:
@@ -72,63 +66,28 @@ func _build_ui() -> void:
 	title.add_theme_font_size_override("font_size", 30)
 	column.add_child(title)
 
-	# Style (Core / Module Station / Asteroid Field / Default Arena 3).
-	var style_row := HBoxContainer.new()
-	style_row.add_theme_constant_override("separation", 12)
-	var style_label := Label.new()
-	style_label.text = "Map Style"
-	style_label.custom_minimum_size = Vector2(160.0, 0.0)
-	style_row.add_child(style_label)
-	style_option = OptionButton.new()
-	style_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	style_option.add_item("Core", 0)
-	style_option.add_item("Module Station", 1)
-	style_option.add_item("Asteroid Field", 2)
-	style_option.add_item("Designed", 3)
-	style_option.add_item("2v2", 4)
-	style_option.add_item("Default Arena 3", 5)
-	style_option.selected = 5 if GameLaunch.map_use_default_arena else clampi(GameLaunch.map_style, 0, 4)
-	style_row.add_child(style_option)
-	column.add_child(style_row)
+	# Map picker — entries come from the MapGenerator registry (hand-built scenes).
+	var map_row := HBoxContainer.new()
+	map_row.add_theme_constant_override("separation", 12)
+	var map_label := Label.new()
+	map_label.text = "Map"
+	map_label.custom_minimum_size = Vector2(160.0, 0.0)
+	map_row.add_child(map_label)
+	map_option = OptionButton.new()
+	map_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
-	# Seed.
-	var seed_row := HBoxContainer.new()
-	seed_row.add_theme_constant_override("separation", 12)
-	var seed_label := Label.new()
-	seed_label.text = "Seed"
-	seed_label.custom_minimum_size = Vector2(160.0, 0.0)
-	seed_row.add_child(seed_label)
-	seed_spin = SpinBox.new()
-	seed_spin.min_value = 0
-	seed_spin.max_value = 999999
-	seed_spin.step = 1
-	seed_spin.value = GameLaunch.map_seed
-	seed_spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	seed_row.add_child(seed_spin)
-	column.add_child(seed_row)
+	var map_ids := MapGenerator.get_map_ids()
 
-	length_slider = _add_slider(column, "Arena Length", 40.0, 160.0, 1.0, GameLaunch.map_length, false, "")
-	width_slider = _add_slider(column, "Arena Width", 30.0, 100.0, 1.0, GameLaunch.map_width, false, "")
-	height_slider = _add_slider(column, "Arena Height", 25.0, 80.0, 1.0, GameLaunch.map_height, false, "")
-	density_slider = _add_slider(column, "Cover Density", 0.3, 2.0, 0.1, GameLaunch.map_density, true, "x")
+	for i in range(map_ids.size()):
+		var id := String(map_ids[i])
+		map_option.add_item(MapGenerator.get_map_name(id), i)
+		map_option.set_item_metadata(i, id)
 
-	# Boundary toggle.
-	var boundary_row := HBoxContainer.new()
-	boundary_row.add_theme_constant_override("separation", 12)
-	var boundary_label := Label.new()
-	boundary_label.text = "Boundary Walls"
-	boundary_label.custom_minimum_size = Vector2(160.0, 0.0)
-	boundary_row.add_child(boundary_label)
-	boundary_check = CheckBox.new()
-	boundary_check.button_pressed = GameLaunch.map_boundary
-	boundary_row.add_child(boundary_check)
-	column.add_child(boundary_row)
+		if id == GameLaunch.map_id:
+			map_option.selected = i
 
-	var hint := Label.new()
-	hint.text = "Size/density sliders are ignored for Designed and Default Arena 3."
-	hint.add_theme_font_size_override("font_size", 13)
-	hint.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.5))
-	column.add_child(hint)
+	map_row.add_child(map_option)
+	column.add_child(map_row)
 
 	var rules_header := Label.new()
 	rules_header.text = "RULES"
@@ -184,37 +143,6 @@ func _build_ui() -> void:
 	bottom.add_child(back_button)
 
 
-func _add_slider(parent: Node, label_text: String, min_value: float, max_value: float, step: float, value: float, is_float: bool, suffix: String) -> HSlider:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 12)
-
-	var label := Label.new()
-	label.text = label_text
-	label.custom_minimum_size = Vector2(160.0, 0.0)
-	row.add_child(label)
-
-	var slider := HSlider.new()
-	slider.min_value = min_value
-	slider.max_value = max_value
-	slider.step = step
-	slider.value = value
-	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	slider.custom_minimum_size = Vector2(0.0, 24.0)
-	row.add_child(slider)
-
-	var value_label := Label.new()
-	value_label.custom_minimum_size = Vector2(70.0, 0.0)
-	value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	value_label.text = (("%0.1f" % value) if is_float else str(int(value))) + suffix
-	row.add_child(value_label)
-
-	slider.value_changed.connect(func(v): value_label.text = (("%0.1f" % v) if is_float else str(int(v))) + suffix)
-
-	parent.add_child(row)
-	return slider
-
-
 func _add_spin(parent: Node, label_text: String, min_value: int, max_value: int, step: int, value: int) -> SpinBox:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 12)
@@ -265,17 +193,13 @@ func _make_button(text: String, handler: Callable) -> Button:
 
 
 func _on_launch_pressed() -> void:
-	var selected := style_option.get_selected_id()
+	var selected_index := map_option.selected
+	var selected_id: Variant = map_option.get_item_metadata(selected_index)
 
 	GameLaunch.map_configured = true
-	GameLaunch.map_use_default_arena = selected == 5
-	GameLaunch.map_style = clampi(selected, 0, 4)
-	GameLaunch.map_seed = int(seed_spin.value)
-	GameLaunch.map_length = length_slider.value
-	GameLaunch.map_width = width_slider.value
-	GameLaunch.map_height = height_slider.value
-	GameLaunch.map_density = density_slider.value
-	GameLaunch.map_boundary = boundary_check.button_pressed
+
+	if selected_id != null:
+		GameLaunch.map_id = String(selected_id)
 
 	GameLaunch.rules_configured = true
 	GameLaunch.min_players_to_start = int(min_players_spin.value)

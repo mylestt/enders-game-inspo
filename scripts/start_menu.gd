@@ -6,6 +6,10 @@ extends Control
 
 var main_view: VBoxContainer
 var multiplayer_view: VBoxContainer
+var username_view: VBoxContainer
+var username_field: LineEdit
+var username_status_label: Label
+var joke_popup: PanelContainer
 var ip_field: LineEdit
 var status_label: Label
 var multiplayer_status_label: Label
@@ -61,12 +65,45 @@ func build_ui() -> void:
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(center)
 
+	username_view = build_username_view()
+	center.add_child(username_view)
+
 	main_view = build_main_view()
 	center.add_child(main_view)
 
 	multiplayer_view = build_multiplayer_view()
 	multiplayer_view.visible = false
 	center.add_child(multiplayer_view)
+
+	if GameLaunch.username_configured:
+		show_view(main_view)
+	else:
+		show_view(username_view)
+
+
+func build_username_view() -> VBoxContainer:
+	var column := make_column()
+
+	column.add_child(make_title("ENTER NAME"))
+	column.add_child(make_spacer(10.0))
+
+	username_field = LineEdit.new()
+	username_field.text = GameLaunch.player_username
+	username_field.placeholder_text = "Username"
+	username_field.max_length = 18
+	username_field.custom_minimum_size = Vector2(0.0, 44.0)
+	username_field.add_theme_font_size_override("font_size", 18)
+	username_field.text_submitted.connect(_on_username_submitted)
+	column.add_child(username_field)
+
+	add_menu_button(column, "Continue", _on_username_continue_pressed)
+
+	username_status_label = make_status_label("Choose the name other players will see.")
+	column.add_child(username_status_label)
+
+	call_deferred("_focus_username_field")
+
+	return column
 
 
 func build_main_view() -> VBoxContainer:
@@ -173,11 +210,92 @@ func make_spacer(height: float) -> Control:
 
 
 func show_view(view: Control) -> void:
+	if username_view != null:
+		username_view.visible = view == username_view
+
 	if main_view != null:
 		main_view.visible = view == main_view
 
 	if multiplayer_view != null:
 		multiplayer_view.visible = view == multiplayer_view
+
+
+func _focus_username_field() -> void:
+	if username_field != null and username_view != null and username_view.visible:
+		username_field.grab_focus()
+		username_field.select_all()
+
+
+func _on_username_submitted(_text: String) -> void:
+	_on_username_continue_pressed()
+
+
+func _on_username_continue_pressed() -> void:
+	if username_field == null:
+		return
+
+	var clean := GameLaunch.sanitize_username(username_field.text)
+
+	if clean == "":
+		if username_status_label != null:
+			username_status_label.text = "Enter a username."
+		return
+
+	GameLaunch.set_player_username(clean)
+	username_field.text = GameLaunch.player_username
+	show_view(main_view)
+
+	if should_show_name_joke(clean):
+		show_name_joke_popup()
+
+
+func should_show_name_joke(player_name: String) -> bool:
+	var key := player_name.strip_edges().to_lower()
+	return key == "naked snake" or key == "aaron" or key == "leprosy_sowles"
+
+
+func show_name_joke_popup() -> void:
+	if joke_popup != null and is_instance_valid(joke_popup):
+		joke_popup.queue_free()
+
+	joke_popup = PanelContainer.new()
+	joke_popup.name = "NameJokePopup"
+	add_child(joke_popup)
+	joke_popup.anchor_left = 0.5
+	joke_popup.anchor_right = 0.5
+	joke_popup.anchor_top = 0.0
+	joke_popup.anchor_bottom = 0.0
+	joke_popup.offset_left = -170.0
+	joke_popup.offset_right = 170.0
+	joke_popup.offset_top = 28.0
+	joke_popup.offset_bottom = 92.0
+	joke_popup.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.18, 0.03, 0.045, 0.94)
+	style.border_color = Color(1.0, 0.25, 0.34, 0.86)
+	style.border_width_left = 1
+	style.border_width_right = 1
+	style.border_width_top = 1
+	style.border_width_bottom = 1
+	style.corner_radius_top_left = 6
+	style.corner_radius_top_right = 6
+	style.corner_radius_bottom_left = 6
+	style.corner_radius_bottom_right = 6
+	joke_popup.add_theme_stylebox_override("panel", style)
+
+	var label := Label.new()
+	label.text = "HEY WHORE"
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 24)
+	label.add_theme_color_override("font_color", Color(1.0, 0.88, 0.9, 1.0))
+	joke_popup.add_child(label)
+
+	var tween := create_tween()
+	tween.tween_interval(0.95)
+	tween.tween_property(joke_popup, "modulate:a", 0.0, 0.28)
+	tween.tween_callback(joke_popup.queue_free)
 
 
 func _on_test_arena_pressed() -> void:

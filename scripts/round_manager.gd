@@ -145,6 +145,10 @@ func server_restart_match() -> void:
 
 	score_by_peer_id.clear()
 	team_scores = {"a": 0, "b": 0}
+
+	if network_manager != null and network_manager.has_method("server_reset_player_stats"):
+		network_manager.call("server_reset_player_stats")
+
 	broadcast_score()
 	broadcast_team_scores()
 	set_state(State.WAITING_FOR_PLAYERS)
@@ -152,12 +156,15 @@ func server_restart_match() -> void:
 
 # Called when a player is eliminated. The round ends only when a whole team is wiped;
 # the surviving team scores the point.
-func server_on_player_died(dead_peer_id: int, _attacker_peer_id: int) -> void:
+func server_on_player_died(dead_peer_id: int, attacker_peer_id: int) -> void:
 	if not is_server():
 		return
 
 	if state != State.ACTIVE:
 		return
+
+	if network_manager != null and network_manager.has_method("server_record_player_death"):
+		network_manager.call("server_record_player_death", dead_peer_id, attacker_peer_id)
 
 	var dead_team := _team_of(dead_peer_id)
 

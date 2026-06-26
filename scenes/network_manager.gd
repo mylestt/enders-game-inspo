@@ -1,5 +1,7 @@
 extends Node
 
+signal scoreboard_changed(entries: Array)
+
 @export var player_scene: PackedScene
 @export var players_parent_path: NodePath
 @export var spawn_a_path: NodePath
@@ -26,6 +28,9 @@ var buy_menu: Node
 
 var players_by_peer_id: Dictionary = {}
 var spawn_index_by_peer_id: Dictionary = {}
+var player_names_by_peer_id: Dictionary = {}
+var player_stats_by_peer_id: Dictionary = {}
+var scoreboard_entries: Array = []
 var last_body_slam_time_by_pair: Dictionary = {}
 var last_weapon_hit_time_by_pair: Dictionary = {}
 
@@ -136,14 +141,7 @@ func _build_lobby_settings_from_launch() -> Dictionary:
 		"starting_cash": GameLaunch.starting_cash,
 		"points_to_win": GameLaunch.points_to_win,
 		"round_time": GameLaunch.round_time_limit,
-		"map_use_default_arena": GameLaunch.map_use_default_arena,
-		"map_style": GameLaunch.map_style,
-		"map_seed": GameLaunch.map_seed,
-		"map_length": GameLaunch.map_length,
-		"map_width": GameLaunch.map_width,
-		"map_height": GameLaunch.map_height,
-		"map_density": GameLaunch.map_density,
-		"map_boundary": GameLaunch.map_boundary,
+		"map_id": GameLaunch.map_id,
 	}
 
 
@@ -236,8 +234,10 @@ func has_active_multiplayer_peer() -> bool:
 func host_game() -> void:
 	if has_active_multiplayer_peer():
 		if multiplayer.is_server() and not players_by_peer_id.has(1):
+			ensure_player_metadata(1, GameLaunch.player_username)
 			spawn_index_by_peer_id[1] = 0
-			client_spawn_player(1, 0, starting_cash)
+			client_spawn_player(1, 0, starting_cash, get_player_name(1))
+			server_broadcast_scoreboard()
 		
 		print("Already connected to an active multiplayer peer.")
 		return
@@ -254,8 +254,10 @@ func host_game() -> void:
 	
 	multiplayer.multiplayer_peer = peer
 	
+	ensure_player_metadata(1, GameLaunch.player_username)
 	spawn_index_by_peer_id[1] = 0
-	client_spawn_player(1, 0, starting_cash)
+	client_spawn_player(1, 0, starting_cash, get_player_name(1))
+	server_broadcast_scoreboard()
 	
 	print("Hosting 1v1 on port ", port)
 
@@ -291,6 +293,10 @@ func clear_runtime_multiplayer_state() -> void:
 	
 	players_by_peer_id.clear()
 	spawn_index_by_peer_id.clear()
+	player_names_by_peer_id.clear()
+	player_stats_by_peer_id.clear()
+	scoreboard_entries.clear()
+	scoreboard_changed.emit(scoreboard_entries)
 	last_body_slam_time_by_pair.clear()
 	last_weapon_hit_time_by_pair.clear()
 	
@@ -304,6 +310,7 @@ func clear_runtime_multiplayer_state() -> void:
 
 func _on_connected_to_server() -> void:
 	print("Connected to server. My peer id: ", multiplayer.get_unique_id())
+	rpc_id(1, "server_register_player_name", GameLaunch.player_username)
 	call_deferred("_handle_pending_lobby_action")
 
 
@@ -317,14 +324,30 @@ func _on_server_disconnected() -> void:
 	clear_runtime_multiplayer_state()
 
 
+@rpc("any_peer", "reliable")
+func server_register_player_name(player_name: String) -> void:
+	if not multiplayer.is_server():
+		return
+
+	var sender_id := multiplayer.get_remote_sender_id()
+
+	if sender_id == 0:
+		return
+
+	ensure_player_metadata(sender_id, player_name)
+	server_broadcast_scoreboard()
+
+
 func _on_peer_connected(peer_id: int) -> void:
 	if not multiplayer.is_server():
 		return
 	
 	print("Peer connected: ", peer_id)
+	ensure_player_metadata(peer_id)
 
 	# Lobby servers don't auto-spawn; the player spawns when they join a lobby.
 	if lobby_mode:
+		server_broadcast_scoreboard()
 		return
 
 	for existing_peer_id in spawn_index_by_peer_id.keys():
@@ -333,13 +356,15 @@ func _on_peer_connected(peer_id: int) -> void:
 			"client_spawn_player",
 			int(existing_peer_id),
 			int(spawn_index_by_peer_id[existing_peer_id]),
-			starting_cash
+			starting_cash,
+			get_player_name(int(existing_peer_id))
 		)
 
 	var spawn_index := spawn_index_by_peer_id.size()
 	spawn_index_by_peer_id[peer_id] = spawn_index
 
-	rpc("client_spawn_player", peer_id, spawn_index, starting_cash)
+	rpc("client_spawn_player", peer_id, spawn_index, starting_cash, get_player_name(peer_id))
+	server_broadcast_scoreboard()
 
 
 # Called by LobbyManager when a player joins a lobby: assigns the next alternating
@@ -352,6 +377,8 @@ func server_spawn_in_lobby(peer_id: int, members: Array) -> void:
 	if players_by_peer_id.has(peer_id):
 		return
 
+	ensure_player_metadata(peer_id)
+
 	# Send already-spawned lobby players to the newcomer.
 	for existing_peer_id in spawn_index_by_peer_id.keys():
 		rpc_id(
@@ -359,25 +386,28 @@ func server_spawn_in_lobby(peer_id: int, members: Array) -> void:
 			"client_spawn_player",
 			int(existing_peer_id),
 			int(spawn_index_by_peer_id[existing_peer_id]),
-			starting_cash
+			starting_cash,
+			get_player_name(int(existing_peer_id))
 		)
 
 	var spawn_index := spawn_index_by_peer_id.size()
 	spawn_index_by_peer_id[peer_id] = spawn_index
 
 	# Server's authoritative copy.
-	client_spawn_player(peer_id, spawn_index, starting_cash)
+	client_spawn_player(peer_id, spawn_index, starting_cash, get_player_name(peer_id))
 
 	# Replicate the newcomer to every other lobby member (clients).
 	for member in members:
 		var member_id := int(member)
 
 		if member_id != 1 and member_id != peer_id:
-			rpc_id(member_id, "client_spawn_player", peer_id, spawn_index, starting_cash)
+			rpc_id(member_id, "client_spawn_player", peer_id, spawn_index, starting_cash, get_player_name(peer_id))
 
 	# And give the newcomer their own player.
 	if peer_id != 1:
-		rpc_id(peer_id, "client_spawn_player", peer_id, spawn_index, starting_cash)
+		rpc_id(peer_id, "client_spawn_player", peer_id, spawn_index, starting_cash, get_player_name(peer_id))
+
+	server_broadcast_scoreboard()
 
 
 func _on_peer_disconnected(peer_id: int) -> void:
@@ -385,12 +415,15 @@ func _on_peer_disconnected(peer_id: int) -> void:
 		return
 	
 	spawn_index_by_peer_id.erase(peer_id)
+	player_names_by_peer_id.erase(peer_id)
+	player_stats_by_peer_id.erase(peer_id)
 	clear_body_slam_pairs_for_peer(peer_id)
 
 	if lobby_manager != null and lobby_manager.has_method("server_on_peer_left"):
 		lobby_manager.call("server_on_peer_left", peer_id)
 
 	rpc("client_remove_player", peer_id)
+	server_broadcast_scoreboard()
 
 
 func clear_body_slam_pairs_for_peer(peer_id: int) -> void:
@@ -418,7 +451,12 @@ func clear_body_slam_pairs_for_peer(peer_id: int) -> void:
 
 
 @rpc("authority", "call_local", "reliable")
-func client_spawn_player(peer_id: int, spawn_index: int, server_starting_cash: int = -1) -> void:
+func client_spawn_player(
+	peer_id: int,
+	spawn_index: int,
+	server_starting_cash: int = -1,
+	player_name: String = ""
+) -> void:
 	if players_parent == null:
 		players_parent = get_node_or_null(players_parent_path) as Node3D
 	
@@ -432,6 +470,8 @@ func client_spawn_player(peer_id: int, spawn_index: int, server_starting_cash: i
 	
 	if players_by_peer_id.has(peer_id):
 		return
+
+	ensure_player_metadata(peer_id, player_name)
 	
 	var player := player_scene.instantiate()
 	player.name = "Player_" + str(peer_id)
@@ -484,6 +524,9 @@ func client_remove_player(peer_id: int) -> void:
 		player.queue_free()
 	
 	players_by_peer_id.erase(peer_id)
+	spawn_index_by_peer_id.erase(peer_id)
+	player_names_by_peer_id.erase(peer_id)
+	player_stats_by_peer_id.erase(peer_id)
 	
 	print("Removed player ", peer_id)
 
@@ -528,6 +571,130 @@ func get_team_spawn_markers(team: String) -> Array:
 func get_team_for_peer(peer_id: int) -> String:
 	var spawn_index := int(spawn_index_by_peer_id.get(peer_id, 0))
 	return "a" if spawn_index % 2 == 0 else "b"
+
+
+func ensure_player_metadata(peer_id: int, player_name: String = "") -> void:
+	if player_name.strip_edges() != "":
+		player_names_by_peer_id[peer_id] = GameLaunch.sanitize_username(player_name)
+	elif not player_names_by_peer_id.has(peer_id):
+		player_names_by_peer_id[peer_id] = "Player " + str(peer_id)
+
+	if not player_stats_by_peer_id.has(peer_id):
+		player_stats_by_peer_id[peer_id] = {
+			"kills": 0,
+			"deaths": 0,
+		}
+
+
+func get_player_name(peer_id: int) -> String:
+	if player_names_by_peer_id.has(peer_id):
+		return String(player_names_by_peer_id[peer_id])
+
+	return "Player " + str(peer_id)
+
+
+func get_scoreboard_entries() -> Array:
+	return scoreboard_entries.duplicate(true)
+
+
+func server_record_player_death(dead_peer_id: int, attacker_peer_id: int) -> void:
+	if not multiplayer.is_server():
+		return
+
+	ensure_player_metadata(dead_peer_id)
+	var dead_stats: Dictionary = player_stats_by_peer_id[dead_peer_id]
+	dead_stats["deaths"] = int(dead_stats.get("deaths", 0)) + 1
+	player_stats_by_peer_id[dead_peer_id] = dead_stats
+
+	if attacker_peer_id != 0 and attacker_peer_id != dead_peer_id:
+		ensure_player_metadata(attacker_peer_id)
+		var attacker_stats: Dictionary = player_stats_by_peer_id[attacker_peer_id]
+		attacker_stats["kills"] = int(attacker_stats.get("kills", 0)) + 1
+		player_stats_by_peer_id[attacker_peer_id] = attacker_stats
+
+	server_broadcast_scoreboard()
+
+
+func server_reset_player_stats() -> void:
+	if not multiplayer.is_server():
+		return
+
+	for peer_id in player_stats_by_peer_id.keys():
+		player_stats_by_peer_id[peer_id] = {
+			"kills": 0,
+			"deaths": 0,
+		}
+
+	server_broadcast_scoreboard()
+
+
+func server_broadcast_scoreboard() -> void:
+	if not multiplayer.is_server():
+		return
+
+	var entries := build_scoreboard_entries()
+	client_sync_scoreboard(entries)
+
+	for remote_peer_id in multiplayer.get_peers():
+		rpc_id(remote_peer_id, "client_sync_scoreboard", entries)
+
+
+func build_scoreboard_entries() -> Array:
+	var entries: Array = []
+
+	for peer_id in players_by_peer_id.keys():
+		var id := int(peer_id)
+		ensure_player_metadata(id)
+
+		var stats: Dictionary = player_stats_by_peer_id[id]
+		var player = players_by_peer_id[peer_id]
+		var alive := true
+
+		if player != null:
+			var health := player.get_node_or_null("PlayerHealth") as PlayerHealth
+
+			if health != null:
+				alive = health.current_health > 0.0
+
+		entries.append({
+			"peer_id": id,
+			"name": get_player_name(id),
+			"team": get_team_for_peer(id),
+			"kills": int(stats.get("kills", 0)),
+			"deaths": int(stats.get("deaths", 0)),
+			"alive": alive,
+		})
+
+	entries.sort_custom(Callable(self, "_sort_scoreboard_entries"))
+	return entries
+
+
+func _sort_scoreboard_entries(a: Dictionary, b: Dictionary) -> bool:
+	var team_a := String(a.get("team", "a"))
+	var team_b := String(b.get("team", "a"))
+
+	if team_a != team_b:
+		return team_a < team_b
+
+	var kills_a := int(a.get("kills", 0))
+	var kills_b := int(b.get("kills", 0))
+
+	if kills_a != kills_b:
+		return kills_a > kills_b
+
+	var deaths_a := int(a.get("deaths", 0))
+	var deaths_b := int(b.get("deaths", 0))
+
+	if deaths_a != deaths_b:
+		return deaths_a < deaths_b
+
+	return String(a.get("name", "")) < String(b.get("name", ""))
+
+
+@rpc("authority", "reliable")
+func client_sync_scoreboard(new_entries: Array) -> void:
+	scoreboard_entries = new_entries.duplicate(true)
+	scoreboard_changed.emit(scoreboard_entries)
 
 
 func server_set_starting_cash(amount: int) -> void:
@@ -575,7 +742,15 @@ func get_player_summary() -> String:
 
 	for peer_id in players_by_peer_id.keys():
 		var spawn_index := int(spawn_index_by_peer_id.get(peer_id, -1))
-		parts.append(str(peer_id) + " spawn=" + str(spawn_index))
+		parts.append(
+			str(peer_id)
+			+ " name=\""
+			+ get_player_name(int(peer_id))
+			+ "\" team="
+			+ get_team_for_peer(int(peer_id)).to_upper()
+			+ " spawn="
+			+ str(spawn_index)
+		)
 
 	return "Players: " + ", ".join(parts)
 

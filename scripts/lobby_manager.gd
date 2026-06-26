@@ -191,14 +191,7 @@ func _create_or_reconfigure_lobby(settings: Dictionary) -> Dictionary:
 
 func _extract_map_settings(settings: Dictionary) -> Dictionary:
 	return {
-		"use_default_arena": bool(settings.get("map_use_default_arena", GameLaunch.map_use_default_arena)),
-		"style": int(settings.get("map_style", GameLaunch.map_style)),
-		"seed": int(settings.get("map_seed", GameLaunch.map_seed)),
-		"length": float(settings.get("map_length", GameLaunch.map_length)),
-		"width": float(settings.get("map_width", GameLaunch.map_width)),
-		"height": float(settings.get("map_height", GameLaunch.map_height)),
-		"density": float(settings.get("map_density", GameLaunch.map_density)),
-		"boundary": bool(settings.get("map_boundary", GameLaunch.map_boundary)),
+		"id": String(settings.get("map_id", GameLaunch.map_id)),
 	}
 
 
@@ -220,14 +213,7 @@ func _apply_lobby_rules_and_map(lobby: Dictionary) -> void:
 
 func _apply_map_config_to_launch(map_cfg: Dictionary) -> void:
 	GameLaunch.map_configured = true
-	GameLaunch.map_use_default_arena = bool(map_cfg.get("use_default_arena", false))
-	GameLaunch.map_style = int(map_cfg.get("style", 3))
-	GameLaunch.map_seed = int(map_cfg.get("seed", 1))
-	GameLaunch.map_length = float(map_cfg.get("length", 90.0))
-	GameLaunch.map_width = float(map_cfg.get("width", 50.0))
-	GameLaunch.map_height = float(map_cfg.get("height", 40.0))
-	GameLaunch.map_density = float(map_cfg.get("density", 1.0))
-	GameLaunch.map_boundary = bool(map_cfg.get("boundary", true))
+	GameLaunch.map_id = String(map_cfg.get("id", GameLaunch.map_id))
 
 
 func _rebuild_local_map() -> void:
@@ -295,22 +281,7 @@ func client_lobby_result(success: bool, message: String) -> void:
 # --- Helpers ------------------------------------------------------------------------
 
 func _map_label(map_cfg: Dictionary) -> String:
-	if bool(map_cfg.get("use_default_arena", false)):
-		return "Default Arena"
-
-	match int(map_cfg.get("style", 3)):
-		0:
-			return "Core"
-		1:
-			return "Module Station"
-		2:
-			return "Asteroid Field"
-		3:
-			return "Designed"
-		4:
-			return "2v2"
-
-	return "Map"
+	return MapGenerator.get_map_name(String(map_cfg.get("id", "")))
 
 
 func _lobby_state_label() -> String:
@@ -345,12 +316,5 @@ func _default_lobby_settings() -> Dictionary:
 		"starting_cash": GameLaunch.starting_cash,
 		"points_to_win": GameLaunch.points_to_win,
 		"round_time": GameLaunch.round_time_limit,
-		"map_use_default_arena": GameLaunch.map_use_default_arena,
-		"map_style": GameLaunch.map_style,
-		"map_seed": GameLaunch.map_seed,
-		"map_length": GameLaunch.map_length,
-		"map_width": GameLaunch.map_width,
-		"map_height": GameLaunch.map_height,
-		"map_density": GameLaunch.map_density,
-		"map_boundary": GameLaunch.map_boundary,
+		"map_id": GameLaunch.map_id,
 	}

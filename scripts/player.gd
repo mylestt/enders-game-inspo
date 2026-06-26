@@ -20,6 +20,7 @@ extends RigidBody3D
 @export var weapon_aim_reticle_use_world_raycast: bool = false
 
 var buy_menu_open: bool = false
+var is_dead: bool = false
 
 var peer_id: int = 0
 var is_local_player: bool = false
@@ -121,6 +122,9 @@ func report_weapon_shot(origin: Vector3, end: Vector3, did_hit: bool, normal: Ve
 	if not is_local_player:
 		return
 
+	if is_dead:
+		return
+
 	if network_manager != null and network_manager.has_method("broadcast_weapon_shot"):
 		network_manager.call("broadcast_weapon_shot", peer_id, origin, end, did_hit, normal)
 
@@ -165,6 +169,11 @@ func _process(delta: float) -> void:
 	if not is_local_player:
 		return
 	
+	if is_dead:
+		if hud_controller != null:
+			hud_controller.update_weapon_aim_reticle(delta, camera, Vector3.ZERO, true)
+		return
+
 	update_weapon_aim_reticle(delta)
 
 
@@ -173,6 +182,24 @@ func _physics_process(delta: float) -> void:
 		update_remote_network_state(delta)
 		return
 	
+	if is_dead:
+		if movement_controller != null:
+			movement_controller.clear_mouse_motion()
+			movement_controller.clear_free_look_mouse_motion()
+
+		if weapon_inventory != null:
+			weapon_inventory.update_weapon_input(false)
+
+		if suit_boosters != null:
+			suit_boosters.physics_update(delta, false, false)
+
+		if hud_controller != null:
+			hud_controller.update_velocity_indicator(linear_velocity)
+			hud_controller.update_reticle(delta, false, true)
+			hud_controller.update_push_direction_arrow(delta, false, Vector3.ZERO, camera)
+
+		return
+
 	if impact_controller != null:
 		impact_controller.physics_update(delta)
 	
@@ -234,6 +261,9 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	if not is_local_player:
 		return
 	
+	if is_dead:
+		return
+
 	if impact_controller != null and not is_surface_walk_mode_active():
 		impact_controller.integrate_forces(state)
 	
@@ -332,6 +362,9 @@ func apply_network_body_slam_impulse(impulse: Vector3, contact_position: Vector3
 	if not is_local_player:
 		return
 	
+	if is_dead:
+		return
+
 	sleeping = false
 	
 	if movement_controller != null and movement_controller.is_surface_walk_active():
@@ -350,6 +383,11 @@ func apply_network_body_slam_impulse(impulse: Vector3, contact_position: Vector3
 # Called by RoundManager (via RPC) at the start of each round: snap back to spawn,
 # kill momentum, and reset health. Safe to call before a PlayerHealth node exists.
 func reset_for_round(spawn_transform: Transform3D) -> void:
+	is_dead = false
+
+	if hud_controller != null and hud_controller.has_method("set_dead_screen_active"):
+		hud_controller.set_dead_screen_active(false)
+
 	if movement_controller != null and movement_controller.is_surface_walk_active():
 		movement_controller.exit_surface_walk_mode()
 
@@ -377,6 +415,9 @@ func submit_weapon_hit(
 	shot_origin: Vector3,
 	shot_direction: Vector3
 ) -> void:
+	if is_dead:
+		return
+
 	if target == null:
 		return
 	
@@ -411,6 +452,10 @@ func apply_weapon_damage(damage: float, attacker_peer_id: int = 0) -> void:
 		return
 	
 	if health.apply_damage(damage, attacker_peer_id):
+		if is_local_player and health.current_health > 0.0 and hud_controller != null and hud_controller.has_method("show_hurt_effect"):
+			var damage_ratio := damage / maxf(health.max_health, 1.0)
+			hud_controller.show_hurt_effect(damage_ratio)
+
 		print(
 			"Player ",
 			peer_id,
@@ -466,6 +511,23 @@ func _on_health_changed(current_health: float, max_health: float) -> void:
 
 
 func _on_died(attacker_peer_id: int) -> void:
+	is_dead = true
+	linear_velocity = Vector3.ZERO
+	angular_velocity = Vector3.ZERO
+	sleeping = true
+
+	if movement_controller != null:
+		if movement_controller.is_surface_walk_active():
+			movement_controller.exit_surface_walk_mode()
+		movement_controller.clear_mouse_motion()
+		movement_controller.clear_free_look_mouse_motion()
+
+	if weapon_inventory != null:
+		weapon_inventory.update_weapon_input(false)
+
+	if is_local_player and hud_controller != null and hud_controller.has_method("set_dead_screen_active"):
+		hud_controller.set_dead_screen_active(true)
+
 	print("Player ", peer_id, " died. Attacker: ", attacker_peer_id)
 
 
@@ -581,6 +643,9 @@ func is_free_look_active() -> bool:
 
 
 func is_input_locked() -> bool:
+	if is_dead:
+		return true
+
 	if is_surface_walk_mode_active():
 		return false
 	

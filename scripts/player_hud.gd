@@ -18,6 +18,11 @@ var reticle: Panel
 var weapon_aim_reticle: Panel
 var ctrl_push_arrow: Label
 
+var death_screen: ColorRect
+var hurt_shadow: ColorRect
+var hurt_flash: ColorRect
+var hurt_effect_strength: float = 0.0
+
 var impact_flash: ColorRect
 var impact_shadow: ColorRect
 var impact_value_label: Label
@@ -33,6 +38,9 @@ var weapon_aim_reticle_screen_position: Vector2 = Vector2.ZERO
 var has_weapon_aim_reticle_screen_position: bool = false
 
 @export var weapon_aim_reticle_follow_speed: float = 45.0
+@export var hurt_effect_fade_speed: float = 7.0
+@export var hurt_flash_alpha: float = 0.34
+@export var hurt_shadow_alpha: float = 0.24
 
 
 func setup(owner_player: RigidBody3D) -> void:
@@ -45,6 +53,7 @@ func setup(owner_player: RigidBody3D) -> void:
 func _process(delta: float) -> void:
 	update_fps_label()
 	update_hitmarker(delta)
+	update_hurt_effect(delta)
 
 	var viewport_size := get_viewport().get_visible_rect().size
 
@@ -85,6 +94,50 @@ func update_hitmarker(delta: float) -> void:
 	hitmarker_label.modulate = Color(1.0, 1.0, 1.0, clampf(hitmarker_time / HITMARKER_DURATION, 0.0, 1.0))
 
 
+func show_hurt_effect(damage_ratio: float = 0.15) -> void:
+	var strength := clampf(0.25 + damage_ratio * 1.8, 0.25, 1.0)
+	hurt_effect_strength = maxf(hurt_effect_strength, strength)
+	update_hurt_effect(0.0)
+
+
+func update_hurt_effect(delta: float) -> void:
+	if hurt_flash == null or hurt_shadow == null:
+		return
+
+	if hurt_effect_strength > 0.0 and delta > 0.0:
+		hurt_effect_strength = lerpf(
+			hurt_effect_strength,
+			0.0,
+			1.0 - exp(-hurt_effect_fade_speed * delta)
+		)
+
+		if hurt_effect_strength < 0.01:
+			hurt_effect_strength = 0.0
+
+	hurt_shadow.color = Color(0.35, 0.0, 0.0, hurt_effect_strength * hurt_shadow_alpha)
+	hurt_flash.color = Color(1.0, 0.0, 0.0, hurt_effect_strength * hurt_flash_alpha)
+
+
+func set_dead_screen_active(active: bool) -> void:
+	if death_screen != null:
+		death_screen.visible = active
+
+	hurt_effect_strength = 0.0
+	update_hurt_effect(0.0)
+	clear_impact_effect()
+
+
+func clear_impact_effect() -> void:
+	if impact_shadow != null:
+		impact_shadow.color = Color(0.0, 0.0, 0.0, 0.0)
+
+	if impact_flash != null:
+		impact_flash.color = Color(1.0, 1.0, 1.0, 0.0)
+
+	if impact_value_label != null:
+		impact_value_label.visible = false
+
+
 func build_hud() -> void:
 	if hud_layer != null:
 		return
@@ -104,6 +157,7 @@ func build_hud() -> void:
 	root.offset_bottom = 0.0
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	
+	build_damage_state_effects()
 	build_top_left_stats()
 	build_center_reticle()
 	build_weapon_aim_reticle()
@@ -126,6 +180,42 @@ func build_hitmarker() -> void:
 	hitmarker_label.add_theme_color_override("font_color", Color(1.0, 0.95, 0.55, 1.0))
 	hitmarker_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	center_control(hitmarker_label)
+
+
+func build_damage_state_effects() -> void:
+	death_screen = ColorRect.new()
+	death_screen.name = "DeathScreen"
+	root.add_child(death_screen)
+	death_screen.set_anchors_preset(Control.PRESET_FULL_RECT)
+	death_screen.offset_left = 0.0
+	death_screen.offset_top = 0.0
+	death_screen.offset_right = 0.0
+	death_screen.offset_bottom = 0.0
+	death_screen.color = Color(0.0, 0.0, 0.0, 0.98)
+	death_screen.visible = false
+	death_screen.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	hurt_shadow = ColorRect.new()
+	hurt_shadow.name = "HurtShadow"
+	root.add_child(hurt_shadow)
+	hurt_shadow.set_anchors_preset(Control.PRESET_FULL_RECT)
+	hurt_shadow.offset_left = 0.0
+	hurt_shadow.offset_top = 0.0
+	hurt_shadow.offset_right = 0.0
+	hurt_shadow.offset_bottom = 0.0
+	hurt_shadow.color = Color(0.35, 0.0, 0.0, 0.0)
+	hurt_shadow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	hurt_flash = ColorRect.new()
+	hurt_flash.name = "HurtFlash"
+	root.add_child(hurt_flash)
+	hurt_flash.set_anchors_preset(Control.PRESET_FULL_RECT)
+	hurt_flash.offset_left = 0.0
+	hurt_flash.offset_top = 0.0
+	hurt_flash.offset_right = 0.0
+	hurt_flash.offset_bottom = 0.0
+	hurt_flash.color = Color(1.0, 0.0, 0.0, 0.0)
+	hurt_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
 func build_top_left_stats() -> void:

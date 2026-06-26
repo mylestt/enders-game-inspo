@@ -1,12 +1,15 @@
 # ARCHITECTURE.md
 
-Zero-G arena prototype in Godot 4.6 using Jolt physics and physics interpolation. The player is a `RigidBody3D` with composed child controllers for movement, impacts, health, HUD, suit boosters, and weapons. Multiplayer currently handles player spawning, transform relay, body-slam impulse relay, and prototype weapon damage validation.
+Zero-G arena prototype in Godot 4.6 using Jolt physics and physics interpolation. The player is a `RigidBody3D` with composed child controllers for movement, impacts, health, HUD, suit boosters, and weapons. On top of that sits a **server-authoritative multiplayer stack**: a lobby system, round/team scoring, procedural + custom map generation, and an admin/server-control layer. Deployed as a headless dedicated server (DigitalOcean VPS).
+
+> This file is the technical architecture. `PROJECT_OVERVIEW.md` is the design vision; `CLAUDE.md` is the current-state + run/deploy + gotchas handoff; `DEPLOY.md` is the VPS deploy runbook.
 
 ## Stack / Config
-- Main scene: `scenes/main.tscn`
-- No autoloads.
-- Input starts spawning when you press H to host or J to join. Hosting with one peer is playable solo.
-- Main input actions: Space push, Ctrl reverse push, A/D roll or surface-walk strafe, Shift stabilize/sprint fallback, F grab, B buy menu, LMB `weapon_fire`, W/S suit boosters, Alt free look, C surface-walk toggle, H/J host/join, F1 debug camera.
+- **Boot scene:** `scenes/start_menu.tscn` (front-end menu). **Game scene:** `scenes/main.tscn`.
+- **No autoloads** — static holders `GameLaunch` (launch intent + cmdline overrides) and `GameSettings` (saved options) instead.
+- **Startup:** the menu records intent on `GameLaunch` and changes to `main.tscn`; `NetworkManager.apply_launch_mode()` acts on it. Modes: `TEST_ARENA` (local listen-server, auto-spawns you solo), `MULTIPLAYER_BROWSE` (connect + browse lobbies), `MULTIPLAYER_HOST` (connect + create a lobby), `DEDICATED_SERVER` (headless, no local player). Cmdline flags (`--server`, `--join <ip>`, `--map`, rule flags) bypass the menu — see `GameLaunch.apply_cmdline_overrides()`.
+- **Run/deploy:** local test = `host_server.bat` + Multiplayer→Join `127.0.0.1`; VPS deploy = `DEPLOY.md` (re-export + **stop server before scp** + restart).
+- Main input actions: Space push, Ctrl reverse push, A/D roll or surface-walk strafe, Shift stabilize/sprint, F grab, B buy menu, LMB `weapon_fire`, W/S suit boosters, Alt free look, C surface-walk toggle, F10 admin console, Tab scoreboard, F1 debug camera. (H/J host/join still work in-arena as a legacy path.)
 
 ## Player Scene
 ```
@@ -25,6 +28,26 @@ Player RigidBody3D              scripts/player.gd
 `-- MeshInstance3D
 ```
 
+## Game Scene (`scenes/main.tscn`)
+```
+World Node3D                     scripts/main.gd (debug-camera toggle)
+|-- DebugTopCamera Camera3D
+|-- BuyMenu (CanvasLayer)        scripts/buy_menu.gd
+|-- GeneratedMap                 instance of scenes/test_map.tscn (MapGenerator) — the arena
+|-- NetworkManager               scenes/network_manager.gd
+|-- RoundManager                 scripts/round_manager.gd
+|-- LobbyManager                 scripts/lobby_manager.gd
+|-- LobbyBrowser (CanvasLayer)   scripts/lobby_browser.gd
+|-- RoundHUD (CanvasLayer)       scripts/round_hud.gd
+|-- ServerAdmin                  scripts/server_admin.gd
+|-- AdminConsole (CanvasLayer)   scripts/admin_console.gd
+|-- Scoreboard (CanvasLayer)     scripts/scoreboard.gd
+|-- Players (Node3D)             players spawned here at runtime
+|-- WeaponEffects (Node3D)       parent for tracers/effects
+|-- SpawnPointA / SpawnPointB    fallback spawn markers
+```
+The arena's real spawns/gates come from the **map** (marker groups `spawn_team_a` / `spawn_team_b`, gate groups `gate_team_a` / `gate_team_b`). `SpawnPointA/B` are only fallbacks used when no group markers exist.
+
 ## Module Map
 | File | Role | Key API |
 |---|---|---|
@@ -41,6 +64,28 @@ Player RigidBody3D              scripts/player.gd
 | `scripts/player_hud.gd` | Procedural HUD for health/stats, movement reticle, weapon aim reticle, push arrow, impact, limb/booster/ground-lock prompts | `update_*` setters |
 | `scenes/network_manager.gd` | ENet host/join, spawn, state relay, body-slam validation/relay, prototype weapon hit validation/damage broadcast | `submit_local_player_state`, `request_body_slam`, `request_weapon_hit` |
 | `scripts/buy_menu.gd` | Procedural shop; applies purchases/upgrades via player methods | `set_local_player` |
+
+## Multiplayer & Lobby
+Server-authoritative over ENet. `NetworkManager` owns the peer and relays player transforms, body-slams, weapon hits, weapon tracers, and admin cash. On a **lobby-mode** server (dedicated), connecting does NOT auto-spawn — clients connect only to browse, and spawn when they JOIN a lobby (`server_spawn_in_lobby`). Test Arena / listen-server keep the old auto-spawn.
+
+`LobbyManager` is the server-authoritative lobby boss. For now there is **one active lobby**, but the data model and RPCs (`server_request_lobby_list` / `_create_lobby` / `_join_lobby`) are shaped to become many. Creating or joining a lobby applies its rule config to `RoundManager` and its map config to the `MapGenerator`, and syncs the map to the joining client (`client_apply_map_config` → `MapGenerator.rebuild_from_launch`). `LobbyBrowser` is the in-game browser (list, refresh, password, join).
+
+Teams are assigned by **spawn-slot parity** (`NetworkManager.get_team_for_peer`): even = A, odd = B, filled in join order → 1v1 at 2 players, 2v1 at 3, 2v2 at 4. Spawn transforms come from the map's `spawn_team_a/b` marker groups.
+
+## Rounds & Scoring (`scripts/round_manager.gd`)
+Server-authoritative state machine: `WAITING_FOR_PLAYERS → COUNTDOWN → ACTIVE → ROUND_END`. A round ends when an entire team is eliminated (all its players at 0 health); the surviving team scores. `team_scores {a, b}` drives match-over (`points_to_win`) and the `RoundHUD`. State, team scores, and player resets replicate to clients. (Legacy `score_by_peer_id` and the scoreboard's per-player K/D also exist; reconciling the three score systems is a known TODO — see `CLAUDE.md`.)
+
+## Map Loading (`scripts/map_generator.gd`)
+`MapGenerator` is a **scene loader** (the old procedural generator was removed). Maps are hand-authored `.tscn` scenes registered in the `MAPS` const — each entry is `{id, name, scene}` with the scene **preloaded** (so the exporter packs it). At runtime `build_map()` reads `map_id` (from `GameLaunch`), looks it up in `MAPS`, and instantiates that scene under a `GeneratedMap` child. Each map scene must contain its own spawn markers in groups `spawn_team_a` / `spawn_team_b` (optional gates in `gate_team_*`); NetworkManager reads those groups directly. Current maps: `diamond` (`DiamondArena.tscn`), `2v2` (`2v_2.tscn`). `rebuild_from_launch()` rebuilds at runtime from `GameLaunch.map_id` (used for lobby map sync). `scenes/test_map.tscn` is the standalone preview/edit scene (set `map_id` in the inspector). Static helpers `get_map_ids()` / `get_map_name()` / `has_map()` / `normalize_map_id()` drive the menu picker and cmdline `--map <id>`.
+
+## Admin & Server Control
+`ServerAdmin` (server-authoritative) accepts commands two ways: a polled **command file** (the VPS appends to `enders_admin_commands.txt`) and **in-game RPCs** gated by `--admin-key`. It dispatches to `RoundManager.server_command()` and NetworkManager cash methods (`set_starting_cash`, `give_money`, …). `AdminConsole` is the **F10** in-game console. `scoreboard.gd` is the **Tab**-held team K/D scoreboard (backed by NetworkManager kill/death tracking + `scoreboard_changed`). `server_control.ps1` is a PowerShell menu for managing the VPS (logs, commands, upload, restart).
+
+## In-Game UI (all procedural, built in GDScript)
+`player_hud` (per-local-player; hidden on remote copies via `set_hud_active`), `round_hud` (team-score bar), `lobby_browser`, `scoreboard` (Tab), `admin_console` (F10), plus the front-end `settings_menu` and `map_setup_menu`.
+
+## Settings (`scripts/game_settings.gd`)
+Static holder + `settings_menu.gd`: rebindable keybinds (any action), FOV (70–110), mouse sensitivity, master volume, fullscreen. Persisted to `user://settings.cfg` and applied on boot (`load_and_apply`).
 
 ## Weapon Flow
 The buy menu calls `player.purchase_minigun()`. The player delegates to `WeaponInventory`, which records ownership, instantiates `scenes/minigun.tscn` under `CameraRig/Camera3D/WeaponMount`, and calls `equip(owner_player)`.
@@ -77,8 +122,11 @@ interpolate toward the latest network transform target.
 - SUIT UPGRADES: Grab Distance I-III, tiered.
 - SPECIAL SUIT SYSTEMS: Suit Boosters, one-time purchase.
 
-Purchases are local-only for now. Weapon ownership and equipped state are not persisted or replicated yet.
+Purchases are local-only for now (weapon ownership / equipped state aren't replicated). Starting cash is seeded from the lobby or `--starting-cash`, and admins can set/give cash at runtime (`BuyMenu.admin_set_cash` / `admin_add_cash`), but cash is still **client-side and cheatable** — moving the economy server-side is a known TODO.
 
 ## Notes
 - Weapon logic is intentionally split: inventory owns ownership/equip/input, individual weapon scenes own behavior, and player only delegates.
 - The minigun auto-finds child `Node3D`s whose names contain `barrel` and `box`; set exported node paths on `scenes/minigun.tscn` if the imported names do not match.
+- Surface-walk auto-aligns the body to the surface beneath you within `surface_walk_slope_align_max_degrees`; steeper drops you to zero-G. Tunable via the `surface_walk_slope_align_*` exports.
+- A multiplayer **"rpc node checksum failed"** error means the client and server are running different code versions (usually the VPS has an old binary) — redeploy.
+- Open threads / TODOs (2v2 editable-scene conversion, score-system reconciliation, no death/spectate state, late-join state sync, server-side economy) are tracked in `CLAUDE.md`.

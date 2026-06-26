@@ -13,10 +13,7 @@ MIN_PLAYERS="${MIN_PLAYERS:-2}"
 STARTING_CASH="${STARTING_CASH:-200000}"
 POINTS_TO_WIN="${POINTS_TO_WIN:-8}"
 ROUND_TIME="${ROUND_TIME:-0}"
-MAP="${MAP:-designed}"
-MAP_SEED="${MAP_SEED:-1}"
-MAP_DENSITY="${MAP_DENSITY:-1.0}"
-MAP_BOUNDARY="${MAP_BOUNDARY:-true}"
+MAP="${MAP:-diamond}"   # map id from MapGenerator.MAPS (e.g. diamond, 2v2)
 
 if [ ! -f "$BINARY" ]; then
   echo "Binary not found: $BINARY"
@@ -27,7 +24,7 @@ fi
 chmod +x "$BINARY" 2>/dev/null
 touch "$ADMIN_FILE" 2>/dev/null
 
-CMD="$BINARY --headless -- --server --port $PORT --admin-file $ADMIN_FILE --min-players $MIN_PLAYERS --starting-cash $STARTING_CASH --points-to-win $POINTS_TO_WIN --round-time $ROUND_TIME --map $MAP --map-seed $MAP_SEED --map-density $MAP_DENSITY --map-boundary $MAP_BOUNDARY"
+CMD="$BINARY --headless -- --server --port $PORT --admin-file $ADMIN_FILE --min-players $MIN_PLAYERS --starting-cash $STARTING_CASH --points-to-win $POINTS_TO_WIN --round-time $ROUND_TIME --map $MAP"
 
 if [ -n "$ADMIN_KEY" ]; then
   CMD="$CMD --admin-key $ADMIN_KEY"
@@ -37,7 +34,7 @@ if command -v tmux >/dev/null 2>&1; then
   tmux kill-session -t gameserver 2>/dev/null
   tmux new-session -d -s gameserver "$CMD"
   echo "Server started in tmux session 'gameserver' on UDP $PORT."
-  echo "Rules: min_players=$MIN_PLAYERS starting_cash=$STARTING_CASH points_to_win=$POINTS_TO_WIN round_time=$ROUND_TIME map=$MAP seed=$MAP_SEED"
+  echo "Rules: min_players=$MIN_PLAYERS starting_cash=$STARTING_CASH points_to_win=$POINTS_TO_WIN round_time=$ROUND_TIME map=$MAP"
   echo "Admin file: $ADMIN_FILE"
   echo "Watch it:  tmux attach -t gameserver    (detach: Ctrl+B then D)"
   echo "Stop it:   tmux kill-session -t gameserver"

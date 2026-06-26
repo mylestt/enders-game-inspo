@@ -148,7 +148,7 @@ surface_material_override/0 = SubResource("StandardMaterial3D_4yslh")
 shape = SubResource("ConcavePolygonShape3D_4yslh")
 
 [node name="MeshInstance3D4" type="MeshInstance3D" parent="." unique_id=1236471599]
-transform = Transform3D(37.84999, 0, 0, 0, -56.77271, 8.742276e-08, 0, -4.9632276e-06, -1, 0, 6.081237, 28.33246)
+transform = Transform3D(142.81699, 0, 0, 0, -56.77271, 8.742276e-08, 0, -4.9632276e-06, -1, 0, 6.081237, 28.33246)
 mesh = SubResource("BoxMesh_5ecq4")
 
 [node name="StaticBody3D" type="StaticBody3D" parent="MeshInstance3D4" unique_id=1249664930]
@@ -166,7 +166,7 @@ mesh = SubResource("BoxMesh_5ecq4")
 shape = SubResource("ConcavePolygonShape3D_5ecq4")
 
 [node name="Cylinder" type="MeshInstance3D" parent="." unique_id=950361159]
-transform = Transform3D(2.1207955, 0, 0, 0, 2.1207955, 0, 0, 0, 3.7715766, 0, -5.6602554, 0)
+transform = Transform3D(4.330766, 0, 0, 0, 2.1270852, 0, 0, 0, 3.782762, 0.0007894039, -5.6440964, -0.008428574)
 mesh = SubResource("ArrayMesh_n5mo8")
 surface_material_override/0 = SubResource("StandardMaterial3D_4yslh")
 

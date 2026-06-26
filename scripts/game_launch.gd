@@ -20,6 +20,8 @@ const DEFAULT_SERVER_IP := "147.182.160.52"
 
 static var pending_mode: int = Mode.NONE
 static var join_ip: String = ""
+static var player_username: String = "Player"
+static var username_configured: bool = false
 
 # Which server the Multiplayer browse/host flow connects to (blank = DEFAULT_SERVER_IP).
 static var server_ip: String = ""
@@ -39,18 +41,20 @@ static var round_time_limit: float = 0.0
 static var admin_key: String = ""
 
 # Map selection from the map-setup menu, consumed by MapGenerator at runtime.
+# Maps are hand-built scenes referenced by id; see MapGenerator.MAPS.
 static var map_configured: bool = false
-static var map_use_default_arena: bool = false
-static var map_style: int = 3
-static var map_seed: int = 1
-static var map_length: float = 90.0
-static var map_width: float = 50.0
-static var map_height: float = 40.0
-static var map_density: float = 1.0
-static var map_boundary: bool = true
+static var map_id: String = "diamond"
 
 
 static func apply_cmdline_overrides() -> void:
+	var username_value := read_cmdline_value("--username", "")
+
+	if username_value == "":
+		username_value = read_cmdline_value("--name", "")
+
+	if username_value != "":
+		set_player_username(username_value)
+
 	min_players_to_start = read_cmdline_int("--min-players", min_players_to_start)
 	starting_cash = read_cmdline_int("--starting-cash", starting_cash)
 	points_to_win = read_cmdline_int("--points-to-win", points_to_win)
@@ -70,66 +74,32 @@ static func apply_cmdline_overrides() -> void:
 	if map_value != "":
 		apply_map_name(map_value)
 
-	var map_style_value := read_cmdline_value("--map-style", "")
-
-	if map_style_value != "":
-		map_configured = true
-		map_use_default_arena = false
-		map_style = clampi(int(map_style_value), 0, 4)
-
-	var default_arena_value := read_cmdline_value("--default-arena", "")
-
-	if default_arena_value != "":
-		map_configured = true
-		map_use_default_arena = read_cmdline_bool("--default-arena", map_use_default_arena)
-
-	map_seed = read_cmdline_int("--map-seed", map_seed)
-	map_length = read_cmdline_float("--map-length", map_length)
-	map_width = read_cmdline_float("--map-width", map_width)
-	map_height = read_cmdline_float("--map-height", map_height)
-	map_density = read_cmdline_float("--map-density", map_density)
-	map_boundary = read_cmdline_bool("--map-boundary", map_boundary)
-
-	if (
-		map_value != ""
-		or map_style_value != ""
-		or default_arena_value != ""
-		or read_cmdline_value("--map-seed", "") != ""
-		or read_cmdline_value("--map-length", "") != ""
-		or read_cmdline_value("--map-width", "") != ""
-		or read_cmdline_value("--map-height", "") != ""
-		or read_cmdline_value("--map-density", "") != ""
-		or read_cmdline_value("--map-boundary", "") != ""
-	):
-		map_configured = true
-
 
 static func apply_map_name(value: String) -> void:
-	var key := value.strip_edges().to_lower().replace(" ", "_").replace("-", "_")
 	map_configured = true
+	map_id = MapGenerator.normalize_map_id(value)
 
-	match key:
-		"default", "arena3", "default_arena", "default_arena_3":
-			map_use_default_arena = true
-		"core":
-			map_use_default_arena = false
-			map_style = 0
-		"module", "module_station", "station":
-			map_use_default_arena = false
-			map_style = 1
-		"asteroid", "asteroid_field":
-			map_use_default_arena = false
-			map_style = 2
-		"designed":
-			map_use_default_arena = false
-			map_style = 3
-		"2v2", "arena_2v2", "twovtwo":
-			map_use_default_arena = false
-			map_style = 4
-		_:
-			if key.is_valid_int():
-				map_use_default_arena = false
-				map_style = clampi(int(key), 0, 4)
+
+static func set_player_username(value: String) -> void:
+	player_username = sanitize_username(value)
+	username_configured = true
+
+
+static func sanitize_username(value: String) -> String:
+	var clean := value.strip_edges()
+
+	if clean == "":
+		return "Player"
+
+	clean = clean.replace("\n", " ").replace("\r", " ").replace("\t", " ")
+
+	while clean.find("  ") != -1:
+		clean = clean.replace("  ", " ")
+
+	if clean.length() > 18:
+		clean = clean.substr(0, 18)
+
+	return clean
 
 
 # Reads the pending mode once, then clears it, so reloading the game scene later

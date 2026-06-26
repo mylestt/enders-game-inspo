@@ -67,6 +67,13 @@ enum MovementMode {
 @export var surface_walk_edge_check_extra_distance: float = 0.35
 @export var surface_walk_edge_grace_time: float = 0.06
 @export var surface_walk_surface_normal_min_dot: float = 0.65
+
+# Slope alignment: while ground-walking, ease the body's orientation onto the surface
+# under it (up or down) as long as the slope change stays under the threshold. Past the
+# threshold the slope is "too steep" and you drop off into zero-G.
+@export var surface_walk_slope_align_max_degrees: float = 45.0
+@export var surface_walk_slope_align_speed: float = 10.0
+@export var surface_walk_slope_align_max_turn_speed_degrees: float = 240.0
 @export var surface_walk_foot_check_distance: float = 0.4
 @export var surface_walk_required_foot_count: int = 2
 @export var surface_walk_foot_surface_normal_min_dot: float = 0.75
@@ -537,17 +544,49 @@ func update_surface_walk_edge_check(delta: float) -> bool:
 		
 		return false
 	
-	var normal_similarity := hit_normal.normalized().dot(surface_walk_normal)
-	
-	if normal_similarity < surface_walk_surface_normal_min_dot:
-		print("Surface walk ended: different surface angle under player.")
+	var target_normal := hit_normal.normalized()
+	var slope_change_degrees := rad_to_deg(surface_walk_normal.angle_to(target_normal))
+
+	if slope_change_degrees > surface_walk_slope_align_max_degrees:
+		print("Surface walk ended: slope too steep to align (", roundi(slope_change_degrees), " deg).")
 		exit_surface_walk_mode()
 		return true
-	
+
+	align_surface_walk_normal_toward(target_normal, delta)
+
 	surface_walk_no_surface_timer = 0.0
 	surface_walk_anchor_point = result.get("position", surface_walk_anchor_point)
-	
+
 	return false
+
+
+# Eases the walked-surface normal toward the ground under the player, so stepping onto a
+# (shallow enough) ramp smoothly banks into its orientation instead of staying locked to
+# the old one. Capped per frame so a sharp crease can't whip the camera. Forward is
+# re-projected onto the new plane so facing stays consistent.
+func align_surface_walk_normal_toward(target_normal: Vector3, delta: float) -> void:
+	if target_normal.length() < 0.01:
+		return
+
+	target_normal = target_normal.normalized()
+	var full_angle := surface_walk_normal.angle_to(target_normal)
+
+	if full_angle < 0.0001:
+		return
+
+	var exp_weight := 1.0 - exp(-surface_walk_slope_align_speed * delta)
+	var max_step := deg_to_rad(surface_walk_slope_align_max_turn_speed_degrees) * delta
+	var step_angle := minf(full_angle * exp_weight, max_step)
+	var t := clampf(step_angle / full_angle, 0.0, 1.0)
+
+	surface_walk_normal = surface_walk_normal.slerp(target_normal, t).normalized()
+
+	var projected_forward := surface_walk_forward.slide(surface_walk_normal)
+
+	if projected_forward.length() < 0.01:
+		projected_forward = get_fallback_surface_forward(surface_walk_normal)
+
+	surface_walk_forward = projected_forward.normalized()
 
 
 func get_surface_walk_ground_result() -> Dictionary:

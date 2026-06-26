@@ -11,35 +11,18 @@
 [ext_resource type="Script" uid="uid://cmqs5yuimp758" path="res://scripts/lobby_manager.gd" id="9_lobby"]
 [ext_resource type="Script" uid="uid://dtglsq7hq2vtw" path="res://scripts/lobby_browser.gd" id="10_browser"]
 [ext_resource type="Script" uid="uid://dg56k8ek316nr" path="res://scripts/round_hud.gd" id="11_roundhud"]
+[ext_resource type="Script" uid="uid://cwcakba58fk0q" path="res://scripts/scoreboard.gd" id="12_scoreboard"]
 
 [node name="World Node3D" type="Node3D" unique_id=878825741 node_paths=PackedStringArray("debug_camera")]
 script = ExtResource("1_sugp2")
-debug_camera = NodePath("DebugTopCamera Camera3D")
-
-[node name="DebugTopCamera Camera3D" type="Camera3D" parent="." unique_id=30514711]
-transform = Transform3D(0.8786469, -0.2806736, -0.38626668, 0.14854893, -0.60814434, 0.77980363, -0.45377615, -0.7425515, -0.49265042, -27.762413, 35.045925, -50.952976)
-fov = 111.5
+debug_camera = NodePath("")
 
 [node name="BuyMenu" type="CanvasLayer" parent="." unique_id=2018399957]
 script = ExtResource("4_jyhfs")
 starting_cash = 200000
 
 [node name="GeneratedMap" parent="." unique_id=1659737674 instance=ExtResource("4_tbgi4")]
-style = 3
-designed_arena_size = 120.0
-designed_center_size = 22.0
-designed_cube_size = 7.0
-designed_grid_count = 5
-designed_margin = 8.0
-grid_tiling = 0.5
-area_light_energy = 2.2
-area_light_range = 55.0
-use_default_arena = false
-default_arena_transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6848607, -56.527985)
-primary_spawn_a_path = NodePath("../SpawnPointA")
-primary_spawn_b_path = NodePath("../SpawnPointB")
-default_spawn_a_transform = Transform3D(-0.9967494, 0, -0.08056427, 0, 1, 0, 0.08056427, 0, -0.9967494, -56.358753, 21.572994, -54.54737)
-default_spawn_b_transform = Transform3D(0.97513777, -0.22159956, 0, 0.22159956, 0.97513777, 0, 0, 0, 1, 60.1372, 27.463604, -74.46355)
+map_id = "diamond"
 
 [node name="NetworkManager" type="Node" parent="." unique_id=925509397]
 script = ExtResource("4_tefeu")
@@ -60,6 +43,9 @@ script = ExtResource("10_browser")
 
 [node name="RoundHUD" type="CanvasLayer" parent="." unique_id=554489353]
 script = ExtResource("11_roundhud")
+
+[node name="Scoreboard" type="CanvasLayer" parent="." unique_id=845839312]
+script = ExtResource("12_scoreboard")
 
 [node name="ServerAdmin" type="Node" parent="." unique_id=217199436]
 script = ExtResource("7_admin")
