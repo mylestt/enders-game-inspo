@@ -7,12 +7,11 @@ class_name GameLaunch
 
 enum Mode {
 	NONE,
-	TEST_ARENA,
-	MULTIPLAYER,          # direct IP join (advanced)
-	MULTIPLAYER_BROWSE,   # connect to a server to browse its lobbies
-	MULTIPLAYER_HOST,     # connect to a server and create a lobby
-	HOST_SERVER,
-	DEDICATED_SERVER,
+	TEST_ARENA,           # offline single-player
+	MULTIPLAYER,          # direct IP join via --join cmdline
+	MULTIPLAYER_BROWSE,   # connect to the VPS to browse its lobbies
+	MULTIPLAYER_HOST,     # create a lobby on the VPS (you are still a client)
+	DEDICATED_SERVER,     # headless server (runs on the VPS)
 }
 
 # The dedicated server players reach from the Multiplayer menu without typing an IP.

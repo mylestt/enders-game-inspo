@@ -10,7 +10,6 @@ var username_view: VBoxContainer
 var username_field: LineEdit
 var username_status_label: Label
 var joke_popup: PanelContainer
-var ip_field: LineEdit
 var status_label: Label
 var multiplayer_status_label: Label
 
@@ -145,21 +144,7 @@ func build_multiplayer_view() -> VBoxContainer:
 
 	column.add_child(make_spacer(10.0))
 
-	var ip_label := Label.new()
-	ip_label.text = "Advanced — Direct Server IP (blank = default)"
-	ip_label.add_theme_font_size_override("font_size", 13)
-	ip_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.55))
-	column.add_child(ip_label)
-
-	ip_field = LineEdit.new()
-	ip_field.placeholder_text = GameLaunch.DEFAULT_SERVER_IP
-	ip_field.custom_minimum_size = Vector2(0.0, 40.0)
-	ip_field.add_theme_font_size_override("font_size", 16)
-	column.add_child(ip_field)
-
-	column.add_child(make_spacer(6.0))
-
-	multiplayer_status_label = make_status_label("Join browses lobbies on the server. Host creates one.")
+	multiplayer_status_label = make_status_label("Join browses lobbies on the VPS. Host creates one.")
 	column.add_child(multiplayer_status_label)
 
 	return column
@@ -327,10 +312,7 @@ func _on_host_pressed() -> void:
 
 
 func _direct_server_ip() -> String:
-	# Blank means "use the default server" (NetworkManager fills in DEFAULT_SERVER_IP).
-	if ip_field != null and ip_field.text.strip_edges() != "":
-		return ip_field.text.strip_edges()
-
+	# Always the default VPS now (NetworkManager fills in DEFAULT_SERVER_IP).
 	return ""
 
 

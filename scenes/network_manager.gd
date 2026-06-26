@@ -23,6 +23,31 @@ signal scoreboard_changed(entries: Array)
 @export var weapon_hit_server_cooldown: float = 0.02
 @export var weapon_tracer_scene: PackedScene = preload("res://scenes/hitscan_tracer_effect.tscn")
 
+@export_group("Lag Compensation")
+# Server-side "backtracking" (CS/Valorant-style). The server records every player's
+# recent positions and, when a shot arrives, rewinds the *target* to where it was on the
+# *shooter's* screen when they fired (their latency + interpolation buffer), then verifies
+# the shot ray actually passed through the target there. Replaces the old "is the hit near
+# the target's CURRENT position" guess, which broke for moving targets under any latency.
+@export var lag_comp_enabled: bool = true
+# How much position history to keep per player (seconds). Caps the furthest rewind.
+@export var lag_comp_history_seconds: float = 1.0
+# Clients render other players this far in the past for smoothing; rewind must add it back.
+# Should roughly match the client interpolation delay (see player network smoothing).
+@export var lag_comp_interpolation_delay: float = 0.1
+# Manual fudge added to every rewind, for tuning if hits feel slightly behind/ahead.
+@export var lag_comp_extra_rewind: float = 0.0
+# Never rewind further than this (seconds), even for very high-ping shooters.
+@export var lag_comp_max_rewind: float = 1.0
+# Effective hit radius around the rewound target position (metres). Approximates the
+# player capsule as a sphere for the validation ray-vs-target test.
+@export var lag_comp_hitbox_radius: float = 1.2
+# Extra slack added to the hitbox radius to absorb interpolation/sampling error.
+@export var lag_comp_position_tolerance: float = 0.75
+# If a target has no usable history (just spawned, etc.), fall back to its current position
+# instead of rejecting the hit outright.
+@export var lag_comp_fallback_to_present: bool = true
+
 var players_parent: Node3D
 var buy_menu: Node
 
@@ -33,6 +58,21 @@ var player_stats_by_peer_id: Dictionary = {}
 var scoreboard_entries: Array = []
 var last_body_slam_time_by_pair: Dictionary = {}
 var last_weapon_hit_time_by_pair: Dictionary = {}
+# peer_id -> Array of { "t": float (server seconds), "pos": Vector3 }, oldest-first.
+# Server-only; the lag-compensation backtracking buffer.
+var player_state_history: Dictionary = {}
+
+# --- Network diagnostics (F3 overlay + per-round report) ----------------------------
+# Measured arrival timing of remote-player state packets AT THIS MACHINE. This is the key
+# signal for the "remote player freezes/skips" symptom: irregular arrival shows up here.
+var net_diag_last_recv_by_peer: Dictionary = {}        # peer_id -> last receive time (s)
+var net_diag_rate_by_peer: Dictionary = {}             # peer_id -> smoothed updates/sec
+var net_diag_last_gap_by_peer: Dictionary = {}         # peer_id -> last inter-packet gap (s)
+var net_diag_round_max_gap_by_peer: Dictionary = {}    # peer_id -> worst gap this round (s)
+var net_diag_overlay: CanvasLayer
+var round_manager: Node
+# Per-round aggregate accumulator, flushed to a file on round end.
+var net_report: Dictionary = {}
 
 # Lobby mode: when true (dedicated server), connecting does NOT auto-spawn — players
 # spawn only when they join a lobby through LobbyManager.
@@ -57,29 +97,32 @@ func _ready() -> void:
 	
 	connect_multiplayer_signals()
 
+	round_manager = get_node_or_null("../RoundManager")
+
+	if round_manager != null and round_manager.has_signal("round_state_changed"):
+		round_manager.round_state_changed.connect(_on_round_state_changed_for_report)
+
+	reset_net_report()
+	create_network_debug_overlay()
+
 	print("NetworkManager ready.")
 	print("Current multiplayer peer active: ", has_active_multiplayer_peer())
-	print("Press H to host, J to join.")
 
 	apply_launch_mode()
 
 
-# Acts on the choice the start menu recorded. Test Arena auto-hosts a solo session
-# (same path as pressing H); Dedicated Server hosts headless with no local player.
+# Acts on the choice the start menu recorded. Test Arena runs a true offline solo session
+# (no networking); Dedicated Server hosts headless on the VPS; the rest are VPS clients.
 func apply_launch_mode() -> void:
 	match GameLaunch.consume_mode():
 		GameLaunch.Mode.TEST_ARENA:
-			print("Launch mode: Test Arena — auto-hosting solo.")
-			call_deferred("host_game")
+			print("Launch mode: Test Arena — offline single-player.")
+			call_deferred("start_single_player")
 
 		GameLaunch.Mode.DEDICATED_SERVER:
 			var server_port := int(GameLaunch.read_cmdline_value("--port", str(port)))
 			print("Launch mode: Dedicated server on port ", server_port, ".")
 			call_deferred("start_dedicated_server", server_port)
-
-		GameLaunch.Mode.HOST_SERVER:
-			print("Launch mode: Local server.")
-			call_deferred("host_game")
 
 		GameLaunch.Mode.MULTIPLAYER:
 			pending_lobby_action = "browse"
@@ -170,33 +213,6 @@ func start_dedicated_server(server_port: int = port) -> void:
 	print("Dedicated server listening on port ", server_port, ". Waiting for clients.")
 
 
-func _unhandled_input(event: InputEvent) -> void:
-	if event.is_echo():
-		return
-	
-	var wants_host := false
-	var wants_join := false
-	
-	if InputMap.has_action("host_game") and event.is_action_pressed("host_game"):
-		wants_host = true
-	
-	if InputMap.has_action("join_game") and event.is_action_pressed("join_game"):
-		wants_join = true
-	
-	if wants_host and wants_join:
-		push_warning("host_game and join_game are both triggered by this key. Fix Project Settings > Input Map.")
-		return
-	
-	if wants_host:
-		host_game()
-		get_viewport().set_input_as_handled()
-		return
-	
-	if wants_join:
-		join_game(default_join_ip)
-		get_viewport().set_input_as_handled()
-
-
 func connect_multiplayer_signals() -> void:
 	if not multiplayer.peer_connected.is_connected(_on_peer_connected):
 		multiplayer.peer_connected.connect(_on_peer_connected)
@@ -231,35 +247,17 @@ func has_active_multiplayer_peer() -> bool:
 	)
 
 
-func host_game() -> void:
-	if has_active_multiplayer_peer():
-		if multiplayer.is_server() and not players_by_peer_id.has(1):
-			ensure_player_metadata(1, GameLaunch.player_username)
-			spawn_index_by_peer_id[1] = 0
-			client_spawn_player(1, 0, starting_cash, get_player_name(1))
-			server_broadcast_scoreboard()
-		
-		print("Already connected to an active multiplayer peer.")
-		return
-	
+# Offline solo Test Arena: no ENet peer at all. Spawns just the local player so you can
+# fly and shoot. RoundManager stays dormant (its is_server() is false with no peer).
+func start_single_player() -> void:
 	clear_runtime_multiplayer_state()
-	
-	var peer := ENetMultiplayerPeer.new()
-	var error := peer.create_server(port, max_players - 1)
-	
-	if error != OK:
-		push_error("Failed to host game. Error: " + str(error))
-		multiplayer.multiplayer_peer = null
-		return
-	
-	multiplayer.multiplayer_peer = peer
-	
+	lobby_mode = false
+
 	ensure_player_metadata(1, GameLaunch.player_username)
 	spawn_index_by_peer_id[1] = 0
 	client_spawn_player(1, 0, starting_cash, get_player_name(1))
-	server_broadcast_scoreboard()
-	
-	print("Hosting 1v1 on port ", port)
+
+	print("Single-player Test Arena started.")
 
 
 func join_game(ip: String) -> void:
@@ -299,7 +297,8 @@ func clear_runtime_multiplayer_state() -> void:
 	scoreboard_changed.emit(scoreboard_entries)
 	last_body_slam_time_by_pair.clear()
 	last_weapon_hit_time_by_pair.clear()
-	
+	player_state_history.clear()
+
 	var peer := multiplayer.multiplayer_peer
 	
 	if peer != null and not (peer is OfflineMultiplayerPeer):
@@ -417,6 +416,7 @@ func _on_peer_disconnected(peer_id: int) -> void:
 	spawn_index_by_peer_id.erase(peer_id)
 	player_names_by_peer_id.erase(peer_id)
 	player_stats_by_peer_id.erase(peer_id)
+	player_state_history.erase(peer_id)
 	clear_body_slam_pairs_for_peer(peer_id)
 
 	if lobby_manager != null and lobby_manager.has_method("server_on_peer_left"):
@@ -450,6 +450,15 @@ func clear_body_slam_pairs_for_peer(peer_id: int) -> void:
 		last_weapon_hit_time_by_pair.erase(key)
 
 
+# This machine's peer id. In offline single-player there is no peer, so the sole local
+# player is peer 1 (asking multiplayer.get_unique_id() with no peer warns and fails).
+func get_local_peer_id() -> int:
+	if has_active_multiplayer_peer():
+		return multiplayer.get_unique_id()
+
+	return 1
+
+
 @rpc("authority", "call_local", "reliable")
 func client_spawn_player(
 	peer_id: int,
@@ -481,7 +490,7 @@ func client_spawn_player(
 		player.global_transform = get_spawn_transform(spawn_index)
 		player.reset_physics_interpolation()
 	
-	var is_local := peer_id == multiplayer.get_unique_id()
+	var is_local := peer_id == get_local_peer_id()
 	
 	if player.has_method("set_multiplayer_player"):
 		player.call("set_multiplayer_player", peer_id, is_local, self)
@@ -765,6 +774,7 @@ func submit_local_player_state(
 		return
 	
 	if multiplayer.is_server():
+		server_record_state_history(peer_id, player_transform.origin)
 		client_receive_player_state(peer_id, player_transform, linear_velocity, angular_velocity)
 		rpc("client_receive_player_state", peer_id, player_transform, linear_velocity, angular_velocity)
 	else:
@@ -789,10 +799,11 @@ func server_receive_player_state(
 		return
 	
 	var sender_id := multiplayer.get_remote_sender_id()
-	
+
 	if sender_id != peer_id:
 		return
-	
+
+	server_record_state_history(peer_id, player_transform.origin)
 	client_receive_player_state(peer_id, player_transform, linear_velocity, angular_velocity)
 	rpc("client_receive_player_state", peer_id, player_transform, linear_velocity, angular_velocity)
 
@@ -806,12 +817,14 @@ func client_receive_player_state(
 ) -> void:
 	if peer_id == multiplayer.get_unique_id():
 		return
-	
+
+	track_incoming_state_timing(peer_id)
+
 	if not players_by_peer_id.has(peer_id):
 		return
-	
+
 	var player = players_by_peer_id[peer_id]
-	
+
 	if player != null and player.has_method("receive_network_state"):
 		player.call("receive_network_state", player_transform, linear_velocity, angular_velocity)
 
@@ -985,7 +998,15 @@ func server_process_weapon_hit(
 	if not can_process_weapon_hit_pair(attacker_peer_id, target_peer_id):
 		return
 	
-	if not is_weapon_hit_plausible(attacker, target, hit_position, shot_origin, shot_direction):
+	if not is_weapon_hit_plausible(
+		attacker_peer_id,
+		target_peer_id,
+		attacker,
+		target,
+		hit_position,
+		shot_origin,
+		shot_direction
+	):
 		return
 	
 	mark_weapon_hit_pair(attacker_peer_id, target_peer_id)
@@ -1020,6 +1041,8 @@ func mark_weapon_hit_pair(attacker_peer_id: int, target_peer_id: int) -> void:
 
 
 func is_weapon_hit_plausible(
+	attacker_peer_id: int,
+	target_peer_id: int,
 	attacker: Node3D,
 	target: Node3D,
 	hit_position: Vector3,
@@ -1028,19 +1051,135 @@ func is_weapon_hit_plausible(
 ) -> bool:
 	if shot_direction.length() < 0.001:
 		return false
-	
+
+	# Sanity: the shot must originate near the attacker and stay within weapon range.
 	if shot_origin.distance_to(attacker.global_position) > weapon_hit_origin_validation_distance:
 		return false
-	
+
 	if shot_origin.distance_to(hit_position) > weapon_hit_max_range:
 		return false
-	
-	var target_distance_to_hit := target.global_position.distance_to(hit_position)
-	
-	if target_distance_to_hit > weapon_hit_target_validation_radius:
+
+	if not lag_comp_enabled:
+		# Legacy path: just check the claimed hit point is near the target's CURRENT position.
+		return target.global_position.distance_to(hit_position) <= weapon_hit_target_validation_radius
+
+	# Lag-compensated path: rewind the target to where it was on the shooter's screen, then
+	# verify the shot ray actually passed through it there.
+	var rewind_seconds := compute_rewind_for_peer(attacker_peer_id)
+	# Untyped on purpose: get_rewound_position returns either a Vector3 or null.
+	var rewound_position = get_rewound_position(target_peer_id, rewind_seconds)
+
+	if rewound_position == null:
+		if not lag_comp_fallback_to_present:
+			return false
+		rewound_position = target.global_position
+
+	return ray_passes_through_target(shot_origin, shot_direction, rewound_position)
+
+
+# Records one position sample for a player into the backtracking buffer and trims anything
+# older than lag_comp_history_seconds. Server-only.
+func server_record_state_history(peer_id: int, position: Vector3) -> void:
+	if not lag_comp_enabled or not multiplayer.is_server():
+		return
+
+	var now := Time.get_ticks_msec() / 1000.0
+	var history: Array = player_state_history.get(peer_id, [])
+	history.append({ "t": now, "pos": position })
+
+	var cutoff := now - lag_comp_history_seconds
+
+	while history.size() > 1 and float(history[0]["t"]) < cutoff:
+		history.pop_front()
+
+	player_state_history[peer_id] = history
+
+
+# How far back (seconds) to rewind the world for this shooter: their round-trip latency plus
+# the client interpolation delay, clamped to the buffer length.
+func compute_rewind_for_peer(peer_id: int) -> float:
+	var rewind := get_peer_rtt_seconds(peer_id) + lag_comp_interpolation_delay + lag_comp_extra_rewind
+	return clampf(rewind, 0.0, minf(lag_comp_max_rewind, lag_comp_history_seconds))
+
+
+# Smoothed round-trip time (seconds) for a peer from ENet. The host's own player (peer 1)
+# has no network delay. Falls back to 0 if statistics are unavailable.
+func get_peer_rtt_seconds(peer_id: int) -> float:
+	if peer_id == 1:
+		return 0.0
+
+	var mp := multiplayer.multiplayer_peer
+
+	if mp is ENetMultiplayerPeer:
+		var enet_peer := (mp as ENetMultiplayerPeer).get_peer(peer_id)
+
+		if enet_peer != null:
+			return enet_peer.get_statistic(ENetPacketPeer.PEER_ROUND_TRIP_TIME) / 1000.0
+
+	return 0.0
+
+
+# Returns the target's interpolated position rewind_seconds in the past, or null if there is
+# no usable history.
+func get_rewound_position(peer_id: int, rewind_seconds: float):
+	var history: Array = player_state_history.get(peer_id, [])
+
+	if history.is_empty():
+		return null
+
+	var target_time := (Time.get_ticks_msec() / 1000.0) - rewind_seconds
+
+	# Newer than the most recent sample (e.g. tiny rewind): use the latest position.
+	var newest: Dictionary = history[history.size() - 1]
+
+	if target_time >= float(newest["t"]):
+		return newest["pos"] as Vector3
+
+	# Older than anything we kept: clamp to the oldest sample.
+	var oldest: Dictionary = history[0]
+
+	if target_time <= float(oldest["t"]):
+		return oldest["pos"] as Vector3
+
+	# Find the two samples bracketing target_time and lerp between them.
+	for i in range(history.size() - 1):
+		var a: Dictionary = history[i]
+		var b: Dictionary = history[i + 1]
+		var ta := float(a["t"])
+		var tb := float(b["t"])
+
+		if target_time >= ta and target_time <= tb:
+			var span := tb - ta
+
+			if span <= 0.0001:
+				return b["pos"] as Vector3
+
+			var f := (target_time - ta) / span
+			return (a["pos"] as Vector3).lerp(b["pos"] as Vector3, f)
+
+	return newest["pos"] as Vector3
+
+
+# Ray-vs-sphere test: did the shot, fired from shot_origin along shot_direction, pass within
+# the (approximated) target capsule around target_position, in front of the shooter and in range?
+func ray_passes_through_target(
+	shot_origin: Vector3,
+	shot_direction: Vector3,
+	target_position: Vector3
+) -> bool:
+	var dir := shot_direction.normalized()
+	var to_target := target_position - shot_origin
+	var along := to_target.dot(dir)
+
+	# Target is behind the shooter or beyond weapon range.
+	if along < 0.0 or along > weapon_hit_max_range:
 		return false
-	
-	return true
+
+	var closest_point := shot_origin + dir * along
+	var miss_distance := closest_point.distance_to(target_position)
+	var hit_radius := lag_comp_hitbox_radius + lag_comp_position_tolerance
+
+	return miss_distance <= hit_radius
 
 
 @rpc("authority", "call_local", "reliable")
@@ -1153,3 +1292,260 @@ func client_play_weapon_shot(
 
 	if tracer.has_method("play"):
 		tracer.call("play", origin, shot_end, did_hit, normal)
+
+
+# === Network diagnostics ============================================================
+# An F3 overlay of live connection stats, plus a per-round report file written to
+# user://net_reports/. Each machine measures its OWN view, so the laggy end's report is the
+# one that matters. "remote update" timings are how smoothly other players' packets arrive
+# here — the direct measure of the freeze/skip symptom.
+
+func _process(delta: float) -> void:
+	if not has_active_multiplayer_peer():
+		return
+
+	accumulate_net_report(delta)
+
+
+# Records how regularly state packets for a remote player arrive at this machine.
+func track_incoming_state_timing(peer_id: int) -> void:
+	var now := Time.get_ticks_msec() / 1000.0
+
+	if net_diag_last_recv_by_peer.has(peer_id):
+		var gap: float = now - float(net_diag_last_recv_by_peer[peer_id])
+		net_diag_last_gap_by_peer[peer_id] = gap
+
+		var instant_hz := 1.0 / maxf(gap, 0.0001)
+		var previous_hz: float = net_diag_rate_by_peer.get(peer_id, instant_hz)
+		net_diag_rate_by_peer[peer_id] = lerpf(previous_hz, instant_hz, 0.1)
+
+		var worst: float = net_diag_round_max_gap_by_peer.get(peer_id, 0.0)
+
+		if gap > worst:
+			net_diag_round_max_gap_by_peer[peer_id] = gap
+
+	net_diag_last_recv_by_peer[peer_id] = now
+
+
+# The remote endpoints whose ENet stats are meaningful here: every client (if we are the
+# server) or just the server (if we are a client).
+func diag_connection_peers() -> Array:
+	if not has_active_multiplayer_peer():
+		return []
+
+	if multiplayer.is_server():
+		return Array(multiplayer.get_peers())
+
+	return [1]
+
+
+func get_enet_peer_stat(peer_id: int, statistic: ENetPacketPeer.PeerStatistic) -> float:
+	var mp := multiplayer.multiplayer_peer
+
+	if mp is ENetMultiplayerPeer:
+		var enet_peer := (mp as ENetMultiplayerPeer).get_peer(peer_id)
+
+		if enet_peer != null:
+			return enet_peer.get_statistic(statistic)
+
+	return -1.0
+
+
+func net_role_name() -> String:
+	if not has_active_multiplayer_peer():
+		return "Offline"
+
+	if multiplayer.is_server():
+		return "Headless Server" if DisplayServer.get_name() == "headless" else "Listen Host"
+
+	return "Client"
+
+
+func connection_stat_entry(peer_id: int) -> Dictionary:
+	var loss := get_enet_peer_stat(peer_id, ENetPacketPeer.PEER_PACKET_LOSS)
+	var loss_pct := 0.0
+
+	if loss >= 0.0:
+		loss_pct = (loss / float(ENetPacketPeer.PACKET_LOSS_SCALE)) * 100.0
+
+	return {
+		"peer_id": peer_id,
+		"rtt_ms": get_enet_peer_stat(peer_id, ENetPacketPeer.PEER_ROUND_TRIP_TIME),
+		"rtt_var_ms": get_enet_peer_stat(peer_id, ENetPacketPeer.PEER_ROUND_TRIP_TIME_VARIANCE),
+		"loss_pct": loss_pct,
+	}
+
+
+# Live snapshot consumed by the F3 overlay.
+func get_network_debug_stats() -> Dictionary:
+	var connections: Array = []
+
+	for peer_id in diag_connection_peers():
+		connections.append(connection_stat_entry(int(peer_id)))
+
+	var remote_updates: Array = []
+
+	for peer_id in net_diag_rate_by_peer.keys():
+		remote_updates.append({
+			"peer_id": peer_id,
+			"hz": float(net_diag_rate_by_peer[peer_id]),
+			"last_gap_ms": float(net_diag_last_gap_by_peer.get(peer_id, 0.0)) * 1000.0,
+			"max_gap_ms": float(net_diag_round_max_gap_by_peer.get(peer_id, 0.0)) * 1000.0,
+		})
+
+	return {
+		"role": net_role_name(),
+		"local_peer_id": (multiplayer.get_unique_id() if has_active_multiplayer_peer() else 0),
+		"player_count": players_by_peer_id.size(),
+		"fps": Engine.get_frames_per_second(),
+		"physics_tps": Engine.physics_ticks_per_second,
+		"send_rate_hz": _local_send_rate_hz(),
+		"connections": connections,
+		"remote_updates": remote_updates,
+	}
+
+
+func _local_send_rate_hz() -> float:
+	for peer_id in players_by_peer_id.keys():
+		var player = players_by_peer_id[peer_id]
+
+		if player != null and player.get("is_local_player") and "network_send_rate" in player:
+			return float(player.network_send_rate)
+
+	return 0.0
+
+
+# --- Per-round report ---------------------------------------------------------------
+
+func _on_round_state_changed_for_report(new_state: int) -> void:
+	if new_state == RoundManager.State.ACTIVE:
+		reset_net_report()          # start a clean measurement window for the round
+	elif new_state == RoundManager.State.ROUND_END:
+		write_net_report()          # flush what we measured during the round
+
+
+func reset_net_report() -> void:
+	net_report = {
+		"start_unix": Time.get_unix_time_from_system(),
+		"duration": 0.0,
+		"samples": 0,
+		"fps_min": INF, "fps_sum": 0.0,
+		"ping_min": INF, "ping_max": 0.0, "ping_sum": 0.0, "ping_samples": 0,
+		"loss_max": 0.0, "loss_sum": 0.0, "loss_samples": 0,
+		"worst_gap_ms": 0.0,
+		"min_update_hz": INF,
+	}
+	net_diag_round_max_gap_by_peer.clear()
+
+
+func accumulate_net_report(delta: float) -> void:
+	if net_report.is_empty():
+		return
+
+	net_report["duration"] = float(net_report["duration"]) + delta
+	net_report["samples"] = int(net_report["samples"]) + 1
+
+	var fps := float(Engine.get_frames_per_second())
+	net_report["fps_min"] = minf(float(net_report["fps_min"]), fps)
+	net_report["fps_sum"] = float(net_report["fps_sum"]) + fps
+
+	for peer_id in diag_connection_peers():
+		var rtt := get_enet_peer_stat(int(peer_id), ENetPacketPeer.PEER_ROUND_TRIP_TIME)
+
+		if rtt >= 0.0:
+			net_report["ping_min"] = minf(float(net_report["ping_min"]), rtt)
+			net_report["ping_max"] = maxf(float(net_report["ping_max"]), rtt)
+			net_report["ping_sum"] = float(net_report["ping_sum"]) + rtt
+			net_report["ping_samples"] = int(net_report["ping_samples"]) + 1
+
+		var loss := get_enet_peer_stat(int(peer_id), ENetPacketPeer.PEER_PACKET_LOSS)
+
+		if loss >= 0.0:
+			var loss_pct := (loss / float(ENetPacketPeer.PACKET_LOSS_SCALE)) * 100.0
+			net_report["loss_max"] = maxf(float(net_report["loss_max"]), loss_pct)
+			net_report["loss_sum"] = float(net_report["loss_sum"]) + loss_pct
+			net_report["loss_samples"] = int(net_report["loss_samples"]) + 1
+
+	for peer_id in net_diag_round_max_gap_by_peer.keys():
+		var gap_ms := float(net_diag_round_max_gap_by_peer[peer_id]) * 1000.0
+		net_report["worst_gap_ms"] = maxf(float(net_report["worst_gap_ms"]), gap_ms)
+
+	for peer_id in net_diag_rate_by_peer.keys():
+		net_report["min_update_hz"] = minf(float(net_report["min_update_hz"]), float(net_diag_rate_by_peer[peer_id]))
+
+
+func write_net_report() -> void:
+	if net_report.is_empty() or int(net_report["samples"]) <= 0:
+		return
+
+	var dir_path := "user://net_reports"
+	DirAccess.make_dir_recursive_absolute(dir_path)
+
+	var stamp := Time.get_datetime_string_from_system().replace(":", "-").replace("T", "_")
+	var path := dir_path + "/round_" + stamp + ".txt"
+	var file := FileAccess.open(path, FileAccess.WRITE)
+
+	if file == null:
+		push_warning("Could not write network report to " + path)
+		return
+
+	file.store_string(format_net_report())
+	file.close()
+	print("Network report written: ", ProjectSettings.globalize_path(path))
+
+
+func format_net_report() -> String:
+	var samples := maxi(int(net_report["samples"]), 1)
+	var ping_samples := maxi(int(net_report["ping_samples"]), 1)
+	var loss_samples := maxi(int(net_report["loss_samples"]), 1)
+
+	var fps_min := float(net_report["fps_min"])
+	var ping_min := float(net_report["ping_min"])
+	var min_hz := float(net_report["min_update_hz"])
+
+	var lines: PackedStringArray = []
+	lines.append("=== Round network report ===")
+	lines.append("Role:            " + net_role_name())
+	lines.append("Generated:       " + Time.get_datetime_string_from_system())
+	lines.append("Round duration:  %.1f s (%d samples)" % [float(net_report["duration"]), samples])
+	lines.append("Players:         " + str(players_by_peer_id.size()))
+	lines.append("")
+	lines.append("-- Frame rate --")
+	lines.append("FPS min/avg:     %.0f / %.0f" % [
+		(0.0 if fps_min == INF else fps_min),
+		float(net_report["fps_sum"]) / samples,
+	])
+	lines.append("")
+	lines.append("-- Ping (round-trip to %s, ms) --" % ("clients" if multiplayer.is_server() else "server"))
+	lines.append("min/avg/max:     %.0f / %.0f / %.0f" % [
+		(0.0 if ping_min == INF else ping_min),
+		float(net_report["ping_sum"]) / ping_samples,
+		float(net_report["ping_max"]),
+	])
+	lines.append("")
+	lines.append("-- Packet loss (%) --")
+	lines.append("avg/max:         %.2f / %.2f" % [
+		float(net_report["loss_sum"]) / loss_samples,
+		float(net_report["loss_max"]),
+	])
+	lines.append("")
+	lines.append("-- Remote player update smoothness --")
+	lines.append("min update rate: %.1f Hz" % (0.0 if min_hz == INF else min_hz))
+	lines.append("worst gap:       %.0f ms  (longest freeze between packets)" % float(net_report["worst_gap_ms"]))
+	lines.append("")
+	lines.append("Note: a worst gap well above ~1000/send_rate ms, or a low min update rate,")
+	lines.append("means packets are arriving irregularly at this machine -> the visible freeze.")
+	return "\n".join(lines)
+
+
+# --- F3 overlay ---------------------------------------------------------------------
+
+func create_network_debug_overlay() -> void:
+	if DisplayServer.get_name() == "headless":
+		return        # no display to draw on
+
+	net_diag_overlay = preload("res://scripts/network_debug_overlay.gd").new()
+	add_child(net_diag_overlay)
+
+	if net_diag_overlay.has_method("setup"):
+		net_diag_overlay.call("setup", self)

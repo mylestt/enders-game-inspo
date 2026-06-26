@@ -11,6 +11,11 @@ extends RigidBody3D
 
 @export var network_send_rate: float = 30.0
 @export var network_interpolation_speed: float = 18.0
+# When packets from a remote player are late/dropped, keep gliding them along their last
+# known velocity instead of freezing in place (zero-G motion is inertial, so this predicts
+# well). Capped by network_extrapolation_max_time so a long gap can't fling them away.
+@export var network_extrapolation_enabled: bool = true
+@export var network_extrapolation_max_time: float = 0.25
 
 @export var body_slam_min_speed: float = 3.0
 @export var body_slam_impulse_multiplier: float = 1.35
@@ -32,6 +37,11 @@ var network_target_transform: Transform3D
 var network_target_linear_velocity: Vector3 = Vector3.ZERO
 var network_target_angular_velocity: Vector3 = Vector3.ZERO
 var has_network_target: bool = false
+# Seconds since the last authoritative state packet for this remote player; drives how far
+# we extrapolate before giving up.
+var network_time_since_update: float = 0.0
+# Cached once: true only on a windowless dedicated server, which has no viewer to smooth for.
+var network_is_headless_server: bool = false
 
 var last_body_slam_time_by_target_peer_id: Dictionary = {}
 
@@ -56,7 +66,8 @@ func _ready() -> void:
 	max_contacts_reported = max(max_contacts_reported, 12)
 	
 	network_target_transform = global_transform
-	
+	network_is_headless_server = DisplayServer.get_name() == "headless"
+
 	if camera != null:
 		camera.current = false
 		camera.fov = GameSettings.fov
@@ -534,19 +545,36 @@ func _on_died(attacker_peer_id: int) -> void:
 func update_remote_network_state(delta: float) -> void:
 	if not has_network_target:
 		return
-	
+
+	network_time_since_update += delta
+
 	linear_velocity = network_target_linear_velocity
 	angular_velocity = network_target_angular_velocity
-	
-	if multiplayer.multiplayer_peer != null and multiplayer.is_server():
+
+	# A windowless dedicated server has no viewer to smooth for, so keep its authoritative
+	# body on the freshest received transform (no extrapolation, no interpolation). A
+	# listen-server host DOES render, so it falls through and smooths like any client.
+	if multiplayer.multiplayer_peer != null and multiplayer.is_server() and network_is_headless_server:
 		global_transform = network_target_transform
 		return
-	
+
+	# Dead-reckon the target forward along its last velocity to cover packet gaps, so a late
+	# or dropped packet keeps the player gliding instead of freezing. The next packet snaps
+	# the target back to authoritative truth via receive_network_state(), correcting drift.
+	if network_extrapolation_enabled and network_time_since_update <= network_extrapolation_max_time:
+		network_target_transform.origin += network_target_linear_velocity * delta
+
+		var angular := network_target_angular_velocity
+
+		if angular.length() > 0.0001:
+			network_target_transform.basis = (
+				network_target_transform.basis.rotated(angular.normalized(), angular.length() * delta)
+			).orthonormalized()
+
 	var weight := 1.0 - exp(-network_interpolation_speed * delta)
-	
 	var new_position := global_transform.origin.lerp(network_target_transform.origin, weight)
 	var new_basis := global_transform.basis.slerp(network_target_transform.basis, weight).orthonormalized()
-	
+
 	global_transform = Transform3D(new_basis, new_position)
 
 
@@ -559,6 +587,7 @@ func receive_network_state(
 	network_target_linear_velocity = new_linear_velocity
 	network_target_angular_velocity = new_angular_velocity
 	has_network_target = true
+	network_time_since_update = 0.0
 
 
 func update_network_send(delta: float) -> void:
