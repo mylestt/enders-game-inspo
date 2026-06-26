@@ -11,3 +11,4 @@ res://ARCHITECTURE.md
 res://DiamondArena.tscn
 res://scripts/map_setup_menu.gd
 res://scripts/lobby_manager.gd
+res://player.tscn

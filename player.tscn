@@ -23,6 +23,8 @@ script = ExtResource("1_2hs0m")
 [node name="MovementController" type="Node" parent="." unique_id=294609104]
 script = ExtResource("2_1jxqw")
 surface_walk_sprint_multiplier = 2.0
+surface_walk_slope_align_max_degrees = 50.0
+surface_walk_slope_align_speed = 15.0
 surface_walk_foot_check_distance = 1.8
 
 [node name="SuitBoosters" type="Node" parent="." unique_id=2126445202]
