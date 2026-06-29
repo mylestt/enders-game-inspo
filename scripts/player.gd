@@ -25,6 +25,9 @@ extends RigidBody3D
 @export var weapon_aim_reticle_use_world_raycast: bool = false
 
 var buy_menu_open: bool = false
+# True while the pause/settings/admin menu is open. Locks input the same way the buy menu
+# does and stops the mouse from re-capturing on click so the menu stays usable.
+var external_menu_open: bool = false
 var is_dead: bool = false
 
 var peer_id: int = 0
@@ -172,7 +175,7 @@ func _input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel"):
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	
-	if event is InputEventMouseButton and event.pressed:
+	if event is InputEventMouseButton and event.pressed and not external_menu_open and not buy_menu_open:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
@@ -675,6 +678,9 @@ func is_input_locked() -> bool:
 	if is_dead:
 		return true
 
+	if external_menu_open:
+		return true
+
 	if is_surface_walk_mode_active():
 		return false
 	
@@ -721,6 +727,22 @@ func set_buy_menu_open(value: bool) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	else:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+# Called by the pause/settings/admin menu. Locks player input (via is_input_locked) and
+# clears any buffered look motion so the camera doesn't lurch when the menu closes.
+func set_external_menu_open(value: bool) -> void:
+	if not is_local_player:
+		return
+
+	external_menu_open = value
+
+	if movement_controller != null:
+		movement_controller.clear_mouse_motion()
+		movement_controller.clear_free_look_mouse_motion()
+
+	if value and weapon_inventory != null:
+		weapon_inventory.update_weapon_input(false)
 
 
 func apply_grab_distance_upgrade(level: int) -> void:

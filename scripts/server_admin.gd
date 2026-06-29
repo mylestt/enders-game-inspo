@@ -153,6 +153,8 @@ func execute_command(raw_command: String, source_peer_id: int = 0) -> String:
 			return players_text()
 		"status", "start", "end", "end_round", "restart", "restart_round", "restart_match", "set_score", "add_score", "set_min_players", "set_points_to_win", "set_round_time", "rules":
 			return run_round_command(raw)
+		"kick":
+			return kick_command(parts)
 		"set_starting_cash":
 			return set_starting_cash_command(parts)
 		"give_money", "add_money":
@@ -168,6 +170,24 @@ func run_round_command(command: String) -> String:
 		return "RoundManager missing."
 
 	return round_manager.server_command(command)
+
+
+func kick_command(parts: PackedStringArray) -> String:
+	if parts.size() < 2 or not String(parts[1]).is_valid_int():
+		return "Usage: kick <peer_id>"
+
+	if network_manager == null:
+		return "NetworkManager missing."
+
+	if not network_manager.has_method("server_kick_peer"):
+		return "Kick unsupported."
+
+	var peer_id := int(parts[1])
+
+	if bool(network_manager.call("server_kick_peer", peer_id)):
+		return "Kicked player " + str(peer_id) + "."
+
+	return "Could not kick player " + str(peer_id) + "."
 
 
 func set_starting_cash_command(parts: PackedStringArray) -> String:
@@ -248,5 +268,6 @@ func help_text() -> String:
 		"Commands: status, players, rules, start, end_round [winner_peer_id], "
 		+ "restart_round, restart_match, set_score <peer> <score>, add_score <peer> <amount>, "
 		+ "set_min_players <count>, set_points_to_win <count>, set_round_time <seconds>, "
-		+ "set_starting_cash <amount>, give_money <peer|all> <amount>, set_money <peer|all> <amount>"
+		+ "set_starting_cash <amount>, give_money <peer|all> <amount>, set_money <peer|all> <amount>, "
+		+ "kick <peer_id>"
 	)

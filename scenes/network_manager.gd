@@ -104,6 +104,7 @@ func _ready() -> void:
 
 	reset_net_report()
 	create_network_debug_overlay()
+	create_pause_menu()
 
 	print("NetworkManager ready.")
 	print("Current multiplayer peer active: ", has_active_multiplayer_peer())
@@ -457,6 +458,25 @@ func get_local_peer_id() -> int:
 		return multiplayer.get_unique_id()
 
 	return 1
+
+
+# This machine's own player node, or null if not spawned yet.
+func get_local_player() -> Node:
+	return players_by_peer_id.get(get_local_peer_id(), null)
+
+
+# Server-side: forcibly disconnect a client (admin "kick"). Returns true if it ran.
+func server_kick_peer(peer_id: int) -> bool:
+	if not multiplayer.is_server() or peer_id == 1:
+		return false
+
+	var mp := multiplayer.multiplayer_peer
+
+	if mp is ENetMultiplayerPeer:
+		(mp as ENetMultiplayerPeer).disconnect_peer(peer_id)
+		return true
+
+	return false
 
 
 @rpc("authority", "call_local", "reliable")
@@ -1435,7 +1455,14 @@ func reset_net_report() -> void:
 		"worst_gap_ms": 0.0,
 		"min_update_hz": INF,
 	}
+	# Clear ALL per-peer arrival timing, not just the max gap. Otherwise the first packet of
+	# the new round is timed against the last packet of the previous round, so every report
+	# inherits the ~7s round-end/countdown silence (and that 0.14Hz sample tanks the update
+	# rate). Clearing here makes the gap/rate reflect only intra-round arrivals.
 	net_diag_round_max_gap_by_peer.clear()
+	net_diag_last_recv_by_peer.clear()
+	net_diag_last_gap_by_peer.clear()
+	net_diag_rate_by_peer.clear()
 
 
 func accumulate_net_report(delta: float) -> void:
@@ -1549,3 +1576,16 @@ func create_network_debug_overlay() -> void:
 
 	if net_diag_overlay.has_method("setup"):
 		net_diag_overlay.call("setup", self)
+
+
+# Builds the in-game Escape menu (Resume / Settings / Admin / Leave). Skipped on a headless
+# server, which has no screen.
+func create_pause_menu() -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+
+	var pause_menu := preload("res://scripts/pause_menu.gd").new()
+	add_child(pause_menu)
+
+	if pause_menu.has_method("setup"):
+		pause_menu.call("setup", self, get_node_or_null("../ServerAdmin"))

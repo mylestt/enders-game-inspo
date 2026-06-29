@@ -1,1 +1,6 @@
 res://DiamondArena.tscn
+res://scenes/network_manager.gd
+res://scripts/game_launch.gd
+res://scripts/game_settings.gd
+res://scripts/player.gd
+res://scripts/server_admin.gd
