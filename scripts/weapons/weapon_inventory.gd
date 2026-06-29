@@ -4,9 +4,11 @@ extends Node
 signal weapon_equipped(weapon_id: StringName, weapon: Weapon)
 
 const MINIGUN_ID: StringName = &"minigun"
+const RAILGUN_ID: StringName = &"railgun"
 
 @export var weapon_mount_path: NodePath = NodePath("../CameraRig/Camera3D/WeaponMount")
 @export var minigun_scene: PackedScene = preload("res://scenes/minigun.tscn")
+@export var railgun_scene: PackedScene = preload("res://scenes/railgun.tscn")
 
 var owner_player: Node
 var weapon_mount: Node3D
@@ -126,7 +128,9 @@ func get_weapon_scene(weapon_id: StringName) -> PackedScene:
 	match weapon_id:
 		MINIGUN_ID:
 			return minigun_scene
-	
+		RAILGUN_ID:
+			return railgun_scene
+
 	return null
 
 
@@ -162,6 +166,14 @@ func purchase_minigun() -> bool:
 
 func get_has_minigun() -> bool:
 	return has_weapon(MINIGUN_ID)
+
+
+func purchase_railgun() -> bool:
+	return purchase_weapon(RAILGUN_ID)
+
+
+func get_has_railgun() -> bool:
+	return has_weapon(RAILGUN_ID)
 
 
 func get_equipped_weapon_id() -> StringName:

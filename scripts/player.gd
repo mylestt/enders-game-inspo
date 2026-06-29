@@ -790,8 +790,22 @@ func purchase_minigun() -> bool:
 func get_has_minigun() -> bool:
 	if weapon_inventory == null:
 		return false
-	
+
 	return weapon_inventory.get_has_minigun()
+
+
+func purchase_railgun() -> bool:
+	if weapon_inventory == null:
+		return false
+
+	return weapon_inventory.purchase_railgun()
+
+
+func get_has_railgun() -> bool:
+	if weapon_inventory == null:
+		return false
+
+	return weapon_inventory.get_has_railgun()
 
 
 func get_equipped_weapon_id() -> StringName:

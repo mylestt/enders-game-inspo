@@ -17,6 +17,8 @@ signal scoreboard_changed(entries: Array)
 @export var body_slam_validation_distance: float = 4.0
 @export var body_slam_max_impulse: float = 18.0
 @export var weapon_hit_damage: float = 15.0
+# Anti-cheat clamp: the per-weapon damage a client reports is capped to this server-side.
+@export var weapon_hit_max_damage: float = 250.0
 @export var weapon_hit_max_range: float = 280.0
 @export var weapon_hit_origin_validation_distance: float = 8.0
 @export var weapon_hit_target_validation_radius: float = 4.0
@@ -943,18 +945,19 @@ func client_apply_body_slam_impulse(
 func request_weapon_hit(
 	attacker_peer_id: int,
 	target_peer_id: int,
-	_damage: float,
+	damage: float,
 	hit_position: Vector3,
 	shot_origin: Vector3,
 	shot_direction: Vector3
 ) -> void:
 	if multiplayer.multiplayer_peer == null:
 		return
-	
+
 	if multiplayer.is_server():
 		server_process_weapon_hit(
 			attacker_peer_id,
 			target_peer_id,
+			damage,
 			hit_position,
 			shot_origin,
 			shot_direction
@@ -964,6 +967,7 @@ func request_weapon_hit(
 			1,
 			"server_request_weapon_hit",
 			target_peer_id,
+			damage,
 			hit_position,
 			shot_origin,
 			shot_direction
@@ -973,17 +977,19 @@ func request_weapon_hit(
 @rpc("any_peer", "reliable")
 func server_request_weapon_hit(
 	target_peer_id: int,
+	damage: float,
 	hit_position: Vector3,
 	shot_origin: Vector3,
 	shot_direction: Vector3
 ) -> void:
 	if not multiplayer.is_server():
 		return
-	
+
 	var attacker_peer_id := multiplayer.get_remote_sender_id()
 	server_process_weapon_hit(
 		attacker_peer_id,
 		target_peer_id,
+		damage,
 		hit_position,
 		shot_origin,
 		shot_direction
@@ -993,6 +999,7 @@ func server_request_weapon_hit(
 func server_process_weapon_hit(
 	attacker_peer_id: int,
 	target_peer_id: int,
+	damage: float,
 	hit_position: Vector3,
 	shot_origin: Vector3,
 	shot_direction: Vector3
@@ -1030,15 +1037,18 @@ func server_process_weapon_hit(
 		return
 	
 	mark_weapon_hit_pair(attacker_peer_id, target_peer_id)
-	rpc("client_apply_weapon_damage", target_peer_id, attacker_peer_id, weapon_hit_damage)
-	
+
+	# Use the weapon's own damage (clamped server-side so a client can't report an absurd value).
+	var applied_damage := clampf(damage, 0.0, weapon_hit_max_damage)
+	rpc("client_apply_weapon_damage", target_peer_id, attacker_peer_id, applied_damage)
+
 	print(
 		"Weapon hit: ",
 		attacker_peer_id,
 		" -> ",
 		target_peer_id,
 		" damage ",
-		weapon_hit_damage
+		applied_damage
 	)
 
 

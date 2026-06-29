@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://dxg8owsh1yth5"
-path="res://.godot/imported/2v2.glb-5551afee4bf66b1b6b686cd86af85c93.scn"
+uid="uid://dnaj1se7cdyf0"
+path="res://.godot/imported/railgun.glb-52ed5baf22c190020be674bdd9851a01.scn"
 
 [deps]
 
-source_file="res://Props/2v2.glb"
-dest_files=["res://.godot/imported/2v2.glb-5551afee4bf66b1b6b686cd86af85c93.scn"]
+source_file="res://Props/railgun.glb"
+dest_files=["res://.godot/imported/railgun.glb-52ed5baf22c190020be674bdd9851a01.scn"]
 
 [params]
 

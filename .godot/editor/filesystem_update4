@@ -4,3 +4,7 @@ res://scripts/game_launch.gd
 res://scripts/game_settings.gd
 res://scripts/player.gd
 res://scripts/server_admin.gd
+res://scripts/map_generator.gd
+res://scripts/buy_menu.gd
+res://scripts/weapons/weapon_inventory.gd
+res://scenes/railgun.tscn
