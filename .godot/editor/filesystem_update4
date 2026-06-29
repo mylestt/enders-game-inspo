@@ -1,6 +1,2 @@
-res://player.tscn
-res://scenes/network_manager.gd
-res://scripts/game_launch.gd
-res://scripts/player.gd
-res://scripts/start_menu.gd
-res://scripts/network_debug_overlay.gd
+res://DiamondArena.tscn
+res://scenes/main.tscn
