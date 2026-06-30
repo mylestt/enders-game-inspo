@@ -7,9 +7,7 @@
 [node name="Railgun" type="Node3D" unique_id=1026138234]
 script = ExtResource("1_rg")
 aim_origin_node_path = NodePath("RailgunModel/Muzzle")
-recoil_rotation_degrees = Vector3(3, 0, 0.46)
-recoil_position_offset = Vector3(0, 0, 2.985)
-recoil_random_position_offset = Vector3(0, 0, 0.345)
+recoil_rotation_degrees = Vector3(1.26, 0, 0)
 hitscan_range = 264.505
 hitscan_damage = 90.0
 hitscan_tracer_scene = ExtResource("3_rg")
