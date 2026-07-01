@@ -1,0 +1,12 @@
+# Godot 4+ editor cache and generated import data.
+# Regenerated automatically by the editor — tracking it caused "phantom"
+# git changes on every viewport move, Play press, or asset re-import.
+.godot/
+
+# Blender auto-save backups
+*.blend1
+
+# Import metadata for the raw Blender sources kept only for editing.
+# The game uses the exported .glb files, not these .blend files directly,
+# so Godot regenerates this on demand and it doesn't need tracking.
+raw_blend/*.import
