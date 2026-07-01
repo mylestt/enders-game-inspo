@@ -23,6 +23,11 @@ var unlocked_weapon_ids: Dictionary = {}
 var equipped_weapon_id: StringName = &""
 var equipped_weapon: Weapon
 var ads_blend: float = 0.0
+# Ammo carried between swaps. Each equip() creates a fresh Weapon instance (and resets its
+# ammo to full), so a weapon's mag/reserve is snapshotted here right before swapping away
+# and restored right after swapping back in — otherwise switching weapons would silently
+# refill every mag.
+var ammo_by_weapon_id: Dictionary = {}
 
 
 func setup(new_owner: Node) -> void:
@@ -90,6 +95,9 @@ func is_swapping() -> bool:
 
 func reset_state() -> void:
 	ads_blend = 0.0
+	# A respawn/round-reset refills every owned weapon, not just the held one, so drop any
+	# stashed ammo from the life that just ended.
+	ammo_by_weapon_id.clear()
 
 	if weapon_spring_sway != null:
 		weapon_spring_sway.set_ads_blend(0.0)
@@ -143,6 +151,7 @@ func equip_weapon(weapon_id: StringName) -> bool:
 	if scene == null:
 		return false
 
+	_save_equipped_ammo()
 	clear_mount()
 
 	var instance := scene.instantiate()
@@ -158,6 +167,7 @@ func equip_weapon(weapon_id: StringName) -> bool:
 
 	equipped_weapon_id = weapon_id
 	equipped_weapon.equip(owner_player)
+	_restore_equipped_ammo(weapon_id)
 	connect_weapon_signals(equipped_weapon)
 
 	if weapon_spring_sway != null:
@@ -186,6 +196,26 @@ func clear_mount() -> void:
 			child.queue_free()
 
 	_refresh_ammo_hud()
+
+
+func _save_equipped_ammo() -> void:
+	if equipped_weapon == null or not equipped_weapon.uses_ammo():
+		return
+
+	ammo_by_weapon_id[equipped_weapon_id] = {
+		"ammo": equipped_weapon.current_ammo,
+		"reserve": equipped_weapon.current_reserve,
+	}
+
+
+func _restore_equipped_ammo(weapon_id: StringName) -> void:
+	if equipped_weapon == null or not ammo_by_weapon_id.has(weapon_id):
+		return
+
+	var saved: Dictionary = ammo_by_weapon_id[weapon_id]
+	equipped_weapon.current_ammo = int(saved.get("ammo", equipped_weapon.current_ammo))
+	equipped_weapon.current_reserve = int(saved.get("reserve", equipped_weapon.current_reserve))
+	equipped_weapon.ammo_changed.emit(equipped_weapon.current_ammo, equipped_weapon.current_reserve)
 
 
 func get_weapon_scene(weapon_id: StringName) -> PackedScene:
