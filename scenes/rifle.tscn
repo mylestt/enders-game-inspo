@@ -1,0 +1,37 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/weapons/hitscan_weapon.gd" id="1_rifle"]
+[ext_resource type="PackedScene" uid="uid://cj02kh80khvwc" path="res://rifle_1_test.tscn" id="2_rifle"]
+[ext_resource type="PackedScene" uid="uid://dy5jkj0mbdb5x" path="res://scenes/hitscan_tracer_effect.tscn" id="3_rifle"]
+
+[node name="Rifle" type="Node3D"]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0.12, -0.16, -0.15)
+script = ExtResource("1_rifle")
+aim_origin_node_path = NodePath("Rifle1test/barrel")
+aim_local_direction = Vector3(1, 0, 0)
+weapon_weight = 1.2
+rounds_per_second = 3.5
+semi_auto = true
+burst_count = 3
+burst_interval = 0.06
+recoil_rotation_degrees = Vector3(0.9, 0.0, -0.05)
+recoil_position_offset = Vector3(0.0, 0.006, 0.04)
+recoil_random_rotation_degrees = Vector3(0.15, 1.6, 0.3)
+recoil_random_position_offset = Vector3(0.0006, 0.001, 0.0016)
+recoil_kick_up = 2.0
+recoil_kick_side = 0.5
+hitscan_range = 260.0
+hitscan_damage = 12.0
+hitscan_spread_degrees = Vector2(0.35, 0.35)
+hitscan_tracer_scene = ExtResource("3_rifle")
+fire_knockback_force = 0.6
+fire_torque_strength = 0.0
+max_recoil_angular_speed = 3.0
+mag_size = 36
+starting_reserve = 108
+reload_time = 2.2
+ads_fov = 55.0
+ads_spread_mult = 0.2
+ads_recoil_mult = 0.5
+
+[node name="Rifle1test" parent="." instance=ExtResource("2_rifle")]

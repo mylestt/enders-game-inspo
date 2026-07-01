@@ -996,6 +996,44 @@ func update_body_follow(delta: float) -> void:
 	camera.rotation = Vector3(look_pitch, 0.0, 0.0)
 
 
+# Weapon recoil kick to the aim: climbs the view (+pitch = up) with a little side yaw. It feeds
+# the same look state the mouse drives, so it's persistent — the player pulls down to counter it,
+# it doesn't auto-recover. Handles both zero-G and surface-walk look.
+func apply_look_recoil(pitch_degrees: float, yaw_degrees: float) -> void:
+	var pitch := deg_to_rad(pitch_degrees)
+	var yaw := deg_to_rad(yaw_degrees)
+
+	if is_surface_walk_active():
+		var limit := deg_to_rad(surface_walk_pitch_limit_degrees)
+		surface_walk_pitch = clampf(surface_walk_pitch + pitch, -limit, limit)
+		if yaw != 0.0:
+			surface_walk_forward = surface_walk_forward.rotated(surface_walk_normal, yaw).normalized()
+		return
+
+	var basis := player.global_transform.basis.orthonormalized()
+
+	if yaw != 0.0:
+		basis = basis.rotated(basis.y, yaw).orthonormalized()
+
+	# Pitch articulates the neck up to its limit; overflow tumbles the body (same as the mouse).
+	var neck := deg_to_rad(look_neck_limit_degrees)
+	var desired := look_pitch + pitch
+
+	if desired > neck:
+		basis = basis.rotated(basis.x, desired - neck).orthonormalized()
+		look_pitch = neck
+	elif desired < -neck:
+		basis = basis.rotated(basis.x, desired + neck).orthonormalized()
+		look_pitch = -neck
+	else:
+		look_pitch = desired
+
+	player.global_transform.basis = basis
+
+	if camera != null:
+		camera.rotation = Vector3(look_pitch, 0.0, 0.0)
+
+
 func handle_free_look_rotation() -> void:
 	free_look_mouse_motion = Vector2.ZERO
 

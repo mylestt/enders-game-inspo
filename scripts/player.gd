@@ -150,6 +150,18 @@ func show_hitmarker(is_kill: bool = false) -> void:
 		hud_controller.show_hitmarker(is_kill)
 
 
+# Weapon recoil kick to the aim (climb + side). Persistent — folded into the look so the player
+# pulls down to counter it.
+func apply_camera_recoil(vertical_degrees: float, horizontal_degrees: float) -> void:
+	if movement_controller != null:
+		movement_controller.apply_look_recoil(vertical_degrees, horizontal_degrees)
+
+
+func update_weapon_ammo_hud(current_ammo: int, reserve_ammo: int, reloading: bool) -> void:
+	if is_local_player and hud_controller != null and hud_controller.has_method("update_ammo"):
+		hud_controller.update_ammo(current_ammo, reserve_ammo, reloading)
+
+
 func get_peer_id() -> int:
 	return peer_id
 
@@ -157,22 +169,32 @@ func get_peer_id() -> int:
 func _input(event: InputEvent) -> void:
 	if not is_local_player:
 		return
-	
+
 	if buy_menu_open or is_input_locked():
 		if movement_controller != null:
 			movement_controller.clear_mouse_motion()
 			movement_controller.clear_free_look_mouse_motion()
 		return
-	
+
 	var surface_walk_active := is_surface_walk_mode_active()
-	
+
 	if event is InputEventMouseMotion:
 		if movement_controller != null:
 			if is_free_look_active() and not surface_walk_active:
 				movement_controller.add_free_look_mouse_motion(event.relative)
 			else:
 				movement_controller.add_mouse_motion(event.relative)
-	
+
+	if weapon_inventory != null:
+		if event.is_action_pressed("reload"):
+			weapon_inventory.request_reload()
+		elif event.is_action_pressed("weapon_slot_1"):
+			weapon_inventory.try_quick_swap(0)
+		elif event.is_action_pressed("weapon_slot_2"):
+			weapon_inventory.try_quick_swap(1)
+		elif event.is_action_pressed("weapon_slot_3"):
+			weapon_inventory.try_quick_swap(2)
+
 	if event.is_action_pressed("ui_cancel"):
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	
@@ -203,7 +225,7 @@ func _physics_process(delta: float) -> void:
 			movement_controller.clear_free_look_mouse_motion()
 
 		if weapon_inventory != null:
-			weapon_inventory.update_weapon_input(false)
+			weapon_inventory.update(delta, false)
 
 		if suit_boosters != null:
 			suit_boosters.physics_update(delta, false, false)
@@ -258,7 +280,7 @@ func _physics_process(delta: float) -> void:
 		grabbing = movement_controller.is_grabbing_wall()
 	
 	if weapon_inventory != null:
-		weapon_inventory.update_weapon_input(not buy_menu_open and not input_locked)
+		weapon_inventory.update(delta, not buy_menu_open and not input_locked)
 	
 	if suit_boosters != null:
 		var boosters_allowed := not buy_menu_open and not input_locked and not is_surface_walk_mode_active()
@@ -429,6 +451,9 @@ func reset_for_round(spawn_transform: Transform3D) -> void:
 	if impact_controller != null:
 		impact_controller.ignore_impacts_briefly()
 
+	if weapon_inventory != null:
+		weapon_inventory.reset_state()
+
 
 func submit_weapon_hit(
 	target: Node,
@@ -547,7 +572,7 @@ func _on_died(attacker_peer_id: int) -> void:
 		movement_controller.clear_free_look_mouse_motion()
 
 	if weapon_inventory != null:
-		weapon_inventory.update_weapon_input(false)
+		weapon_inventory.release()
 
 	# Runs on every peer's copy of this player, so the red "disabled" glow shows for everyone.
 	set_death_glow_active(true)
@@ -766,7 +791,7 @@ func set_buy_menu_open(value: bool) -> void:
 		movement_controller.clear_free_look_mouse_motion()
 	
 	if weapon_inventory != null and value:
-		weapon_inventory.update_weapon_input(false)
+		weapon_inventory.release()
 	
 	if value:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -787,7 +812,7 @@ func set_external_menu_open(value: bool) -> void:
 		movement_controller.clear_free_look_mouse_motion()
 
 	if value and weapon_inventory != null:
-		weapon_inventory.update_weapon_input(false)
+		weapon_inventory.release()
 
 
 func apply_grab_distance_upgrade(level: int) -> void:
@@ -851,6 +876,20 @@ func get_has_railgun() -> bool:
 		return false
 
 	return weapon_inventory.get_has_railgun()
+
+
+func purchase_rifle() -> bool:
+	if weapon_inventory == null:
+		return false
+
+	return weapon_inventory.purchase_rifle()
+
+
+func get_has_rifle() -> bool:
+	if weapon_inventory == null:
+		return false
+
+	return weapon_inventory.get_has_rifle()
 
 
 func get_equipped_weapon_id() -> StringName:

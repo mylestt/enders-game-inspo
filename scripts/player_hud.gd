@@ -13,6 +13,7 @@ var fps_label: Label
 var booster_label: Label
 var ground_lock_label: Label
 var limb_push_label: Label
+var ammo_label: Label
 
 var reticle: Panel
 var weapon_aim_reticle: Panel
@@ -244,6 +245,7 @@ func build_top_left_stats() -> void:
 	booster_label = add_stat_label(stats_box, "BoosterLabel", "", 16, Color(0.75, 0.9, 1.0, 0.88), false)
 	ground_lock_label = add_stat_label(stats_box, "GroundLockLabel", "", 16, Color(0.65, 1.0, 0.75, 0.94), false)
 	limb_push_label = add_stat_label(stats_box, "LimbPushLabel", "", 16, Color(0.75, 1.0, 0.75, 0.9), false)
+	ammo_label = add_stat_label(stats_box, "AmmoLabel", "", 18, Color(1.0, 0.95, 0.75, 0.95), false)
 
 
 func add_stat_label(parent: Node, label_name: String, text: String, font_size: int, color: Color, visible: bool) -> Label:
@@ -605,6 +607,22 @@ func update_booster_ui(
 	
 	var percent := (current_fuel / max_fuel) * 100.0
 	booster_label.text = "Boosters: " + format_number(percent) + "%"
+
+
+func update_ammo(current_ammo: int, reserve_ammo: int, reloading: bool) -> void:
+	if ammo_label == null:
+		return
+
+	if current_ammo < 0:
+		ammo_label.visible = false
+		return
+
+	ammo_label.visible = true
+
+	if reloading:
+		ammo_label.text = "Ammo: reloading…"
+	else:
+		ammo_label.text = "Ammo: " + str(current_ammo) + " / " + str(reserve_ammo)
 
 
 func update_impact_effect(

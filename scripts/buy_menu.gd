@@ -45,6 +45,15 @@ var shop_items: Array[Dictionary] = [
 		"price": 5000
 	},
 	{
+		"id": "rifle",
+		"section": "WEAPONS",
+		"group": "rifle",
+		"level": 1,
+		"title": "Battle Rifle",
+		"description": "3-round burst. Semi-auto, punchy left/right recoil, aim down sights.",
+		"price": 4500
+	},
+	{
 		"id": "grab_distance_1",
 		"section": "SUIT UPGRADES",
 		"group": "grab_distance",
@@ -480,7 +489,7 @@ func get_item_state(item: Dictionary) -> Dictionary:
 			"button_text": "MISSING"
 		}
 	
-	if group == "suit_boosters" or group == "minigun" or group == "railgun":
+	if group == "suit_boosters" or group == "minigun" or group == "railgun" or group == "rifle":
 		if get_has_single_purchase_item(group):
 			return {
 				"can_buy": false,
@@ -532,6 +541,8 @@ func get_group_handler(group: String) -> Dictionary:
 			return {"obj": local_player, "apply": "purchase_minigun", "level": "", "takes_level": false}
 		"railgun":
 			return {"obj": local_player, "apply": "purchase_railgun", "level": "", "takes_level": false}
+		"rifle":
+			return {"obj": local_player, "apply": "purchase_rifle", "level": "", "takes_level": false}
 		"grab_distance":
 			return {"obj": local_player, "apply": "apply_grab_distance_upgrade", "level": "get_grab_distance_level", "takes_level": true}
 		"suit_boosters":
@@ -600,6 +611,13 @@ func get_has_railgun() -> bool:
 	return false
 
 
+func get_has_rifle() -> bool:
+	if local_player != null and local_player.has_method("get_has_rifle"):
+		return bool(local_player.call("get_has_rifle"))
+
+	return false
+
+
 func get_has_single_purchase_item(group: String) -> bool:
 	match group:
 		"suit_boosters":
@@ -608,6 +626,8 @@ func get_has_single_purchase_item(group: String) -> bool:
 			return get_has_minigun()
 		"railgun":
 			return get_has_railgun()
+		"rifle":
+			return get_has_rifle()
 
 	return false
 

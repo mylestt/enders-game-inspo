@@ -35,6 +35,7 @@ func _process(delta: float) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	advance(delta)
 	update_windup(delta)
 	update_firing_state()
 	update_fire_cycle(delta)
@@ -68,7 +69,7 @@ func spin_barrel(delta: float) -> void:
 
 
 func update_firing_state() -> void:
-	set_firing(trigger_held and windup_amount >= fire_spin_threshold)
+	set_firing(trigger_held and windup_amount >= fire_spin_threshold and not reloading)
 
 
 func update_fire_cycle(delta: float) -> void:
@@ -93,7 +94,13 @@ func update_fire_cycle(delta: float) -> void:
 
 
 func fire_round() -> void:
+	if not can_fire():
+		if trigger_held and uses_ammo() and current_ammo <= 0:
+			start_reload()
+		return
+
 	fire_hitscan()
+	consume_round()
 	apply_fire_recoil(windup_amount)
 
 
