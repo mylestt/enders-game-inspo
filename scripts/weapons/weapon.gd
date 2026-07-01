@@ -3,9 +3,12 @@ extends Node3D
 
 signal firing_state_changed(is_firing: bool)
 signal recoil_requested(rotation_impulse_degrees: Vector3, position_impulse: Vector3)
+signal ammo_changed(current_ammo: int, reserve_ammo: int)
+signal reload_started()
+signal reload_finished()
+signal ads_changed(aiming: bool)
 
 @export var weapon_weight: float = 1.0
-@export var pivot_node_path: NodePath
 @export var aim_origin_node_path: NodePath
 @export var aim_local_direction: Vector3 = Vector3.FORWARD
 
@@ -15,6 +18,11 @@ signal recoil_requested(rotation_impulse_degrees: Vector3, position_impulse: Vec
 @export var recoil_position_offset: Vector3 = Vector3.ZERO
 @export var recoil_random_rotation_degrees: Vector3 = Vector3.ZERO
 @export var recoil_random_position_offset: Vector3 = Vector3.ZERO
+# Persistent camera recoil (you pull down to counter), degrees per shot. Applies in all states.
+@export var recoil_kick_up: float = 0.0
+@export var recoil_kick_side: float = 0.0        # random +/- horizontal wander
+# Viewmodel offset held while firing (e.g. minigun kicks back and stays back). Eased in/out.
+@export var sustained_kickback: Vector3 = Vector3.ZERO
 
 @export_group("Hitscan")
 @export var hitscan_range: float = 260.0
@@ -38,10 +46,30 @@ signal recoil_requested(rotation_impulse_degrees: Vector3, position_impulse: Vec
 # the body past this, but won't fight a faster spin the player created themselves.
 @export var max_recoil_angular_speed: float = 4.0
 
+@export_group("Ammo")
+# 0 = no ammo system (infinite, never reloads). >0 enables mags + reload.
+@export var mag_size: int = 0
+@export var starting_reserve: int = 0
+@export var reload_time: float = 2.0
+
+@export_group("ADS")
+# 0 = no FOV zoom. >0 = camera FOV while aiming (the rig lerps to it).
+@export var ads_fov: float = 0.0
+@export var ads_spread_mult: float = 0.35
+@export var ads_recoil_mult: float = 0.5
+# Extra local offset the viewmodel takes while aiming, on top of sight centring.
+@export var ads_position_offset: Vector3 = Vector3.ZERO
+
 var owner_player: Node
 var equipped: bool = false
 var trigger_held: bool = false
 var firing: bool = false
+var is_ads: bool = false
+
+var current_ammo: int = 0
+var current_reserve: int = 0
+var reloading: bool = false
+var reload_timer: float = 0.0
 
 
 func equip(new_owner: Node) -> void:
@@ -49,6 +77,8 @@ func equip(new_owner: Node) -> void:
 	equipped = true
 	visible = true
 	set_trigger_held(false)
+	set_aiming(false)
+	reset_ammo()
 
 
 func unequip() -> void:
@@ -56,6 +86,7 @@ func unequip() -> void:
 	visible = false
 	set_trigger_held(false)
 	set_firing(false)
+	set_aiming(false)
 
 
 func set_trigger_held(value: bool) -> void:
@@ -74,131 +105,181 @@ func get_weapon_weight() -> float:
 	return maxf(weapon_weight, 0.01)
 
 
-func align_pivot_to_parent_origin() -> void:
-	if String(pivot_node_path) == "":
-		return
-	
-	var pivot_node := get_node_or_null(pivot_node_path) as Node3D
-	var parent_node := get_parent() as Node3D
-	
-	if pivot_node == null or parent_node == null:
-		return
-	
-	global_position += parent_node.global_position - pivot_node.global_position
-
-
 func get_aim_origin() -> Vector3:
 	if String(aim_origin_node_path) != "":
 		var aim_origin_node := get_node_or_null(aim_origin_node_path) as Node3D
-		
+
 		if aim_origin_node != null:
 			return aim_origin_node.global_position
-	
+
 	return global_position
 
 
 func get_aim_direction() -> Vector3:
 	var local_direction := aim_local_direction
-	
+
 	if local_direction.length() < 0.001:
 		local_direction = Vector3.FORWARD
-	
+
 	return (global_transform.basis * local_direction.normalized()).normalized()
 
+
+# ----- Ammo / reload -----
+
+func uses_ammo() -> bool:
+	return mag_size > 0
+
+
+func reset_ammo() -> void:
+	if not uses_ammo():
+		return
+
+	current_ammo = mag_size
+	current_reserve = starting_reserve
+	reloading = false
+	reload_timer = 0.0
+	ammo_changed.emit(current_ammo, current_reserve)
+
+
+func can_fire() -> bool:
+	if not uses_ammo():
+		return true
+
+	return not reloading and current_ammo > 0
+
+
+func consume_round() -> void:
+	if not uses_ammo():
+		return
+
+	current_ammo = maxi(current_ammo - 1, 0)
+	ammo_changed.emit(current_ammo, current_reserve)
+
+
+func start_reload() -> bool:
+	if not uses_ammo() or reloading:
+		return false
+
+	if current_ammo >= mag_size or current_reserve <= 0:
+		return false
+
+	reloading = true
+	reload_timer = reload_time
+	reload_started.emit()
+	return true
+
+
+# Ticks the reload timer; subclasses call this once per physics frame.
+func advance(delta: float) -> void:
+	if not reloading:
+		return
+
+	reload_timer -= delta
+
+	if reload_timer > 0.0:
+		return
+
+	var needed := mag_size - current_ammo
+	var taken := mini(needed, current_reserve)
+	current_ammo += taken
+	current_reserve -= taken
+	reloading = false
+	reload_finished.emit()
+	ammo_changed.emit(current_ammo, current_reserve)
+
+
+# ----- ADS -----
+
+func set_aiming(value: bool) -> void:
+	value = value and equipped
+
+	if is_ads == value:
+		return
+
+	is_ads = value
+	ads_changed.emit(is_ads)
+
+
+func get_ads_spread_mult() -> float:
+	return ads_spread_mult if is_ads else 1.0
+
+
+func get_ads_recoil_mult() -> float:
+	return ads_recoil_mult if is_ads else 1.0
+
+
+# ----- Recoil -----
 
 func request_recoil(multiplier: float = 1.0) -> void:
 	if not equipped or not recoil_enabled:
 		return
-	
-	var clamped_multiplier := maxf(multiplier, 0.0)
-	
+
+	var clamped_multiplier := maxf(multiplier, 0.0) * get_ads_recoil_mult()
+
 	if clamped_multiplier <= 0.0:
 		return
-	
+
 	recoil_requested.emit(
 		get_recoil_rotation_impulse(clamped_multiplier),
 		get_recoil_position_impulse(clamped_multiplier)
 	)
 
 
-# Routes a fired round's recoil. A braced shooter (standing on a surface or gripping
-# a wall) gets a normal FPS weapon kick. A free-floating shooter takes the recoil into
-# their own body instead — a backward shove plus a spin — while the weapon keeps swaying.
+# A fired round's recoil, in three independent channels every gun shares: viewmodel spring kick
+# (cosmetic), a persistent camera climb you pull down against (all states), and — only while
+# free-floating — a body shove straight back along the barrel, so where you aim is where you're
+# pushed in 0g.
 func apply_fire_recoil(multiplier: float = 1.0) -> void:
-	if is_owner_braced():
-		request_recoil(multiplier)
-	else:
-		apply_fire_knockback(multiplier)
-		apply_fire_torque(multiplier)
+	var m := maxf(multiplier, 0.0)
+	request_recoil(m)
+	apply_camera_kick(m)
+
+	if not is_owner_braced():
+		apply_body_push(m)
 
 
-# Shoves the owner backwards (opposite the aim/barrel direction) like reaction thrust.
-func apply_fire_knockback(multiplier: float = 1.0) -> void:
+# Persistent aim climb (+ side wander), fed into the look so the player corrects it with the mouse.
+func apply_camera_kick(multiplier: float) -> void:
+	if owner_player == null or not owner_player.has_method("apply_camera_recoil"):
+		return
+
+	var scale := multiplier * get_ads_recoil_mult()
+	var up := recoil_kick_up * scale
+	var side := randf_range(-recoil_kick_side, recoil_kick_side) * scale
+
+	if up != 0.0 or side != 0.0:
+		owner_player.call("apply_camera_recoil", up, side)
+
+
+# Free-float reaction: a central impulse opposite the barrel (follows the aim). Optional off-centre
+# tumble via fire_torque_strength, but that spins a fixed body-space direction, so default it to 0.
+func apply_body_push(multiplier: float) -> void:
 	if not fire_knockback_enabled or fire_knockback_force <= 0.0:
 		return
 
-	var knockback_multiplier := maxf(multiplier, 0.0)
+	var rigid := owner_player as RigidBody3D
 
-	if knockback_multiplier <= 0.0:
+	if rigid == null:
 		return
 
-	var rigid_owner := owner_player as RigidBody3D
+	var barrel := get_aim_direction()
 
-	if rigid_owner == null:
+	if barrel.length() < 0.001:
 		return
 
-	var aim_direction := get_aim_direction()
+	var reaction := -barrel.normalized() * fire_knockback_force * multiplier
+	rigid.sleeping = false
+	rigid.apply_central_impulse(reaction)
 
-	if aim_direction.length() < 0.001:
-		return
-
-	rigid_owner.sleeping = false
-	rigid_owner.apply_central_impulse(
-		-aim_direction.normalized() * fire_knockback_force * knockback_multiplier
-	)
-
-
-# Spins the owner around its center of mass, as if the off-center barrel torqued the
-# body. The spin axis comes from the muzzle's offset off the center-of-mass line, so
-# where the gun sits decides which way you tumble. Capped at max_recoil_angular_speed
-# so sustained fire can't spin you up uncontrollably.
-func apply_fire_torque(multiplier: float = 1.0) -> void:
 	if fire_torque_strength <= 0.0:
 		return
 
-	var torque_multiplier := maxf(multiplier, 0.0)
+	var spin_before := rigid.angular_velocity.length()
+	rigid.apply_torque_impulse((get_aim_origin() - rigid.global_position).cross(reaction) * fire_torque_strength)
+	var cap := maxf(max_recoil_angular_speed, spin_before)
 
-	if torque_multiplier <= 0.0:
-		return
-
-	var rigid_owner := owner_player as RigidBody3D
-
-	if rigid_owner == null:
-		return
-
-	var aim_direction := get_aim_direction()
-
-	if aim_direction.length() < 0.001:
-		return
-
-	var muzzle_offset := get_aim_origin() - rigid_owner.global_position
-	var spin_axis := muzzle_offset.cross(-aim_direction.normalized())
-
-	if spin_axis.length() < 0.00001:
-		return
-
-	var added_angular := spin_axis * fire_torque_strength * torque_multiplier
-	var current_angular := rigid_owner.angular_velocity
-	var proposed_angular := current_angular + added_angular
-
-	# Cap recoil-driven spin, but never below a faster spin the player made themselves.
-	var cap := maxf(max_recoil_angular_speed, current_angular.length())
-
-	if proposed_angular.length() > cap:
-		proposed_angular = proposed_angular.normalized() * cap
-
-	rigid_owner.sleeping = false
-	rigid_owner.angular_velocity = proposed_angular
+	if rigid.angular_velocity.length() > cap:
+		rigid.angular_velocity = rigid.angular_velocity.normalized() * cap
 
 
 func is_owner_braced() -> bool:
@@ -211,10 +292,10 @@ func is_owner_braced() -> bool:
 func fire_hitscan() -> Dictionary:
 	var origin := get_aim_origin()
 	var direction := get_aim_direction()
-	
+
 	if direction.length() < 0.001:
 		return {}
-	
+
 	direction = get_hitscan_shot_direction(direction.normalized())
 	var trace_end := origin + direction * hitscan_range
 	var query := PhysicsRayQueryParameters3D.create(origin, trace_end)
@@ -222,20 +303,20 @@ func fire_hitscan() -> Dictionary:
 	query.collide_with_bodies = hitscan_collide_with_bodies
 	query.collide_with_areas = hitscan_collide_with_areas
 	query.exclude = get_owner_collision_exclusions()
-	
+
 	var hit_result := get_world_3d().direct_space_state.intersect_ray(query)
 	var hit_position := trace_end
 	var hit_normal := Vector3.ZERO
 	var hit_collider: Object = null
 	var hit_something := false
-	
+
 	if not hit_result.is_empty():
 		hit_something = true
 		hit_position = hit_result["position"]
 		hit_normal = hit_result.get("normal", Vector3.ZERO)
 		hit_collider = hit_result.get("collider")
 		submit_hitscan_damage(hit_collider, hit_position, origin, direction)
-	
+
 	spawn_hitscan_tracer(origin, hit_position, hit_something, hit_normal)
 
 	if owner_player != null and owner_player.has_method("report_weapon_shot"):
@@ -259,12 +340,12 @@ func submit_hitscan_damage(
 ) -> void:
 	if owner_player == null:
 		return
-	
+
 	var target := find_damage_target(hit_collider)
-	
+
 	if target == null or target == owner_player:
 		return
-	
+
 	if owner_player.has_method("submit_weapon_hit"):
 		owner_player.call(
 			"submit_weapon_hit",
@@ -278,45 +359,47 @@ func submit_hitscan_damage(
 
 func find_damage_target(collider: Object) -> Node:
 	var current = collider
-	
+
 	while current != null:
 		if current is Node and current.has_method("apply_weapon_damage"):
 			return current
-		
+
 		if current is Node and current.has_method("get_peer_id"):
 			return current
-		
+
 		if current is Node:
 			current = current.get_parent()
 		else:
 			break
-	
+
 	return null
 
 
 func get_hitscan_shot_direction(base_direction: Vector3) -> Vector3:
-	if hitscan_spread_degrees.length() <= 0.001:
+	var spread := hitscan_spread_degrees * get_ads_spread_mult()
+
+	if spread.length() <= 0.001:
 		return base_direction
-	
+
 	var up := Vector3.UP
-	
+
 	if absf(base_direction.dot(up)) > 0.98:
 		up = Vector3.RIGHT
-	
+
 	var right := up.cross(base_direction).normalized()
 	var corrected_up := base_direction.cross(right).normalized()
 	var horizontal_angle := deg_to_rad(
-		randf_range(-absf(hitscan_spread_degrees.x), absf(hitscan_spread_degrees.x))
+		randf_range(-absf(spread.x), absf(spread.x))
 	)
 	var vertical_angle := deg_to_rad(
-		randf_range(-absf(hitscan_spread_degrees.y), absf(hitscan_spread_degrees.y))
+		randf_range(-absf(spread.y), absf(spread.y))
 	)
 	var spread_direction := (
 		base_direction
 		+ right * tan(horizontal_angle)
 		+ corrected_up * tan(vertical_angle)
 	)
-	
+
 	return spread_direction.normalized()
 
 
@@ -328,42 +411,42 @@ func spawn_hitscan_tracer(
 ) -> Node:
 	if hitscan_tracer_scene == null:
 		return null
-	
+
 	var tracer := hitscan_tracer_scene.instantiate()
 	var effect_parent := get_hitscan_effect_parent()
-	
+
 	if effect_parent == null:
 		tracer.queue_free()
 		return null
-	
+
 	effect_parent.add_child(tracer)
-	
+
 	if tracer.has_method("play"):
 		tracer.call("play", start_position, end_position, hit_something, hit_normal)
 	elif tracer is Node3D:
 		var tracer_node := tracer as Node3D
 		tracer_node.global_position = start_position
-	
+
 	return tracer
 
 
 func get_hitscan_effect_parent() -> Node:
 	if String(hitscan_effect_parent_path) != "":
 		var explicit_parent := get_node_or_null(hitscan_effect_parent_path)
-		
+
 		if explicit_parent != null:
 			return explicit_parent
-	
+
 	var scene := get_tree().current_scene
-	
+
 	if scene == null:
 		return get_tree().root
-	
+
 	var existing_parent := scene.get_node_or_null("WeaponEffects")
-	
+
 	if existing_parent != null:
 		return existing_parent
-	
+
 	var created_parent := Node3D.new()
 	created_parent.name = "WeaponEffects"
 	scene.add_child(created_parent)
@@ -379,10 +462,10 @@ func get_owner_collision_exclusions() -> Array:
 func add_collision_exclusions_from_node(node: Node, exclusions: Array) -> void:
 	if node == null:
 		return
-	
+
 	if node is CollisionObject3D:
 		exclusions.append(node.get_rid())
-	
+
 	for child in node.get_children():
 		add_collision_exclusions_from_node(child, exclusions)
 
@@ -412,6 +495,6 @@ func get_random_recoil_vector(extents: Vector3) -> Vector3:
 func set_firing(value: bool) -> void:
 	if firing == value:
 		return
-	
+
 	firing = value
 	firing_state_changed.emit(firing)

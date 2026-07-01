@@ -71,7 +71,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5235928, -0.18032497)
 fov = 90.0
 
 [node name="WeaponMount" type="Node3D" parent="CameraRig/Camera3D" unique_id=1410101425]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.23349482, -0.5073596, 0.08871758)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.45231187, -0.2743073, -0.46900803)
 script = ExtResource("9_spring_sway")
 rotation_sway_strength = Vector3(0.09, 0.12, 0.05)
 max_rotation_degrees = Vector3(12, 14, 6)
