@@ -586,6 +586,28 @@ func _on_died(attacker_peer_id: int) -> void:
 # Adds/removes the red "disabled" indicator on the corpse: an ambient red OmniLight plus a
 # red emissive tint on the body mesh. Called from _on_died / reset_for_round, which run on
 # every peer's copy of this player, so all clients see (and are lit by) the dead body.
+# One material shared by every player's corpse, built once and reused forever. Building a
+# fresh lit+emissive StandardMaterial3D per death forced Forward+ to compile that shader
+# variant synchronously the first time any player died in a session, causing a visible
+# stutter (and, since every peer runs this on death, a matching network-interpolation
+# "snap" for everyone). Unshaded matches the tracer effect's material mode, which is
+# already warmed up from the first shot fired, so this path costs nothing to compile.
+static var _shared_death_glow_material: StandardMaterial3D
+
+
+static func get_death_glow_material() -> StandardMaterial3D:
+	if _shared_death_glow_material == null:
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.albedo_color = Color(0.45, 0.02, 0.02)
+		mat.emission_enabled = true
+		mat.emission = Color(1.0, 0.08, 0.08)
+		mat.emission_energy_multiplier = 2.5
+		_shared_death_glow_material = mat
+
+	return _shared_death_glow_material
+
+
 func set_death_glow_active(active: bool) -> void:
 	var mesh := get_node_or_null("MeshInstance3D") as MeshInstance3D
 	var glow := get_node_or_null("DeathGlow") as OmniLight3D
@@ -601,12 +623,7 @@ func set_death_glow_active(active: bool) -> void:
 			add_child(glow)
 
 		if mesh != null:
-			var mat := StandardMaterial3D.new()
-			mat.albedo_color = Color(0.45, 0.02, 0.02)
-			mat.emission_enabled = true
-			mat.emission = Color(1.0, 0.08, 0.08)
-			mat.emission_energy_multiplier = 2.5
-			mesh.material_override = mat
+			mesh.material_override = get_death_glow_material()
 	else:
 		if glow != null:
 			glow.queue_free()
