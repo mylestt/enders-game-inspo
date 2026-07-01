@@ -76,6 +76,13 @@ var round_manager: Node
 # Per-round aggregate accumulator, flushed to a file on round end.
 var net_report: Dictionary = {}
 
+# Full per-round telemetry (timeline + events, all players). Server-only; see round_telemetry.gd.
+var round_telemetry: Node
+# How often a non-server peer reports its own FPS to the server (the one thing the server
+# can't observe itself). Small unreliable RPC, negligible next to the position sync.
+@export var client_perf_report_interval: float = 0.2
+var _client_perf_report_timer: float = 0.0
+
 # Lobby mode: when true (dedicated server), connecting does NOT auto-spawn — players
 # spawn only when they join a lobby through LobbyManager.
 var lobby_mode: bool = false
@@ -213,7 +220,21 @@ func start_dedicated_server(server_port: int = port) -> void:
 
 	multiplayer.multiplayer_peer = peer
 
+	create_round_telemetry()
+
 	print("Dedicated server listening on port ", server_port, ". Waiting for clients.")
+
+
+# The full multi-player telemetry recorder only makes sense on the actual dedicated server
+# (the one place with a view of every connected player), so it's created here rather than
+# unconditionally in _ready like the F3 overlay / pause menu.
+func create_round_telemetry() -> void:
+	if round_telemetry != null:
+		return
+
+	round_telemetry = preload("res://scripts/round_telemetry.gd").new()
+	add_child(round_telemetry)
+	round_telemetry.call("setup", self)
 
 
 func connect_multiplayer_signals() -> void:
@@ -518,7 +539,10 @@ func client_spawn_player(
 		player.call("set_multiplayer_player", peer_id, is_local, self)
 	
 	players_by_peer_id[peer_id] = player
-	
+
+	if round_telemetry != null and player is Node3D:
+		round_telemetry.call("record_player_spawned", peer_id, (player as Node3D).global_position)
+
 	if is_local:
 		call_deferred("bind_local_player_to_buy_menu", player, server_starting_cash)
 	
@@ -631,6 +655,9 @@ func get_scoreboard_entries() -> Array:
 func server_record_player_death(dead_peer_id: int, attacker_peer_id: int) -> void:
 	if not multiplayer.is_server():
 		return
+
+	if round_telemetry != null:
+		round_telemetry.call("record_player_died", dead_peer_id, attacker_peer_id)
 
 	ensure_player_metadata(dead_peer_id)
 	var dead_stats: Dictionary = player_stats_by_peer_id[dead_peer_id]
@@ -1297,6 +1324,9 @@ func _relay_weapon_shot(
 	did_hit: bool,
 	normal: Vector3
 ) -> void:
+	if round_telemetry != null:
+		round_telemetry.call("record_weapon_fired", shooter_peer_id, origin, did_hit)
+
 	for peer_id in multiplayer.get_peers():
 		if peer_id != shooter_peer_id:
 			rpc_id(peer_id, "client_play_weapon_shot", origin, shot_end, did_hit, normal)
@@ -1340,6 +1370,38 @@ func _process(delta: float) -> void:
 		return
 
 	accumulate_net_report(delta)
+	_tick_client_perf_report(delta)
+
+
+# Periodically sends this client's own FPS to the server — the one performance signal the
+# server can't observe itself (it doesn't render). Small unreliable RPC, a few times a
+# second; negligible next to the 30Hz per-player position sync. No-op on the server itself.
+func _tick_client_perf_report(delta: float) -> void:
+	if multiplayer.is_server():
+		return
+
+	# Only after the handshake completes — during the ~1s connecting window the peer exists
+	# but rpc_id(1, ...) would error ("multiplayer peer which is not connected").
+	var peer := multiplayer.multiplayer_peer
+
+	if peer == null or peer.get_connection_status() != MultiplayerPeer.CONNECTION_CONNECTED:
+		return
+
+	_client_perf_report_timer -= delta
+
+	if _client_perf_report_timer > 0.0:
+		return
+
+	_client_perf_report_timer = client_perf_report_interval
+	rpc_id(1, "server_receive_client_perf", Engine.get_frames_per_second())
+
+
+@rpc("any_peer", "unreliable")
+func server_receive_client_perf(fps: float) -> void:
+	if not multiplayer.is_server() or round_telemetry == null:
+		return
+
+	round_telemetry.call("record_client_fps", multiplayer.get_remote_sender_id(), fps)
 
 
 # Records how regularly state packets for a remote player arrive at this machine.
@@ -1457,6 +1519,16 @@ func _on_round_state_changed_for_report(new_state: int) -> void:
 		reset_net_report()          # start a clean measurement window for the round
 	elif new_state == RoundManager.State.ROUND_END:
 		write_net_report()          # flush what we measured during the round
+
+	if round_telemetry != null:
+		if new_state == RoundManager.State.ACTIVE:
+			round_telemetry.call("start_round")     # clears last round's buffers first
+			round_telemetry.call("record_round_state", round_manager.state_name(new_state))
+		elif new_state == RoundManager.State.ROUND_END:
+			round_telemetry.call("record_round_state", round_manager.state_name(new_state))
+			round_telemetry.call("end_round")       # flushes to disk, includes the line above
+		else:
+			round_telemetry.call("record_round_state", round_manager.state_name(new_state))
 
 
 func reset_net_report() -> void:
