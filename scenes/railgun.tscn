@@ -6,9 +6,12 @@
 
 [node name="Railgun" type="Node3D" unique_id=1026138234]
 script = ExtResource("1_rg")
-aim_origin_node_path = NodePath("RailgunModel/Muzzle")
-recoil_rotation_degrees = Vector3(1.26, 0, 0)
-hitscan_range = 264.505
+aim_origin_node_path = NodePath("Muzzle")
+recoil_rotation_degrees = Vector3(1.67, 0, 0)
+recoil_position_offset = Vector3(0, 0, 0.055)
+recoil_random_rotation_degrees = Vector3(0, 0.085, 0.565)
+recoil_random_position_offset = Vector3(0.01, 0, 0.14)
+hitscan_range = 295.06
 hitscan_damage = 90.0
 hitscan_tracer_scene = ExtResource("3_rg")
 fire_knockback_force = 13.33
@@ -18,5 +21,5 @@ max_recoil_angular_speed = 4.415
 [node name="RailgunModel" parent="." unique_id=1075772672 instance=ExtResource("2_rg")]
 transform = Transform3D(2.6226832e-08, 0, -0.29999998, 0, 0.29999998, 0, 0.29999998, 0, 2.6226832e-08, -0.14382677, 0.42016405, -0.46178114)
 
-[node name="Muzzle" type="Marker3D" parent="RailgunModel" unique_id=679576480]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.9764082, 0, 0)
+[node name="Muzzle" type="Marker3D" parent="." unique_id=679576480]
+transform = Transform3D(2.6226832e-08, 0, -0.29999998, 0, 0.29999998, 0, 0.29999998, 0, 2.6226832e-08, -0.14382681, 0.42016405, -1.0547036)

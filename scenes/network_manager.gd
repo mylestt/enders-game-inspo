@@ -1222,16 +1222,21 @@ func client_apply_weapon_damage(
 		return
 	
 	var target = players_by_peer_id[target_peer_id]
+	var killed := false
 
 	if target != null and target.has_method("apply_weapon_damage"):
+		# Capture alive-state first so only the actual killing blow (alive -> dead) reads as a
+		# kill — shots that land on an already-down corpse stay a normal hit.
+		var was_alive: bool = target.get("is_dead") != true
 		target.call("apply_weapon_damage", damage, attacker_peer_id)
+		killed = was_alive and target.get("is_dead") == true
 
-	# Hit feedback: only the attacker's own client shows the hitmarker.
+	# Hit feedback: only the attacker's own client shows the hitmarker (red on a kill).
 	if attacker_peer_id == multiplayer.get_unique_id() and players_by_peer_id.has(attacker_peer_id):
 		var attacker = players_by_peer_id[attacker_peer_id]
 
 		if attacker != null and attacker.has_method("show_hitmarker"):
-			attacker.call("show_hitmarker")
+			attacker.call("show_hitmarker", killed)
 
 
 @rpc("authority", "call_local", "reliable")

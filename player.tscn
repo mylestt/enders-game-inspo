@@ -26,6 +26,8 @@ surface_walk_sprint_multiplier = 2.0
 surface_walk_slope_align_max_degrees = 50.0
 surface_walk_slope_align_speed = 15.0
 surface_walk_foot_check_distance = 1.8
+surface_walk_lock_max_distance = 3.0
+surface_walk_lock_sweet_spot = 2.0
 
 [node name="SuitBoosters" type="Node" parent="." unique_id=2126445202]
 script = ExtResource("3_dw050")
@@ -73,6 +75,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.23349482, -0.5073596, 0.088
 script = ExtResource("9_spring_sway")
 rotation_sway_strength = Vector3(0.09, 0.12, 0.05)
 max_rotation_degrees = Vector3(12, 14, 6)
+max_position_offset = Vector3(2.185, 2.145, 2.62)
 rotation_stiffness = 83.425
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=157974881]

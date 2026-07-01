@@ -144,9 +144,10 @@ func report_weapon_shot(origin: Vector3, end: Vector3, did_hit: bool, normal: Ve
 
 
 # Shown to the attacker when the server confirms their shot damaged someone.
-func show_hitmarker() -> void:
+# `is_kill` is true when this shot dropped the target to zero health → red hitmarker.
+func show_hitmarker(is_kill: bool = false) -> void:
 	if is_local_player and hud_controller != null and hud_controller.has_method("show_hitmarker"):
-		hud_controller.show_hitmarker()
+		hud_controller.show_hitmarker(is_kill)
 
 
 func get_peer_id() -> int:
@@ -212,6 +213,9 @@ func _physics_process(delta: float) -> void:
 			hud_controller.update_reticle(delta, false, true)
 			hud_controller.update_push_direction_arrow(delta, false, Vector3.ZERO, camera)
 
+		# Keep replicating the free-floating corpse so its drift and any shoves it takes
+		# are seen by every other peer.
+		update_network_send(delta)
 		return
 
 	if impact_controller != null:
@@ -375,9 +379,8 @@ func find_player_from_collider(collider: Object) -> Node:
 func apply_network_body_slam_impulse(impulse: Vector3, contact_position: Vector3) -> void:
 	if not is_local_player:
 		return
-	
-	if is_dead:
-		return
+
+	# Note: dead bodies are intentionally NOT excluded here — a corpse can be shoved around.
 
 	sleeping = false
 	
@@ -399,6 +402,8 @@ func apply_network_body_slam_impulse(impulse: Vector3, contact_position: Vector3
 func reset_for_round(spawn_transform: Transform3D) -> void:
 	is_dead = false
 
+	set_death_glow_active(false)
+
 	if hud_controller != null and hud_controller.has_method("set_dead_screen_active"):
 		hud_controller.set_dead_screen_active(false)
 
@@ -417,6 +422,9 @@ func reset_for_round(spawn_transform: Transform3D) -> void:
 
 	if health != null and health.has_method("reset_health"):
 		health.reset_health()
+
+	if suit_boosters != null and suit_boosters.has_method("refill_booster_fuel"):
+		suit_boosters.refill_booster_fuel()
 
 	if impact_controller != null:
 		impact_controller.ignore_impacts_briefly()
@@ -526,11 +534,13 @@ func _on_health_changed(current_health: float, max_health: float) -> void:
 
 func _on_died(attacker_peer_id: int) -> void:
 	is_dead = true
-	linear_velocity = Vector3.ZERO
-	angular_velocity = Vector3.ZERO
-	sleeping = true
+
+	# The corpse stays an active rigid body: keep its current momentum (don't zero
+	# velocity) and keep it awake so it free-floats and can be shoved around.
+	sleeping = false
 
 	if movement_controller != null:
+		# Detach from any surface so the body tumbles freely, then drop all input.
 		if movement_controller.is_surface_walk_active():
 			movement_controller.exit_surface_walk_mode()
 		movement_controller.clear_mouse_motion()
@@ -539,10 +549,45 @@ func _on_died(attacker_peer_id: int) -> void:
 	if weapon_inventory != null:
 		weapon_inventory.update_weapon_input(false)
 
+	# Runs on every peer's copy of this player, so the red "disabled" glow shows for everyone.
+	set_death_glow_active(true)
+
 	if is_local_player and hud_controller != null and hud_controller.has_method("set_dead_screen_active"):
 		hud_controller.set_dead_screen_active(true)
 
 	print("Player ", peer_id, " died. Attacker: ", attacker_peer_id)
+
+
+# Adds/removes the red "disabled" indicator on the corpse: an ambient red OmniLight plus a
+# red emissive tint on the body mesh. Called from _on_died / reset_for_round, which run on
+# every peer's copy of this player, so all clients see (and are lit by) the dead body.
+func set_death_glow_active(active: bool) -> void:
+	var mesh := get_node_or_null("MeshInstance3D") as MeshInstance3D
+	var glow := get_node_or_null("DeathGlow") as OmniLight3D
+
+	if active:
+		if glow == null:
+			glow = OmniLight3D.new()
+			glow.name = "DeathGlow"
+			glow.light_color = Color(1.0, 0.12, 0.12)
+			glow.light_energy = 3.0
+			glow.omni_range = 9.0
+			glow.shadow_enabled = false
+			add_child(glow)
+
+		if mesh != null:
+			var mat := StandardMaterial3D.new()
+			mat.albedo_color = Color(0.45, 0.02, 0.02)
+			mat.emission_enabled = true
+			mat.emission = Color(1.0, 0.08, 0.08)
+			mat.emission_energy_multiplier = 2.5
+			mesh.material_override = mat
+	else:
+		if glow != null:
+			glow.queue_free()
+
+		if mesh != null:
+			mesh.material_override = null
 
 
 func update_remote_network_state(delta: float) -> void:

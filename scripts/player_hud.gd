@@ -29,6 +29,7 @@ var impact_value_label: Label
 
 var hitmarker_label: Label
 var hitmarker_time: float = 0.0
+var hitmarker_color: Color = Color(1.0, 1.0, 1.0)
 const HITMARKER_DURATION := 0.18
 
 var current_jump_force: float = 10.0
@@ -71,13 +72,15 @@ func set_hud_active(active: bool) -> void:
 	set_process(active)
 
 
-func show_hitmarker() -> void:
+func show_hitmarker(is_kill: bool = false) -> void:
 	if hitmarker_label == null:
 		return
 
+	# White for a normal hit, red when this shot was the kill (dropped them to zero health).
+	hitmarker_color = Color(1.0, 0.22, 0.22) if is_kill else Color(1.0, 1.0, 1.0)
 	hitmarker_time = HITMARKER_DURATION
 	hitmarker_label.visible = true
-	hitmarker_label.modulate = Color(1.0, 1.0, 1.0, 1.0)
+	hitmarker_label.modulate = Color(hitmarker_color.r, hitmarker_color.g, hitmarker_color.b, 1.0)
 	center_control(hitmarker_label)
 
 
@@ -91,7 +94,8 @@ func update_hitmarker(delta: float) -> void:
 		hitmarker_label.visible = false
 		return
 
-	hitmarker_label.modulate = Color(1.0, 1.0, 1.0, clampf(hitmarker_time / HITMARKER_DURATION, 0.0, 1.0))
+	var fade := clampf(hitmarker_time / HITMARKER_DURATION, 0.0, 1.0)
+	hitmarker_label.modulate = Color(hitmarker_color.r, hitmarker_color.g, hitmarker_color.b, fade)
 
 
 func show_hurt_effect(damage_ratio: float = 0.15) -> void:
@@ -177,7 +181,7 @@ func build_hitmarker() -> void:
 	hitmarker_label.size = Vector2(44.0, 44.0)
 	hitmarker_label.pivot_offset = Vector2(22.0, 22.0)
 	hitmarker_label.add_theme_font_size_override("font_size", 30)
-	hitmarker_label.add_theme_color_override("font_color", Color(1.0, 0.95, 0.55, 1.0))
+	hitmarker_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 1.0))
 	hitmarker_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	center_control(hitmarker_label)
 

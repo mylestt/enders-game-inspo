@@ -4,6 +4,8 @@
 
 [node name="HitscanTracerEffect" type="Node3D" unique_id=1165911112]
 script = ExtResource("1_tracer_effect")
+min_travel_time = 0.033
+max_travel_time = 6.6899999999999995
 tracer_width = 0.105
 jagged_radius = 0.1
 tail_width_multiplier = 0.11

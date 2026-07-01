@@ -79,6 +79,19 @@ enum MovementMode {
 @export var surface_walk_foot_surface_normal_min_dot: float = 0.75
 @export var surface_walk_friction: float = 0.0
 
+# Ground-lock timing: angle your body so your feet face a surface, then press C to lock onto
+# it. You can lock from up to `max_distance` metres away (measured straight off your feet);
+# locking exactly at `sweet_spot` metres is clean. Missing the sweet spot — too far (toward
+# max) OR too close (toward the surface) — temporarily "dazes" the first-person camera with
+# look-inertia that scales with how far off the timing was. Hit the sweet spot: no daze.
+@export var surface_walk_lock_max_distance: float = 4.0          # metres: farthest you can lock from
+@export var surface_walk_lock_sweet_spot: float = 1.5            # metres: perfect-timing distance
+@export var surface_walk_lock_daze_max_strength: float = 0.85    # 0..1: worst-case look sluggishness
+@export var surface_walk_lock_daze_max_duration: float = 1.1     # seconds the worst-case daze lasts
+@export var surface_walk_lock_daze_curve: float = 1.5            # >1 = forgiving near the sweet spot
+@export var surface_walk_look_responsiveness: float = 60.0       # un-dazed look response (per second)
+@export var surface_walk_lock_daze_min_responsiveness: float = 8.0  # most-dazed look response
+
 var player: RigidBody3D
 var camera: Camera3D
 var hud_controller: PlayerHUDController
@@ -112,6 +125,14 @@ var camera_base_position: Vector3 = Vector3.ZERO
 var surface_walk_shake_timer: float = 0.0
 var surface_walk_no_surface_timer: float = 0.0
 var _pre_surface_walk_material: PhysicsMaterial = null
+
+# Ground-lock daze state: how much/long the camera is sluggish after a mistimed lock, plus
+# the low-passed look deltas that produce the inertia feel.
+var surface_walk_daze_timer: float = 0.0
+var surface_walk_daze_duration: float = 0.0
+var surface_walk_daze_strength: float = 0.0
+var surface_walk_look_yaw_vel: float = 0.0
+var surface_walk_look_pitch_vel: float = 0.0
 
 var last_surface_result: Dictionary = {}
 var last_ctrl_push_result: Dictionary = {}
@@ -327,15 +348,19 @@ func physics_update_zero_g(delta: float, free_look_active: bool) -> void:
 
 func physics_update_surface_walk(delta: float) -> void:
 	release_grab()
-	
+
+	# Tick down the mistimed-lock daze for the whole time we're in ground mode.
+	if surface_walk_daze_timer > 0.0:
+		surface_walk_daze_timer = maxf(surface_walk_daze_timer - delta, 0.0)
+
 	if surface_walk_transition_active:
 		update_surface_walk_transition(delta)
 		return
-	
+
 	if update_surface_walk_edge_check(delta):
 		return
-	
-	update_surface_walk_mouse_look()
+
+	update_surface_walk_mouse_look(delta)
 	update_surface_walk_orientation()
 	handle_surface_walk_movement(delta)
 	handle_surface_walk_jump()
@@ -356,42 +381,120 @@ func handle_movement_mode_toggle(input_locked: bool) -> void:
 
 
 func try_enter_surface_walk_mode() -> void:
-	var result := last_surface_walk_entry_result
-	
+	var result := get_ground_lock_probe()
+
 	if result.is_empty():
-		result = get_feet_surface_walk_result()
-	
-	if result.is_empty():
-		print("Surface walk failed: feet are not close enough to a surface.")
+		print("Ground lock failed: no surface within ", surface_walk_lock_max_distance, " m ahead.")
 		return
-	
+
 	var surface_normal: Vector3 = result.get("normal", Vector3.ZERO)
 	var hit_position: Vector3 = result.get("position", player.global_position)
-	
+	var distance: float = result.get("distance", surface_walk_lock_sweet_spot)
+
 	if surface_normal.length() < 0.01:
-		print("Surface walk failed: invalid surface normal.")
+		print("Ground lock failed: invalid surface normal.")
 		return
-	
+
+	# Timing penalty: how far the lock distance was from the sweet spot decides the daze.
+	apply_ground_lock_daze(distance)
+
 	enter_surface_walk_mode(hit_position, surface_normal.normalized())
 
 
-func get_feet_surface_walk_result() -> Dictionary:
-	if limb_push_controller == null:
+# Probes straight off the player's feet (body -Y) for a lockable surface within the max lock
+# distance. Returns {position, normal, distance(metres)} or {} if nothing is in range. You must
+# first angle your body so your feet face the surface, then time the press as you approach.
+func get_ground_lock_probe() -> Dictionary:
+	if player == null:
 		return {}
-	
-	return limb_push_controller.get_feet_nearby_surface(
-		surface_walk_foot_check_distance,
-		surface_walk_foot_surface_normal_min_dot,
-		surface_walk_required_foot_count
-	)
+
+	var origin := player.global_position
+	var direction := get_ground_lock_probe_direction()
+
+	if direction.length() < 0.01:
+		return {}
+
+	direction = direction.normalized()
+	var end := origin + direction * surface_walk_lock_max_distance
+	var result := raycast_from_player(origin, end)
+
+	if result.is_empty():
+		return {}
+
+	var hit_position: Vector3 = result.get("position", end)
+	var hit_normal: Vector3 = result.get("normal", Vector3.ZERO)
+
+	if hit_normal.length() < 0.01:
+		return {}
+
+	return {
+		"position": hit_position,
+		"normal": hit_normal.normalized(),
+		"distance": origin.distance_to(hit_position),
+	}
+
+
+func get_ground_lock_probe_direction() -> Vector3:
+	# Probe toward the player's FEET, not their view. Surface-walk aligns the body's up to the
+	# surface normal, so the feet point along the body's down (-basis.y). The player must angle
+	# their body so their feet face the surface; this measures the distance straight off them.
+	if player != null:
+		return -player.global_transform.basis.y
+
+	return Vector3.ZERO
+
+
+# 0.0 at the sweet spot, ramping to 1.0 at either extreme (touching the surface, or out at the
+# max lock distance). Each side is normalised by its own range so both extremes max out.
+func ground_lock_error_ratio(distance: float) -> float:
+	var sweet := surface_walk_lock_sweet_spot
+
+	if distance >= sweet:
+		var far_range := maxf(surface_walk_lock_max_distance - sweet, 0.001)
+		return clampf((distance - sweet) / far_range, 0.0, 1.0)
+
+	var near_range := maxf(sweet, 0.001)
+	return clampf((sweet - distance) / near_range, 0.0, 1.0)
+
+
+# Sets the camera daze from how badly the lock distance missed the sweet spot. A perfect lock
+# clears the daze entirely; worse misses give stronger, longer-lasting look-inertia.
+func apply_ground_lock_daze(distance: float) -> void:
+	surface_walk_look_yaw_vel = 0.0
+	surface_walk_look_pitch_vel = 0.0
+
+	var ratio := ground_lock_error_ratio(distance)
+
+	if ratio <= 0.0:
+		surface_walk_daze_timer = 0.0
+		surface_walk_daze_duration = 0.0
+		surface_walk_daze_strength = 0.0
+		return
+
+	var curved := pow(ratio, maxf(surface_walk_lock_daze_curve, 0.01))
+	surface_walk_daze_strength = curved * surface_walk_lock_daze_max_strength
+	surface_walk_daze_duration = curved * surface_walk_lock_daze_max_duration
+	surface_walk_daze_timer = surface_walk_daze_duration
+
+	print("Ground lock: ", snappedf(distance, 0.01), " m (sweet ", surface_walk_lock_sweet_spot,
+		" m) -> daze ", snappedf(surface_walk_daze_strength, 0.01),
+		" for ", snappedf(surface_walk_daze_duration, 0.01), " s.")
+
+
+# Current daze amount (0..1), fading out linearly over the daze duration.
+func current_surface_walk_daze() -> float:
+	if surface_walk_daze_timer <= 0.0 or surface_walk_daze_duration <= 0.0:
+		return 0.0
+
+	return surface_walk_daze_strength * clampf(surface_walk_daze_timer / surface_walk_daze_duration, 0.0, 1.0)
 
 
 func update_surface_walk_entry_cache() -> void:
 	if movement_mode != MovementMode.ZERO_G:
 		last_surface_walk_entry_result = {}
 		return
-	
-	last_surface_walk_entry_result = get_feet_surface_walk_result()
+
+	last_surface_walk_entry_result = get_ground_lock_probe()
 
 
 func can_ground_lock() -> bool:
@@ -608,7 +711,13 @@ func exit_surface_walk_mode() -> void:
 	surface_walk_transition_active = false
 	surface_walk_shake_timer = 0.0
 	surface_walk_no_surface_timer = 0.0
-	
+
+	surface_walk_daze_timer = 0.0
+	surface_walk_daze_duration = 0.0
+	surface_walk_daze_strength = 0.0
+	surface_walk_look_yaw_vel = 0.0
+	surface_walk_look_pitch_vel = 0.0
+
 	if camera != null:
 		var camera_basis := get_control_look_basis()
 		player.global_transform = Transform3D(camera_basis, player.global_position)
@@ -626,16 +735,38 @@ func exit_surface_walk_mode() -> void:
 	print("Exited surface-walk mode.")
 
 
-func update_surface_walk_mouse_look() -> void:
-	if mouse_motion != Vector2.ZERO:
-		var yaw_amount := -mouse_motion.x * surface_walk_mouse_sensitivity
-		surface_walk_forward = surface_walk_forward.rotated(surface_walk_normal, yaw_amount).normalized()
-		
-		surface_walk_pitch -= mouse_motion.y * surface_walk_mouse_sensitivity
-	
+func update_surface_walk_mouse_look(delta: float) -> void:
+	var raw_yaw := -mouse_motion.x * surface_walk_mouse_sensitivity
+	var raw_pitch := -mouse_motion.y * surface_walk_mouse_sensitivity
+
+	var yaw_delta := raw_yaw
+	var pitch_delta := raw_pitch
+
+	var daze := current_surface_walk_daze()
+
+	if daze > 0.001:
+		# A mistimed lock makes the view feel heavy: low-pass the look so it lags the input
+		# (slow to start, drifts on stop) — i.e. camera inertia. The laggier the response, the
+		# stronger the daze. Fades to 1:1 as the daze runs out.
+		var response := lerpf(surface_walk_look_responsiveness, surface_walk_lock_daze_min_responsiveness, daze)
+		var smooth := clampf(1.0 - exp(-response * delta), 0.0, 1.0)
+		surface_walk_look_yaw_vel = lerpf(surface_walk_look_yaw_vel, raw_yaw, smooth)
+		surface_walk_look_pitch_vel = lerpf(surface_walk_look_pitch_vel, raw_pitch, smooth)
+		yaw_delta = surface_walk_look_yaw_vel
+		pitch_delta = surface_walk_look_pitch_vel
+	else:
+		# No daze: 1:1 look, identical to the original feel.
+		surface_walk_look_yaw_vel = raw_yaw
+		surface_walk_look_pitch_vel = raw_pitch
+
+	if absf(yaw_delta) > 0.0000001:
+		surface_walk_forward = surface_walk_forward.rotated(surface_walk_normal, yaw_delta).normalized()
+
+	surface_walk_pitch += pitch_delta
+
 	var pitch_limit := deg_to_rad(surface_walk_pitch_limit_degrees)
 	surface_walk_pitch = clampf(surface_walk_pitch, -pitch_limit, pitch_limit)
-	
+
 	if camera != null:
 		camera.rotation = Vector3(surface_walk_pitch, 0.0, 0.0)
 
