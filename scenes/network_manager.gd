@@ -16,14 +16,26 @@ signal scoreboard_changed(entries: Array)
 @export var body_slam_server_cooldown: float = 0.2
 @export var body_slam_validation_distance: float = 4.0
 @export var body_slam_max_impulse: float = 18.0
-@export var weapon_hit_damage: float = 15.0
 # Anti-cheat clamp: the per-weapon damage a client reports is capped to this server-side.
 @export var weapon_hit_max_damage: float = 250.0
 @export var weapon_hit_max_range: float = 280.0
 @export var weapon_hit_origin_validation_distance: float = 8.0
 @export var weapon_hit_target_validation_radius: float = 4.0
 @export var weapon_hit_server_cooldown: float = 0.02
+# How long after dying a peer's damage claims are still honoured. Covers same-moment trade
+# kills and plasma bolts already in flight when the shooter died; after this window a dead
+# (or cheating) client can no longer deal damage until it respawns.
+@export var weapon_hit_dead_attacker_grace: float = 2.5
 @export var weapon_tracer_scene: PackedScene = preload("res://scenes/hitscan_tracer_effect.tscn")
+
+@export_group("Plasma Explosion Validation")
+@export var plasma_projectile_scene: PackedScene = preload("res://scenes/plasma_projectile.tscn")
+@export var plasma_explosion_max_damage: float = 100.0
+@export var plasma_explosion_max_radius: float = 12.0
+@export var plasma_explosion_max_impulse: float = 80.0
+@export var plasma_explosion_origin_validation_distance: float = 20.0
+@export var plasma_explosion_path_tolerance: float = 2.5
+@export var plasma_explosion_target_tolerance: float = 1.5
 
 @export_group("Lag Compensation")
 # Server-side "backtracking" (CS/Valorant-style). The server records every player's
@@ -60,6 +72,9 @@ var player_stats_by_peer_id: Dictionary = {}
 var scoreboard_entries: Array = []
 var last_body_slam_time_by_pair: Dictionary = {}
 var last_weapon_hit_time_by_pair: Dictionary = {}
+# peer_id -> server time (seconds) the peer was last confirmed killed. Server-only; backs
+# the dead-attacker grace check on damage claims.
+var server_death_time_by_peer_id: Dictionary = {}
 # peer_id -> Array of { "t": float (server seconds), "pos": Vector3 }, oldest-first.
 # Server-only; the lag-compensation backtracking buffer.
 var player_state_history: Dictionary = {}
@@ -89,6 +104,10 @@ var lobby_mode: bool = false
 var pending_lobby_action: String = ""
 var lobby_manager: Node
 
+# Server-authoritative cash / ownership / ammo ledger. Created on every machine (the RPC
+# node path must match), populated only on the server. See scripts/server_economy.gd.
+var server_economy: ServerEconomy
+
 
 func _ready() -> void:
 	GameLaunch.apply_cmdline_overrides()
@@ -110,6 +129,11 @@ func _ready() -> void:
 
 	if round_manager != null and round_manager.has_signal("round_state_changed"):
 		round_manager.round_state_changed.connect(_on_round_state_changed_for_report)
+
+	server_economy = ServerEconomy.new()
+	server_economy.name = "ServerEconomy"
+	add_child(server_economy)
+	server_economy.setup(self)
 
 	reset_net_report()
 	create_network_debug_overlay()
@@ -321,7 +345,11 @@ func clear_runtime_multiplayer_state() -> void:
 	scoreboard_changed.emit(scoreboard_entries)
 	last_body_slam_time_by_pair.clear()
 	last_weapon_hit_time_by_pair.clear()
+	server_death_time_by_peer_id.clear()
 	player_state_history.clear()
+
+	if server_economy != null:
+		server_economy.reset_all()
 
 	var peer := multiplayer.multiplayer_peer
 	
@@ -386,6 +414,9 @@ func _on_peer_connected(peer_id: int) -> void:
 	var spawn_index := spawn_index_by_peer_id.size()
 	spawn_index_by_peer_id[peer_id] = spawn_index
 
+	if server_economy != null:
+		server_economy.server_init_peer(peer_id, starting_cash)
+
 	rpc("client_spawn_player", peer_id, spawn_index, starting_cash, get_player_name(peer_id))
 	server_broadcast_scoreboard()
 
@@ -416,6 +447,9 @@ func server_spawn_in_lobby(peer_id: int, members: Array) -> void:
 	var spawn_index := spawn_index_by_peer_id.size()
 	spawn_index_by_peer_id[peer_id] = spawn_index
 
+	if server_economy != null:
+		server_economy.server_init_peer(peer_id, starting_cash)
+
 	# Server's authoritative copy.
 	client_spawn_player(peer_id, spawn_index, starting_cash, get_player_name(peer_id))
 
@@ -441,7 +475,11 @@ func _on_peer_disconnected(peer_id: int) -> void:
 	player_names_by_peer_id.erase(peer_id)
 	player_stats_by_peer_id.erase(peer_id)
 	player_state_history.erase(peer_id)
+	server_death_time_by_peer_id.erase(peer_id)
 	clear_body_slam_pairs_for_peer(peer_id)
+
+	if server_economy != null:
+		server_economy.server_remove_peer(peer_id)
 
 	if lobby_manager != null and lobby_manager.has_method("server_on_peer_left"):
 		lobby_manager.call("server_on_peer_left", peer_id)
@@ -524,7 +562,10 @@ func client_spawn_player(
 		return
 
 	ensure_player_metadata(peer_id, player_name)
-	
+	# Clients need the spawn slot too: team = slot parity (get_team_for_peer), which drives
+	# the friendly/enemy indicator dots. The server already stored its own copy.
+	spawn_index_by_peer_id[peer_id] = spawn_index
+
 	var player := player_scene.instantiate()
 	player.name = "Player_" + str(peer_id)
 	players_parent.add_child(player)
@@ -545,8 +586,34 @@ func client_spawn_player(
 
 	if is_local:
 		call_deferred("bind_local_player_to_buy_menu", player, server_starting_cash)
-	
+
+	refresh_team_indicators()
+
 	print("Spawned player ", peer_id, ". Local: ", is_local)
+
+
+# Colors the dot above every remote player: green = same team as this machine's player,
+# red = enemy. Re-run after every spawn — the local player may spawn after others were
+# replayed to us, and only then can earlier dots be resolved against our own team.
+func refresh_team_indicators() -> void:
+	if DisplayServer.get_name() == "headless":
+		return   # nothing renders on a dedicated server
+
+	var local_id := get_local_peer_id()
+
+	if not players_by_peer_id.has(local_id):
+		return
+
+	var local_team := get_team_for_peer(local_id)
+
+	for peer_id in players_by_peer_id.keys():
+		if int(peer_id) == local_id:
+			continue
+
+		var player = players_by_peer_id[peer_id]
+
+		if player != null and player.has_method("set_team_indicator"):
+			player.call("set_team_indicator", get_team_for_peer(int(peer_id)) == local_team)
 
 
 func bind_local_player_to_buy_menu(player: Node, server_starting_cash: int = -1) -> void:
@@ -559,10 +626,14 @@ func bind_local_player_to_buy_menu(player: Node, server_starting_cash: int = -1)
 	
 	if buy_menu.has_method("set_local_player"):
 		buy_menu.call("set_local_player", player)
-		
+
 		if server_starting_cash >= 0 and buy_menu.has_method("set_starting_cash"):
 			buy_menu.call("set_starting_cash", server_starting_cash)
-		
+
+		# Online purchases route through the server-authoritative economy.
+		if server_economy != null and buy_menu.has_method("set_economy"):
+			buy_menu.call("set_economy", server_economy)
+
 		print("BuyMenu assigned to local player: ", player.name)
 	else:
 		push_warning("BuyMenu does not have set_local_player(). Make sure you are using the multiplayer buy_menu.gd.")
@@ -762,34 +833,20 @@ func server_set_starting_cash(amount: int) -> void:
 	starting_cash = maxi(amount, 0)
 
 
+# Admin cash commands mutate the authoritative ledger; ServerEconomy syncs the new balance
+# down to the affected client's buy-menu display.
 func server_set_player_cash(peer_id: int, amount: int) -> bool:
-	if not multiplayer.is_server():
+	if not multiplayer.is_server() or server_economy == null:
 		return false
 
-	if peer_id != 1 and not players_by_peer_id.has(peer_id):
-		return false
-
-	if peer_id == multiplayer.get_unique_id():
-		client_admin_set_cash(amount)
-	else:
-		rpc_id(peer_id, "client_admin_set_cash", amount)
-
-	return true
+	return server_economy.server_set_cash(peer_id, amount)
 
 
 func server_add_player_cash(peer_id: int, amount: int) -> bool:
-	if not multiplayer.is_server():
+	if not multiplayer.is_server() or server_economy == null:
 		return false
 
-	if peer_id != 1 and not players_by_peer_id.has(peer_id):
-		return false
-
-	if peer_id == multiplayer.get_unique_id():
-		client_admin_add_cash(amount)
-	else:
-		rpc_id(peer_id, "client_admin_add_cash", amount)
-
-	return true
+	return server_economy.server_add_cash(peer_id, amount)
 
 
 func get_player_summary() -> String:
@@ -926,10 +983,14 @@ func server_process_body_slam(
 	
 	var attacker: Node3D = players_by_peer_id[attacker_peer_id] as Node3D
 	var target: Node3D = players_by_peer_id[target_peer_id] as Node3D
-	
+
 	if attacker == null or target == null:
 		return
-	
+
+	# Honest clients never report slams while dead (see detect_player_body_slam_contacts).
+	if not server_attacker_may_deal_damage(attacker_peer_id, attacker):
+		return
+
 	if attacker.global_position.distance_to(target.global_position) > body_slam_validation_distance:
 		return
 	
@@ -969,13 +1030,255 @@ func client_apply_body_slam_impulse(
 		target.call("apply_network_body_slam_impulse", impulse, contact_position)
 
 
+func request_plasma_explosion_hit(
+	attacker_peer_id: int,
+	target_peer_id: int,
+	damage: float,
+	impulse: Vector3,
+	explosion_position: Vector3,
+	explosion_radius: float,
+	shot_origin: Vector3,
+	shot_direction: Vector3,
+	weapon_id: String
+) -> void:
+	if multiplayer.multiplayer_peer == null:
+		return
+
+	if multiplayer.is_server():
+		server_process_plasma_explosion_hit(
+			attacker_peer_id,
+			target_peer_id,
+			damage,
+			impulse,
+			explosion_position,
+			explosion_radius,
+			shot_origin,
+			shot_direction,
+			weapon_id
+		)
+	else:
+		rpc_id(
+			1,
+			"server_request_plasma_explosion_hit",
+			target_peer_id,
+			damage,
+			impulse,
+			explosion_position,
+			explosion_radius,
+			shot_origin,
+			shot_direction,
+			weapon_id
+		)
+
+
+@rpc("any_peer", "reliable")
+func server_request_plasma_explosion_hit(
+	target_peer_id: int,
+	damage: float,
+	impulse: Vector3,
+	explosion_position: Vector3,
+	explosion_radius: float,
+	shot_origin: Vector3,
+	shot_direction: Vector3,
+	weapon_id: String
+) -> void:
+	if not multiplayer.is_server():
+		return
+
+	server_process_plasma_explosion_hit(
+		multiplayer.get_remote_sender_id(),
+		target_peer_id,
+		damage,
+		impulse,
+		explosion_position,
+		explosion_radius,
+		shot_origin,
+		shot_direction,
+		weapon_id
+	)
+
+
+func server_process_plasma_explosion_hit(
+	attacker_peer_id: int,
+	target_peer_id: int,
+	damage: float,
+	impulse: Vector3,
+	explosion_position: Vector3,
+	explosion_radius: float,
+	shot_origin: Vector3,
+	shot_direction: Vector3,
+	weapon_id: String
+) -> void:
+	if not multiplayer.is_server():
+		return
+
+	if not players_by_peer_id.has(attacker_peer_id):
+		return
+
+	if not players_by_peer_id.has(target_peer_id):
+		return
+
+	var attacker := players_by_peer_id[attacker_peer_id] as Node3D
+	var target := players_by_peer_id[target_peer_id] as Node3D
+
+	if attacker == null or target == null:
+		return
+
+	if not server_attacker_may_deal_damage(attacker_peer_id, attacker):
+		return
+
+	var validated_radius := clampf(explosion_radius, 0.0, plasma_explosion_max_radius)
+
+	if not is_plasma_explosion_hit_plausible(
+		attacker_peer_id,
+		target_peer_id,
+		attacker,
+		target,
+		explosion_position,
+		validated_radius,
+		shot_origin,
+		shot_direction
+	):
+		return
+
+	if not can_process_weapon_hit_pair(attacker_peer_id, target_peer_id):
+		return
+
+	# Ownership + ammo + fire-rate check (one round per blast, however many players it
+	# hits), and clamp claimed damage to the weapon's real blast damage.
+	var applied_damage := clampf(damage, 0.0, plasma_explosion_max_damage)
+
+	if server_economy != null:
+		applied_damage = server_economy.server_validate_plasma_hit(
+			attacker_peer_id,
+			weapon_id,
+			applied_damage,
+			explosion_position
+		)
+
+		if applied_damage < 0.0:
+			return
+
+	mark_weapon_hit_pair(attacker_peer_id, target_peer_id)
+	var applied_impulse_magnitude := clampf(impulse.length(), 0.0, plasma_explosion_max_impulse)
+	var outward_direction := target.global_position - explosion_position
+
+	if outward_direction.length_squared() < 0.0001:
+		outward_direction = -shot_direction.normalized()
+	else:
+		outward_direction = outward_direction.normalized()
+
+	var applied_impulse := outward_direction * applied_impulse_magnitude
+	rpc(
+		"client_apply_plasma_explosion_hit",
+		target_peer_id,
+		attacker_peer_id,
+		applied_damage,
+		applied_impulse
+	)
+
+
+func is_plasma_explosion_hit_plausible(
+	attacker_peer_id: int,
+	target_peer_id: int,
+	attacker: Node3D,
+	target: Node3D,
+	explosion_position: Vector3,
+	explosion_radius: float,
+	shot_origin: Vector3,
+	shot_direction: Vector3
+) -> bool:
+	if shot_direction.length_squared() < 0.0001 or explosion_radius <= 0.0:
+		return false
+
+	if shot_origin.distance_to(attacker.global_position) > plasma_explosion_origin_validation_distance:
+		return false
+
+	var direction := shot_direction.normalized()
+	var to_explosion := explosion_position - shot_origin
+	var distance_along_shot := to_explosion.dot(direction)
+
+	if distance_along_shot < -plasma_explosion_path_tolerance:
+		return false
+
+	if distance_along_shot > weapon_hit_max_range:
+		return false
+
+	var closest_path_point := shot_origin + direction * maxf(distance_along_shot, 0.0)
+
+	if closest_path_point.distance_to(explosion_position) > plasma_explosion_path_tolerance:
+		return false
+
+	var validated_target_position := target.global_position
+
+	if lag_comp_enabled and target_peer_id != attacker_peer_id:
+		var rewound_position = get_rewound_position(
+			target_peer_id,
+			compute_rewind_for_peer(attacker_peer_id)
+		)
+
+		if rewound_position != null:
+			validated_target_position = rewound_position
+
+	return (
+		explosion_position.distance_to(validated_target_position)
+		<= explosion_radius + plasma_explosion_target_tolerance
+	)
+
+
+@rpc("authority", "call_local", "reliable")
+func client_apply_plasma_explosion_hit(
+	target_peer_id: int,
+	attacker_peer_id: int,
+	damage: float,
+	impulse: Vector3
+) -> void:
+	apply_confirmed_damage(target_peer_id, attacker_peer_id, damage)
+
+	var target = players_by_peer_id.get(target_peer_id)
+
+	if target != null and not impulse.is_zero_approx() and target.has_method("apply_network_plasma_impulse"):
+		target.call("apply_network_plasma_impulse", impulse)
+
+
+# Server-confirmed damage, applied to this machine's copy of the target. Runs on every peer
+# (the client_apply_* RPCs are call_local). Also shows the attacker's hitmarker on their own
+# machine, and — on the server — records the kill time backing the dead-attacker grace check.
+func apply_confirmed_damage(target_peer_id: int, attacker_peer_id: int, damage: float) -> void:
+	var target = players_by_peer_id.get(target_peer_id)
+	var killed := false
+
+	if target != null and damage > 0.0 and target.has_method("apply_weapon_damage"):
+		# Capture alive-state first so only the actual killing blow (alive -> dead) reads as a
+		# kill — shots that land on an already-down corpse stay a normal hit.
+		var was_alive: bool = target.get("is_dead") != true
+		target.call("apply_weapon_damage", damage, attacker_peer_id)
+		killed = was_alive and target.get("is_dead") == true
+
+	if killed and multiplayer.multiplayer_peer != null and multiplayer.is_server():
+		server_death_time_by_peer_id[target_peer_id] = Time.get_ticks_msec() / 1000.0
+
+	# Hit feedback: only the attacker's own client shows the hitmarker (red on a kill), and
+	# never for self-damage (plasma splash can hit the shooter).
+	if (
+		damage > 0.0
+		and attacker_peer_id != target_peer_id
+		and attacker_peer_id == multiplayer.get_unique_id()
+	):
+		var attacker = players_by_peer_id.get(attacker_peer_id)
+
+		if attacker != null and attacker.has_method("show_hitmarker"):
+			attacker.call("show_hitmarker", killed)
+
+
 func request_weapon_hit(
 	attacker_peer_id: int,
 	target_peer_id: int,
 	damage: float,
 	hit_position: Vector3,
 	shot_origin: Vector3,
-	shot_direction: Vector3
+	shot_direction: Vector3,
+	weapon_id: String
 ) -> void:
 	if multiplayer.multiplayer_peer == null:
 		return
@@ -987,7 +1290,8 @@ func request_weapon_hit(
 			damage,
 			hit_position,
 			shot_origin,
-			shot_direction
+			shot_direction,
+			weapon_id
 		)
 	else:
 		rpc_id(
@@ -997,7 +1301,8 @@ func request_weapon_hit(
 			damage,
 			hit_position,
 			shot_origin,
-			shot_direction
+			shot_direction,
+			weapon_id
 		)
 
 
@@ -1007,7 +1312,8 @@ func server_request_weapon_hit(
 	damage: float,
 	hit_position: Vector3,
 	shot_origin: Vector3,
-	shot_direction: Vector3
+	shot_direction: Vector3,
+	weapon_id: String
 ) -> void:
 	if not multiplayer.is_server():
 		return
@@ -1019,7 +1325,8 @@ func server_request_weapon_hit(
 		damage,
 		hit_position,
 		shot_origin,
-		shot_direction
+		shot_direction,
+		weapon_id
 	)
 
 
@@ -1029,7 +1336,8 @@ func server_process_weapon_hit(
 	damage: float,
 	hit_position: Vector3,
 	shot_origin: Vector3,
-	shot_direction: Vector3
+	shot_direction: Vector3,
+	weapon_id: String
 ) -> void:
 	if not multiplayer.is_server():
 		return
@@ -1045,13 +1353,16 @@ func server_process_weapon_hit(
 	
 	var attacker := players_by_peer_id[attacker_peer_id] as Node3D
 	var target := players_by_peer_id[target_peer_id] as Node3D
-	
+
 	if attacker == null or target == null:
 		return
-	
+
+	if not server_attacker_may_deal_damage(attacker_peer_id, attacker):
+		return
+
 	if not can_process_weapon_hit_pair(attacker_peer_id, target_peer_id):
 		return
-	
+
 	if not is_weapon_hit_plausible(
 		attacker_peer_id,
 		target_peer_id,
@@ -1063,10 +1374,21 @@ func server_process_weapon_hit(
 	):
 		return
 	
-	mark_weapon_hit_pair(attacker_peer_id, target_peer_id)
-
-	# Use the weapon's own damage (clamped server-side so a client can't report an absurd value).
+	# Ownership + ammo + fire-rate check, and clamp the claimed damage to what the claimed
+	# weapon actually deals. Consumes a round, so it runs after the cheaper checks above.
 	var applied_damage := clampf(damage, 0.0, weapon_hit_max_damage)
+
+	if server_economy != null:
+		applied_damage = server_economy.server_validate_hitscan_hit(
+			attacker_peer_id,
+			weapon_id,
+			applied_damage
+		)
+
+		if applied_damage < 0.0:
+			return
+
+	mark_weapon_hit_pair(attacker_peer_id, target_peer_id)
 	rpc("client_apply_weapon_damage", target_peer_id, attacker_peer_id, applied_damage)
 
 	print(
@@ -1095,6 +1417,19 @@ func can_process_weapon_hit_pair(attacker_peer_id: int, target_peer_id: int) -> 
 func mark_weapon_hit_pair(attacker_peer_id: int, target_peer_id: int) -> void:
 	var pair_key := str(attacker_peer_id) + "_" + str(target_peer_id)
 	last_weapon_hit_time_by_pair[pair_key] = Time.get_ticks_msec() / 1000.0
+
+
+# A dead client must not keep dealing damage/impulses for the rest of the round. Checked
+# against the server's own copy of the attacker's health; the grace window keeps legitimate
+# same-moment trades and projectiles that were in flight when the shooter died.
+func server_attacker_may_deal_damage(attacker_peer_id: int, attacker: Node) -> bool:
+	var attacker_health := attacker.get_node_or_null("PlayerHealth") as PlayerHealth
+
+	if attacker_health == null or attacker_health.current_health > 0.0:
+		return true
+
+	var died_at: float = float(server_death_time_by_peer_id.get(attacker_peer_id, -INF))
+	return (Time.get_ticks_msec() / 1000.0) - died_at <= weapon_hit_dead_attacker_grace
 
 
 func is_weapon_hit_plausible(
@@ -1245,43 +1580,7 @@ func client_apply_weapon_damage(
 	attacker_peer_id: int,
 	damage: float
 ) -> void:
-	if not players_by_peer_id.has(target_peer_id):
-		return
-	
-	var target = players_by_peer_id[target_peer_id]
-	var killed := false
-
-	if target != null and target.has_method("apply_weapon_damage"):
-		# Capture alive-state first so only the actual killing blow (alive -> dead) reads as a
-		# kill — shots that land on an already-down corpse stay a normal hit.
-		var was_alive: bool = target.get("is_dead") != true
-		target.call("apply_weapon_damage", damage, attacker_peer_id)
-		killed = was_alive and target.get("is_dead") == true
-
-	# Hit feedback: only the attacker's own client shows the hitmarker (red on a kill).
-	if attacker_peer_id == multiplayer.get_unique_id() and players_by_peer_id.has(attacker_peer_id):
-		var attacker = players_by_peer_id[attacker_peer_id]
-
-		if attacker != null and attacker.has_method("show_hitmarker"):
-			attacker.call("show_hitmarker", killed)
-
-
-@rpc("authority", "call_local", "reliable")
-func client_admin_set_cash(amount: int) -> void:
-	if buy_menu == null:
-		buy_menu = get_node_or_null(buy_menu_path)
-
-	if buy_menu != null and buy_menu.has_method("admin_set_cash"):
-		buy_menu.call("admin_set_cash", amount)
-
-
-@rpc("authority", "call_local", "reliable")
-func client_admin_add_cash(amount: int) -> void:
-	if buy_menu == null:
-		buy_menu = get_node_or_null(buy_menu_path)
-
-	if buy_menu != null and buy_menu.has_method("admin_add_cash"):
-		buy_menu.call("admin_add_cash", amount)
+	apply_confirmed_damage(target_peer_id, attacker_peer_id, damage)
 
 
 # --- Weapon shot tracer replication ------------------------------------------------
@@ -1324,6 +1623,11 @@ func _relay_weapon_shot(
 	did_hit: bool,
 	normal: Vector3
 ) -> void:
+	# Only spawned players get their effects relayed (a connected-but-unspawned peer in
+	# lobby mode has nothing to shoot with).
+	if not players_by_peer_id.has(shooter_peer_id):
+		return
+
 	if round_telemetry != null:
 		round_telemetry.call("record_weapon_fired", shooter_peer_id, origin, did_hit)
 
@@ -1339,24 +1643,87 @@ func client_play_weapon_shot(
 	did_hit: bool,
 	normal: Vector3
 ) -> void:
-	if weapon_tracer_scene == null:
+	var parent := get_world_effect_parent()
+
+	if parent == null or weapon_tracer_scene == null:
 		return
-
-	var scene := get_tree().current_scene
-
-	if scene == null:
-		return
-
-	var parent := scene.get_node_or_null("WeaponEffects")
-
-	if parent == null:
-		parent = scene
 
 	var tracer := weapon_tracer_scene.instantiate()
 	parent.add_child(tracer)
 
 	if tracer.has_method("play"):
 		tracer.call("play", origin, shot_end, did_hit, normal)
+
+
+# Where relayed shot effects live: the current scene's WeaponEffects node, or the scene
+# root as a fallback (matches Weapon.get_hitscan_effect_parent on the shooter's side).
+func get_world_effect_parent() -> Node:
+	var scene := get_tree().current_scene
+
+	if scene == null:
+		return null
+
+	var parent := scene.get_node_or_null("WeaponEffects")
+	return parent if parent != null else scene
+
+
+# --- Projectile replication ---------------------------------------------------------
+# The shooter already simulates its own damage-dealing bolt locally; this relays the launch
+# so every OTHER client spawns a cosmetic copy (flight, VFX, and local prop impulse only).
+# Reliable, unlike tracers: bolts are rare and long-lived, and a dropped launch would leave
+# other players eating a blast from a projectile they never saw.
+
+func broadcast_projectile_shot(shooter_peer_id: int, origin: Vector3, velocity: Vector3) -> void:
+	if multiplayer.multiplayer_peer == null:
+		return
+
+	if multiplayer.is_server():
+		_relay_projectile_shot(shooter_peer_id, origin, velocity)
+	else:
+		rpc_id(1, "server_relay_projectile_shot", origin, velocity)
+
+
+@rpc("any_peer", "reliable")
+func server_relay_projectile_shot(origin: Vector3, velocity: Vector3) -> void:
+	if not multiplayer.is_server():
+		return
+
+	_relay_projectile_shot(multiplayer.get_remote_sender_id(), origin, velocity)
+
+
+func _relay_projectile_shot(shooter_peer_id: int, origin: Vector3, velocity: Vector3) -> void:
+	if not players_by_peer_id.has(shooter_peer_id):
+		return
+
+	if round_telemetry != null:
+		round_telemetry.call("record_weapon_fired", shooter_peer_id, origin, false)
+
+	for peer_id in multiplayer.get_peers():
+		if peer_id != shooter_peer_id:
+			rpc_id(peer_id, "client_play_projectile_shot", shooter_peer_id, origin, velocity)
+
+
+@rpc("authority", "reliable")
+func client_play_projectile_shot(shooter_peer_id: int, origin: Vector3, velocity: Vector3) -> void:
+	var parent := get_world_effect_parent()
+
+	if parent == null or plasma_projectile_scene == null:
+		return
+
+	var instance := plasma_projectile_scene.instantiate()
+	var bolt := instance as PlasmaProjectile
+
+	if bolt == null:
+		push_error("NetworkManager plasma_projectile_scene root must be a PlasmaProjectile.")
+		instance.free()
+		return
+
+	bolt.can_deal_damage = false
+	parent.add_child(bolt)
+
+	# Exclude the shooter's own body so the bolt doesn't pop at their muzzle.
+	var shooter: Node = players_by_peer_id.get(shooter_peer_id)
+	bolt.launch(origin, velocity.normalized(), velocity.length(), shooter)
 
 
 # === Network diagnostics ============================================================
@@ -1517,6 +1884,11 @@ func _local_send_rate_hz() -> float:
 func _on_round_state_changed_for_report(new_state: int) -> void:
 	if new_state == RoundManager.State.ACTIVE:
 		reset_net_report()          # start a clean measurement window for the round
+
+		# Round start refills every client's weapons (WeaponInventory.reset_state), so the
+		# server ammo ledger must match.
+		if server_economy != null:
+			server_economy.server_refill_all_ammo()
 	elif new_state == RoundManager.State.ROUND_END:
 		write_net_report()          # flush what we measured during the round
 

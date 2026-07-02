@@ -1,0 +1,58 @@
+[gd_scene format=3 uid="uid://ch4awbbtlh5f2"]
+
+[ext_resource type="Script" uid="uid://iicblqu3rbjb" path="res://scripts/weapons/plasma_projectile.gd" id="1_projectile"]
+
+[sub_resource type="Curve" id="Curve_screen_shake_falloff"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(0.60106385, 0.8539326), 0.0, 0.0, 0, 0, Vector2(1, 0), 0.0, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="Curve" id="Curve_damage_falloff"]
+_data = [Vector2(0, 1), 0.0, -1.0, 0, 1, Vector2(1, 0), -1.0, 0.0, 1, 0]
+point_count = 2
+
+[sub_resource type="Curve" id="Curve_airburst_falloff"]
+_data = [Vector2(0, 1), 0.0, -0.44167504, 0, 1, Vector2(0.58510643, 0.7415731), -2.429213, -2.429213, 0, 0, Vector2(0.6648936, 0.59550565), 0.0, 0.0, 0, 0, Vector2(1, 0), -1.7770646, 0.0, 1, 0]
+point_count = 4
+
+[sub_resource type="Gradient" id="Gradient_ion_streak"]
+offsets = PackedFloat32Array(0, 0.18, 0.72, 1)
+colors = PackedColorArray(1, 0.96, 0.72, 1, 0.32, 0.82, 1, 1, 0.886433, 0.682105, 0.259618, 0.55, 0.886433, 0.682105, 0.259618, 0)
+
+[node name="PlasmaProjectile" type="Node3D" unique_id=314346046]
+script = ExtResource("1_projectile")
+lifetime = 8.0
+projectile_radius = 0.19
+projectile_emission_energy = 9.1
+projectile_light_energy = 7.1
+projectile_light_range = 13.4
+explosion_radius = 16.5
+explosion_duration = 0.52
+explosion_color = Color(0.886433, 0.68210506, 0.25961795, 1)
+explosion_emission_energy = 15.0
+explosion_light_energy = 17.2
+explosion_light_range = 35.7
+explosion_light_fade_time = 0.98
+impact_core_color = Color(0.974178, 0.95261425, 0.8878553, 1)
+impact_core_radius_multiplier = 0.63
+impact_core_duration = 0.73
+impact_core_emission_energy = 35.3
+shockwave_color = Color(0.7130536, 0.9142881, 1, 1)
+shockwave_radius_multiplier = 1.28
+shockwave_emission_energy = 32.4
+screen_shake_radius_multiplier = 5.8999999999999995
+screen_shake_falloff_curve = SubResource("Curve_screen_shake_falloff")
+damage_falloff_curve = SubResource("Curve_damage_falloff")
+airburst_center_impulse = 58.5
+airburst_edge_impulse = 24.5
+airburst_falloff_curve = SubResource("Curve_airburst_falloff")
+particle_amount = 1000
+particle_lifetime = 1.6500000000000001
+particle_min_speed = 13.4
+particle_max_speed = 20.4
+particle_size = 0.026
+particle_max_scale = 0.71
+particle_max_damping = 5.0
+particle_randomness = 0.51
+particle_emission_energy = 10.6
+ion_streak_lifetime = 0.67
+ion_streak_color_over_lifetime = SubResource("Gradient_ion_streak")

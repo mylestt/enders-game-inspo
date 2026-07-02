@@ -19,6 +19,9 @@ Weapons are split into three responsibilities. Keep them separate.
 Subclasses of `Weapon` decide *when* to fire; the base does *everything else*:
 - `hitscan_weapon.gd` (`HitscanWeapon`) — cooldown fire: single-shot (railgun) or burst (battle rifle).
 - `minigun_weapon.gd` (`MinigunWeapon`) — wind-up spin-up full-auto.
+- `projectile_weapon.gd` (`ProjectileWeapon`) — subclass of `HitscanWeapon` (inherits its
+  whole fire cadence) that launches a travelling bolt (plasma cannon) instead of a ray; see
+  §2b. Bolt script: `plasma_projectile.gd` (`PlasmaProjectile`).
 
 Helper: `scripts/weapons/weapon_feel.gd` (`WeaponFeel`) — framerate-independent decay/spring math.
 
@@ -49,6 +52,26 @@ Only the **local** player runs weapon input/animation. Remote players never equi
 
 Damage/hits are **server-authoritative** with lag compensation in `scenes/network_manager.gd`.
 A weapon just calls `fire_hitscan()`; the base + player + network manager handle validation.
+
+### 2b. The projectile pipeline (`ProjectileWeapon`)
+
+Same shape, but the hit claim is **deferred to impact** instead of instant:
+
+1. `fire_projectile()` spawns a `PlasmaProjectile` into the world `WeaponEffects` node
+   (reusing the base's muzzle origin, spread model, ammo, and all three recoil channels).
+2. The bolt is **client-simulated on the shooter's machine**: it flies in a straight line
+   (zero-G — no gravity/arc) sweeping a segment raycast each physics frame (no tunnelling).
+3. On impact `plasma_projectile.tscn` queries a sphere, evaluates its editable damage and
+   airburst falloff curves, and submits one combined damage + radial-impulse claim per player.
+   The server validates blast radius, projectile path, damage, and impulse before applying
+   them. Non-player `RigidBody3D`s receive radial `apply_central_impulse` locally.
+4. Other clients see the bolt via `NetworkManager.broadcast_projectile_shot` →
+   `client_play_projectile_shot` (unreliable, like tracers): they spawn a **cosmetic** copy
+   that flies and pops but never deals damage. The shooter's client owns the claim.
+
+**Constraint:** the server checks the claimed fire origin against
+`plasma_explosion_origin_validation_distance` at impact time. Long flight plus a fast-moving
+shooter can exceed it; widen that server export if legitimate blasts are rejected.
 
 ---
 
@@ -118,6 +141,15 @@ rounds inside a burst).
 `fire_spin_threshold` (windup fraction before it fires), `max_spin_radians_per_second`,
 `barrel_local_spin_axis`, `rounds_per_second`, `max_rounds_per_frame`.
 
+### `ProjectileWeapon` (plasma cannon)
+`projectile_scene`, `projectile_speed` (m/s), plus everything `HitscanWeapon` has
+(`rounds_per_second`, `semi_auto`, `burst_count`; the plasma cannon scene sets 1.4 rps).
+Open `scenes/plasma_projectile.tscn` for flight lifetime, projectile/explosion visuals,
+100→5 damage and its editable `Curve`, airburst impulse/curve, and ion-particle controls.
+Impact feedback is layered: white-hot core, pressure shell, slow ions, fast velocity-aligned
+streaks, distance-falloff camera punch/shake, a brief view flash, and optional 3D audio.
+Spread reuses `hitscan_spread_degrees`; `hitscan_damage`/`hitscan_range`/tracer are unused.
+
 ### Signals emitted by `Weapon`
 `firing_state_changed(is_firing)`, `recoil_requested(rot_deg, pos)`, `ammo_changed(current, reserve)`,
 `reload_started()`, `reload_finished()`, `ads_changed(aiming)`. Hook these for HUD/audio/VFX.
@@ -169,23 +201,23 @@ Damage, `rounds_per_second`/`burst_count`, `hitscan_spread_degrees`, the three r
 
 ### C. Register it (`scripts/weapons/weapon_inventory.gd`)
 1. Add an id const: `const RIFLE_ID: StringName = &"rifle"`.
-2. Add a scene export: `@export var rifle_scene: PackedScene = preload("res://scenes/rifle.tscn")`.
-3. Add a `get_weapon_scene()` match case returning it.
-4. Add `purchase_rifle()` / `get_has_rifle()` wrappers.
-5. (Optional quick-swap) add the id to `SLOT_IDS` (slot index → key `weapon_slot_<n>`).
+2. Add the scene to the `WEAPON_SCENES` const registry (the server reads the same registry
+   to build its ammo/damage validation stats — see `scripts/server_economy.gd`).
+3. (Optional quick-swap) add the id to `SLOT_IDS` (slot index → key `weapon_slot_<n>`),
+   add `elif event.is_action_pressed("weapon_slot_<n>"): ...try_quick_swap(<n-1>)` in
+   `player.gd _input`, and add the `weapon_slot_<n>` action to `project.godot`.
 
-### D. Expose on the player (`scripts/player.gd`)
-Add `purchase_rifle()` / `get_has_rifle()` that forward to the inventory. For quick-swap, add
-`elif event.is_action_pressed("weapon_slot_3"): weapon_inventory.try_quick_swap(2)` in `_input`,
-and add the `weapon_slot_3` action to `project.godot`.
+Purchase/ownership need no new code: `player.purchase_weapon(id)` / `player.has_weapon(id)`
+are generic pass-throughs to the inventory, and online purchases are validated by the
+server (`ServerEconomy`) before the item is applied.
 
-### E. Sell it (`scripts/buy_menu.gd`)
-1. Add an entry to `shop_items` (`id`, `section:"WEAPONS"`, `group`, `title`, `description`, `price`).
-2. Add a `get_group_handler()` case → `{"apply": "purchase_rifle", ...}`.
-3. Add the group to the single-purchase `if group == ... or group == "rifle"` check.
-4. Add a `get_has_rifle()` helper + a `get_has_single_purchase_item()` case.
+### D. Sell it (`scripts/buy_menu.gd`)
+1. Add an entry to `shop_items` (`id`, `section:"WEAPONS"`, `group`, `title`, `description`,
+   `price`) with **`group` equal to the weapon id** from step C.
+2. Add the group to the `WEAPON_GROUPS` const. That's it — the generic handler routes it
+   through `player.purchase_weapon(...)` / `player.has_weapon(...)`.
 
-### F. Ship it
+### E. Ship it
 Re-export the Linux **server** binary (scene changes alter the packed data; a stale server
 triggers "rpc node checksum failed"). See `DEPLOY.md`.
 
@@ -193,19 +225,19 @@ triggers "rpc node checksum failed"). See `DEPLOY.md`.
 
 ## 8. Current guns (reference tuning)
 
-| | Minigun | Railgun | Battle Rifle |
-|---|---|---|---|
-| Script | `MinigunWeapon` | `HitscanWeapon` | `HitscanWeapon` |
-| Fire | wind-up 0.92s, 50 rps | 1 rps, semi-auto | 3-round burst, semi-auto |
-| Damage | 15 | 90 | 12 (36/burst) |
-| Spread | (0.58, 1.75)° | 0 | (0.35, 0.35)° |
-| Mag / reserve / reload | 200 / 600 / 3.0s | 5 / 20 / 1.8s | 36 / 108 / 2.2s |
-| `ads_fov` | 62 | 42 (scope) | 55 |
-| `recoil_kick_up` | 0.06 (×50/s) | 4.0 | 0.5 |
-| `recoil_kick_side` | 0.1 | 0.35 | 0.5 |
-| `fire_knockback_force` | 0.12 | 13.33 | 0.6 |
-| `fire_torque_strength` | 0 | 0 | 0 |
-| Extra | `sustained_kickback (0,0.004,0.03)` | big backward `recoil_position_offset` | — |
+| | Minigun | Railgun | Battle Rifle | Plasma Cannon |
+|---|---|---|---|---|
+| Script | `MinigunWeapon` | `HitscanWeapon` | `HitscanWeapon` | `ProjectileWeapon` |
+| Fire | wind-up 0.92s, 50 rps | 1 rps, semi-auto | 3-round burst, semi-auto | 1.4 rps, semi-auto, 55 m/s bolt |
+| Damage | 15 | 90 | 12 (36/burst) | 100→5 radial falloff |
+| Spread | (0.58, 1.75)° | 0 | (0.35, 0.35)° | 0 |
+| Mag / reserve / reload | 200 / 600 / 3.0s | 5 / 20 / 1.8s | 36 / 108 / 2.2s | 5 / 20 / 2.6s |
+| `ads_fov` | 62 | 42 (scope) | 55 | 55 |
+| `recoil_kick_up` | 0.06 (×50/s) | 4.0 | 0.5 | 5.0 |
+| `recoil_kick_side` | 0.1 | 0.35 | 0.5 | 0.4 |
+| `fire_knockback_force` | 0.12 | 13.33 | 0.6 | 9.0 |
+| `fire_torque_strength` | 0 | 0 | 0 | 0 |
+| Extra | `sustained_kickback (0,0.004,0.03)` | big backward `recoil_position_offset` | — | editable blast + airburst curves |
 
 ---
 
@@ -216,7 +248,11 @@ triggers "rpc node checksum failed"). See `DEPLOY.md`.
   same way regardless of aim) — it feels wrong. Use `fire_knockback_force` for the aim-following push.
 - **`+Z` in viewmodel-space `recoil_position_offset`/`sustained_kickback` = toward the player.**
 - **No pivot snap.** Guns sit at their scene transform. `aim_origin_node_path` is the muzzle marker.
-- **Ammo is client-side** for now (cheatable) — a known TODO to move server-side.
+- **Ammo display is client-side; enforcement is server-side.** The HUD mag/reserve is local,
+  but the server mirrors a per-peer ammo ledger (`scripts/server_economy.gd`): every accepted
+  damage claim consumes a round, reloads are rate/reserve-checked, claims are rejected if the
+  shooter doesn't own the weapon or the ledger is dry, and damage is clamped to the claimed
+  weapon's real damage.
 - **Only the local player** runs weapon input/animation; guard anything player-facing behind that.
 - **Re-export the server** after any weapon/scene change (checksum).
 - If a `.tscn` is **open in the editor** while you edit it on disk, use *External Changes →

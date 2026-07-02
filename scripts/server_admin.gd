@@ -265,8 +265,8 @@ func players_text() -> String:
 
 func help_text() -> String:
 	return (
-		"Commands: status, players, rules, start, end_round [winner_peer_id], "
-		+ "restart_round, restart_match, set_score <peer> <score>, add_score <peer> <amount>, "
+		"Commands: status, players, rules, start, end_round [a|b], "
+		+ "restart_round, restart_match, set_score <a|b> <score>, add_score <a|b> <amount>, "
 		+ "set_min_players <count>, set_points_to_win <count>, set_round_time <seconds>, "
 		+ "set_starting_cash <amount>, give_money <peer|all> <amount>, set_money <peer|all> <amount>, "
 		+ "kick <peer_id>"

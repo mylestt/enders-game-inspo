@@ -51,11 +51,11 @@ The arena's real spawns/gates come from the **map** (marker groups `spawn_team_a
 ## Module Map
 | File | Role | Key API |
 |---|---|---|
-| `scripts/player.gd` | Actor orchestration, local input routing, network transform state, body-slam contact detection, weapon hit submission, shop pass-throughs | `set_multiplayer_player`, `receive_network_state`, `submit_weapon_hit`, `apply_weapon_damage`, `purchase_minigun`, `purchase_suit_boosters` |
+| `scripts/player.gd` | Actor orchestration, local input routing, network transform state, body-slam contact detection, weapon hit submission, shop pass-throughs | `set_multiplayer_player`, `receive_network_state`, `submit_weapon_hit`, `apply_weapon_damage`, `purchase_weapon`, `purchase_suit_boosters` |
 | `scripts/player_movement_controller.gd` | Zero-G rotation/roll/stabilize, push-off, grab, surface-walk/ground-lock | `physics_update`, `integrate_forces`, `is_surface_walk_active`, `apply_grab_distance_upgrade` |
 | `scripts/player_health.gd` | Simple whole-player health component for prototype damage | `setup`, `apply_damage`, `heal`, `reset_health`, `set_health_state` |
 | `scripts/weapons/weapon.gd` | Base weapon contract, shared recoil stats, hitscan firing/damage helper | `equip`, `unequip`, `set_trigger_held`, `is_firing`, `request_recoil`, `fire_hitscan` |
-| `scripts/weapons/weapon_inventory.gd` | Owns unlock/equip/input routing for weapons mounted under `WeaponMount` | `purchase_weapon`, `equip_weapon`, `purchase_minigun`, `get_has_minigun` |
+| `scripts/weapons/weapon_inventory.gd` | Owns unlock/equip/input routing for weapons mounted under `WeaponMount` | `purchase_weapon`, `has_weapon`, `equip_weapon` |
 | `scripts/weapons/weapon_spring_sway.gd` | Deterministic spring weapon sway and recoil receiver on the mount; affects the equipped weapon transform | `set_equipped_weapon`, `reset_sway`, `apply_recoil` |
 | `scripts/weapons/weapon_hitscan_tracer_effect.gd` | Short-lived world-space hitscan tracer VFX with muzzle flash, jagged streak, and impact spark | `play` |
 | `scripts/weapons/minigun_weapon.gd` | Minigun-specific barrel lookup, wind-up, barrel spin, firing-state threshold, round cadence | `set_trigger_held`, `get_windup_amount` |
@@ -73,7 +73,7 @@ Server-authoritative over ENet. `NetworkManager` owns the peer and relays player
 Teams are assigned by **spawn-slot parity** (`NetworkManager.get_team_for_peer`): even = A, odd = B, filled in join order → 1v1 at 2 players, 2v1 at 3, 2v2 at 4. Spawn transforms come from the map's `spawn_team_a/b` marker groups.
 
 ## Rounds & Scoring (`scripts/round_manager.gd`)
-Server-authoritative state machine: `WAITING_FOR_PLAYERS → COUNTDOWN → ACTIVE → ROUND_END`. A round ends when an entire team is eliminated (all its players at 0 health); the surviving team scores. `team_scores {a, b}` drives match-over (`points_to_win`) and the `RoundHUD`. State, team scores, and player resets replicate to clients. (Legacy `score_by_peer_id` and the scoreboard's per-player K/D also exist; reconciling the three score systems is a known TODO — see `CLAUDE.md`.)
+Server-authoritative state machine: `WAITING_FOR_PLAYERS → COUNTDOWN → ACTIVE → ROUND_END`. A round ends when an entire team is eliminated (all its players at 0 health); the surviving team scores. `team_scores {a, b}` is the ONE match score: it drives match-over (`points_to_win`) and the `RoundHUD`, and admin `set_score <a|b>` / `add_score <a|b>` / `end_round [a|b]` operate on it directly. The scoreboard's per-player K/D (NetworkManager stats) is display-only. State, team scores, and player resets replicate to clients.
 
 ## Map Loading (`scripts/map_generator.gd`)
 `MapGenerator` is a **scene loader** (the old procedural generator was removed). Maps are hand-authored `.tscn` scenes registered in the `MAPS` const — each entry is `{id, name, scene}` with the scene **preloaded** (so the exporter packs it). At runtime `build_map()` reads `map_id` (from `GameLaunch`), looks it up in `MAPS`, and instantiates that scene under a `GeneratedMap` child. Each map scene must contain its own spawn markers in groups `spawn_team_a` / `spawn_team_b` (optional gates in `gate_team_*`); NetworkManager reads those groups directly. Current maps: `diamond` (`DiamondArena.tscn`), `2v2` (`2v_2.tscn`). `rebuild_from_launch()` rebuilds at runtime from `GameLaunch.map_id` (used for lobby map sync). `scenes/test_map.tscn` is the standalone preview/edit scene (set `map_id` in the inspector). Static helpers `get_map_ids()` / `get_map_name()` / `has_map()` / `normalize_map_id()` drive the menu picker and cmdline `--map <id>`.
@@ -88,7 +88,7 @@ Server-authoritative state machine: `WAITING_FOR_PLAYERS → COUNTDOWN → ACTIV
 Static holder + `settings_menu.gd`: rebindable keybinds (any action), FOV (70–110), mouse sensitivity, master volume, fullscreen. Persisted to `user://settings.cfg` and applied on boot (`load_and_apply`).
 
 ## Weapon Flow
-The buy menu calls `player.purchase_minigun()`. The player delegates to `WeaponInventory`, which records ownership, instantiates `scenes/minigun.tscn` under `CameraRig/Camera3D/WeaponMount`, and calls `equip(owner_player)`.
+The buy menu calls `player.purchase_weapon(&"minigun")`. The player delegates to `WeaponInventory`, which records ownership, instantiates `scenes/minigun.tscn` under `CameraRig/Camera3D/WeaponMount`, and calls `equip(owner_player)`.
 
 Each physics frame, `player.gd` calls `weapon_inventory.update_weapon_input(input_enabled)`. The inventory maps LMB through the generic `weapon_fire` action and sets the equipped weapon trigger state. `MinigunWeapon` owns its wind-up value, barrel rotation, firing-state threshold, and round cadence.
 
@@ -117,12 +117,12 @@ Remote player `_physics_process`:
 interpolate toward the latest network transform target.
 
 ## Economy
-`BuyMenu` keeps local in-memory cash. Current shop:
-- WEAPONS: Minigun, one-time purchase, immediately equips.
+`BuyMenu` shows a display copy of the player's cash. Current shop:
+- WEAPONS: Minigun / Railgun / Battle Rifle / Plasma Cannon, one-time purchases, immediately equip.
 - SUIT UPGRADES: Grab Distance I-III, tiered.
 - SPECIAL SUIT SYSTEMS: Suit Boosters, one-time purchase.
 
-Purchases are local-only for now (weapon ownership / equipped state aren't replicated). Starting cash is seeded from the lobby or `--starting-cash`, and admins can set/give cash at runtime (`BuyMenu.admin_set_cash` / `admin_add_cash`), but cash is still **client-side and cheatable** — moving the economy server-side is a known TODO.
+Online, the economy is **server-authoritative** (`scripts/server_economy.gd`, a child of NetworkManager): the server owns each peer's cash and item ownership, purchases go through `request_purchase` → server validation → `client_purchase_result` (the buy menu applies the item only on confirmation), and admin `give_money`/`set_money` mutate the server ledger which syncs back down. The same node keeps a per-weapon **ammo ledger** (rounds consumed per accepted damage claim, reload timing, reserve, fire-rate token bucket) used to validate weapon-hit claims. Offline Test Arena keeps the old local wallet. Starting cash is seeded from the lobby or `--starting-cash`.
 
 ## Notes
 - Weapon logic is intentionally split: inventory owns ownership/equip/input, individual weapon scenes own behavior, and player only delegates.

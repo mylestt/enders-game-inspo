@@ -12,7 +12,6 @@ class_name RoundManager
 #     dormant until a PlayerHealth node is added under the player scene.
 
 signal round_state_changed(state: int)
-signal score_changed(score_by_peer_id: Dictionary)
 signal round_time_changed(seconds_remaining: float)
 signal team_scores_changed(team_scores: Dictionary)
 
@@ -33,9 +32,10 @@ enum State {
 
 var network_manager: Node
 
+# The ONE match score: team points (a/b). Match win = points_to_win. Per-player K/D lives
+# in NetworkManager's scoreboard stats and is display-only.
 var state: int = State.WAITING_FOR_PLAYERS
 var state_timer: float = 0.0
-var score_by_peer_id: Dictionary = {}
 var team_scores: Dictionary = {"a": 0, "b": 0}
 
 # Players whose `died` signal we have already connected, so we only hook each once.
@@ -93,7 +93,7 @@ func advance_state(delta: float) -> void:
 				round_time_changed.emit(maxf(state_timer, 0.0))
 
 				if state_timer <= 0.0:
-					server_end_round(0)   # 0 = no winner (timed out / draw)
+					server_end_round_team("")   # "" = no winner (timed out / draw)
 
 		State.ROUND_END:
 			state_timer -= delta
@@ -122,16 +122,6 @@ func server_start_round() -> void:
 	set_state(State.ACTIVE, round_time_limit)
 
 
-func server_end_round(winner_peer_id: int) -> void:
-	if not is_server():
-		return
-
-	if winner_peer_id != 0:
-		award_point(winner_peer_id)
-
-	set_state(State.ROUND_END, round_end_duration)
-
-
 func server_restart_round() -> void:
 	if not is_server():
 		return
@@ -143,13 +133,11 @@ func server_restart_match() -> void:
 	if not is_server():
 		return
 
-	score_by_peer_id.clear()
 	team_scores = {"a": 0, "b": 0}
 
 	if network_manager != null and network_manager.has_method("server_reset_player_stats"):
 		network_manager.call("server_reset_player_stats")
 
-	broadcast_score()
 	broadcast_team_scores()
 	set_state(State.WAITING_FOR_PLAYERS)
 
@@ -173,6 +161,7 @@ func server_on_player_died(dead_peer_id: int, attacker_peer_id: int) -> void:
 		server_end_round_team(winning_team)
 
 
+# Ends the round. "a"/"b" scores the point for that team; "" ends with no winner (draw).
 func server_end_round_team(winning_team: String) -> void:
 	if not is_server():
 		return
@@ -243,13 +232,16 @@ func server_command(command: String) -> String:
 			server_begin_countdown()
 			return "Round starting."
 		"end", "end_round":
-			var winner := 0
+			var winner := ""
 
-			if parts.size() >= 2 and String(parts[1]).is_valid_int():
-				winner = int(parts[1])
+			if parts.size() >= 2:
+				winner = normalize_team(String(parts[1]))
 
-			server_end_round(winner)
-			return "Round ended. Winner: " + str(winner)
+				if winner == "":
+					return "Usage: end_round [a|b]  (no team = draw)"
+
+			server_end_round_team(winner)
+			return "Round ended. Winner: " + ("draw" if winner == "" else "team " + winner.to_upper())
 		"restart", "restart_round":
 			server_restart_round()
 			return "Round restarting."
@@ -259,15 +251,15 @@ func server_command(command: String) -> String:
 		"status":
 			return server_status_text()
 		"set_score":
-			if parts.size() < 3:
-				return "Usage: set_score <peer_id> <score>"
+			if parts.size() < 3 or not String(parts[2]).is_valid_int():
+				return "Usage: set_score <a|b> <score>"
 
-			return server_set_score(int(parts[1]), int(parts[2]))
+			return server_set_team_score(String(parts[1]), int(parts[2]))
 		"add_score":
-			if parts.size() < 3:
-				return "Usage: add_score <peer_id> <amount>"
+			if parts.size() < 3 or not String(parts[2]).is_valid_int():
+				return "Usage: add_score <a|b> <amount>"
 
-			return server_add_score(int(parts[1]), int(parts[2]))
+			return server_add_team_score(String(parts[1]), int(parts[2]))
 		"set_min_players":
 			if parts.size() < 2:
 				return "Usage: set_min_players <count>"
@@ -293,7 +285,8 @@ func server_status_text() -> String:
 	return (
 		"State: " + state_name(state)
 		+ "  Players: " + str(get_player_count())
-		+ "  Score: " + str(score_by_peer_id)
+		+ "  Score: A " + str(int(team_scores.get("a", 0)))
+		+ " - " + str(int(team_scores.get("b", 0))) + " B"
 	)
 
 
@@ -306,28 +299,44 @@ func server_rules_text() -> String:
 
 
 # --- Scoring -----------------------------------------------------------------------
+# team_scores is the single match score, so these admin commands directly affect the
+# match: a team reaching points_to_win wins at the next round end.
 
-func award_point(peer_id: int) -> void:
-	score_by_peer_id[peer_id] = int(score_by_peer_id.get(peer_id, 0)) + 1
-	broadcast_score()
+func normalize_team(raw: String) -> String:
+	var team := raw.strip_edges().to_lower()
+
+	if team == "a" or team == "b":
+		return team
+
+	return ""
 
 
-func server_set_score(peer_id: int, score: int) -> String:
+func server_set_team_score(raw_team: String, score: int) -> String:
 	if not is_server():
 		return "Not the server."
 
-	score_by_peer_id[peer_id] = maxi(score, 0)
-	broadcast_score()
-	return "Score set: " + str(peer_id) + " = " + str(score_by_peer_id[peer_id])
+	var team := normalize_team(raw_team)
+
+	if team == "":
+		return "Unknown team: " + raw_team + " (use a or b)"
+
+	team_scores[team] = maxi(score, 0)
+	broadcast_team_scores()
+	return "Score set: team " + team.to_upper() + " = " + str(team_scores[team])
 
 
-func server_add_score(peer_id: int, amount: int) -> String:
+func server_add_team_score(raw_team: String, amount: int) -> String:
 	if not is_server():
 		return "Not the server."
 
-	score_by_peer_id[peer_id] = maxi(int(score_by_peer_id.get(peer_id, 0)) + amount, 0)
-	broadcast_score()
-	return "Score changed: " + str(peer_id) + " = " + str(score_by_peer_id[peer_id])
+	var team := normalize_team(raw_team)
+
+	if team == "":
+		return "Unknown team: " + raw_team + " (use a or b)"
+
+	team_scores[team] = maxi(int(team_scores.get(team, 0)) + amount, 0)
+	broadcast_team_scores()
+	return "Score changed: team " + team.to_upper() + " = " + str(team_scores[team])
 
 
 func server_set_min_players_to_start(count: int) -> String:
@@ -359,14 +368,6 @@ func is_match_over() -> bool:
 		int(team_scores.get("a", 0)) >= points_to_win
 		or int(team_scores.get("b", 0)) >= points_to_win
 	)
-
-
-func find_other_player(excluded_peer_id: int) -> int:
-	for peer_id in get_players().keys():
-		if int(peer_id) != excluded_peer_id:
-			return int(peer_id)
-
-	return 0
 
 
 # --- Player resets ------------------------------------------------------------------
@@ -449,17 +450,6 @@ func client_sync_state(new_state: int, timer: float) -> void:
 	state = new_state
 	state_timer = timer
 	round_state_changed.emit(state)
-
-
-func broadcast_score() -> void:
-	rpc("client_sync_score", score_by_peer_id)
-	score_changed.emit(score_by_peer_id)
-
-
-@rpc("authority", "reliable")
-func client_sync_score(new_score: Dictionary) -> void:
-	score_by_peer_id = new_score.duplicate()
-	score_changed.emit(score_by_peer_id)
 
 
 # --- Helpers ------------------------------------------------------------------------

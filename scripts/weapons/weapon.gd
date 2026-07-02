@@ -61,6 +61,9 @@ signal ads_changed(aiming: bool)
 @export var ads_position_offset: Vector3 = Vector3.ZERO
 
 var owner_player: Node
+# The WeaponInventory registry id this instance was equipped as ("minigun", "railgun", ...).
+# Damage claims carry it so the server can check ownership/ammo for the right weapon.
+var inventory_id: StringName = &""
 var equipped: bool = false
 var trigger_held: bool = false
 var firing: bool = false

@@ -143,6 +143,31 @@ func report_weapon_shot(origin: Vector3, end: Vector3, did_hit: bool, normal: Ve
 		network_manager.call("broadcast_weapon_shot", peer_id, origin, end, did_hit, normal)
 
 
+# Replicates a fired projectile so other clients spawn a cosmetic copy of the bolt.
+func report_projectile_shot(origin: Vector3, velocity: Vector3) -> void:
+	if not is_local_player:
+		return
+
+	if is_dead:
+		return
+
+	if network_manager != null and network_manager.has_method("broadcast_projectile_shot"):
+		network_manager.call("broadcast_projectile_shot", peer_id, origin, velocity)
+
+
+# Mirrors a finished reload into the server's ammo ledger (ServerEconomy) so hit claims
+# keep validating after the mag is refilled.
+func report_weapon_reloaded(weapon_id: StringName) -> void:
+	if not is_local_player or not has_active_network_session():
+		return
+
+	if network_manager != null and "server_economy" in network_manager:
+		var economy = network_manager.server_economy
+
+		if economy != null and economy.has_method("notify_weapon_reload"):
+			economy.call("notify_weapon_reload", String(weapon_id))
+
+
 # Shown to the attacker when the server confirms their shot damaged someone.
 # `is_kill` is true when this shot dropped the target to zero health → red hitmarker.
 func show_hitmarker(is_kill: bool = false) -> void:
@@ -194,6 +219,8 @@ func _input(event: InputEvent) -> void:
 			weapon_inventory.try_quick_swap(1)
 		elif event.is_action_pressed("weapon_slot_3"):
 			weapon_inventory.try_quick_swap(2)
+		elif event.is_action_pressed("weapon_slot_4"):
+			weapon_inventory.try_quick_swap(3)
 
 	if event.is_action_pressed("ui_cancel"):
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -425,6 +452,7 @@ func reset_for_round(spawn_transform: Transform3D) -> void:
 	is_dead = false
 
 	set_death_glow_active(false)
+	set_team_indicator_visible(true)
 
 	if hud_controller != null and hud_controller.has_method("set_dead_screen_active"):
 		hud_controller.set_dead_screen_active(false)
@@ -455,6 +483,45 @@ func reset_for_round(spawn_transform: Transform3D) -> void:
 		weapon_inventory.reset_state()
 
 
+func submit_plasma_explosion_hit(
+	target: Node,
+	damage: float,
+	impulse: Vector3,
+	explosion_position: Vector3,
+	explosion_radius: float,
+	shot_origin: Vector3,
+	shot_direction: Vector3,
+	weapon_id: String
+) -> void:
+	if target == null:
+		return
+
+	var target_peer_id := get_peer_id_from_node(target)
+
+	if has_active_network_session() and target_peer_id != 0:
+		if network_manager.has_method("request_plasma_explosion_hit"):
+			network_manager.call(
+				"request_plasma_explosion_hit",
+				peer_id,
+				target_peer_id,
+				damage,
+				impulse,
+				explosion_position,
+				explosion_radius,
+				shot_origin,
+				shot_direction,
+				weapon_id
+			)
+
+		return
+
+	if damage > 0.0 and target.has_method("apply_weapon_damage"):
+		target.call("apply_weapon_damage", damage, peer_id)
+
+	if not impulse.is_zero_approx() and target.has_method("apply_network_plasma_impulse"):
+		target.call("apply_network_plasma_impulse", impulse)
+
+
 func submit_weapon_hit(
 	target: Node,
 	damage: float,
@@ -472,10 +539,10 @@ func submit_weapon_hit(
 		return
 	
 	var target_peer_id := get_peer_id_from_node(target)
-	
+
 	if target_peer_id == peer_id:
 		return
-	
+
 	if has_active_network_session() and target_peer_id != 0:
 		if network_manager.has_method("request_weapon_hit"):
 			network_manager.call(
@@ -485,9 +552,10 @@ func submit_weapon_hit(
 				damage,
 				hit_position,
 				shot_origin,
-				shot_direction
+				shot_direction,
+				String(get_equipped_weapon_id())
 			)
-		
+
 		return
 	
 	if target.has_method("apply_weapon_damage"):
@@ -515,6 +583,18 @@ func apply_weapon_damage(damage: float, attacker_peer_id: int = 0) -> void:
 			"/",
 			health.max_health
 		)
+
+
+func apply_network_plasma_impulse(impulse: Vector3) -> void:
+	if has_active_network_session() and not is_local_player:
+		return
+
+	sleeping = false
+
+	if movement_controller != null and movement_controller.is_surface_walk_active():
+		movement_controller.exit_surface_walk_mode()
+
+	apply_central_impulse(impulse)
 
 
 func get_peer_id_from_node(node: Node) -> int:
@@ -576,6 +656,7 @@ func _on_died(attacker_peer_id: int) -> void:
 
 	# Runs on every peer's copy of this player, so the red "disabled" glow shows for everyone.
 	set_death_glow_active(true)
+	set_team_indicator_visible(false)
 
 	if is_local_player and hud_controller != null and hud_controller.has_method("set_dead_screen_active"):
 		hud_controller.set_dead_screen_active(true)
@@ -606,6 +687,65 @@ static func get_death_glow_material() -> StandardMaterial3D:
 		_shared_death_glow_material = mat
 
 	return _shared_death_glow_material
+
+
+# --- Team indicator -------------------------------------------------------------------
+# Simple dot floating above every REMOTE player's head: green = teammate of this machine's
+# player, red = enemy. Colored by NetworkManager.refresh_team_indicators after spawns and
+# hidden while the player is dead. Friendly dots draw through walls (teammate QoL, no
+# information advantage); enemy dots are depth-tested so they can't act as a wallhack.
+# Materials are shared statics for the same shader-compile-hitch reason as the death glow.
+
+const TEAM_INDICATOR_HEIGHT := 1.45
+
+static var _team_indicator_materials: Dictionary = {}
+
+var team_indicator: MeshInstance3D
+
+
+static func get_team_indicator_material(friendly: bool) -> StandardMaterial3D:
+	if not _team_indicator_materials.has(friendly):
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		var color := Color(0.2, 0.95, 0.35) if friendly else Color(1.0, 0.18, 0.15)
+		mat.albedo_color = color
+		mat.emission_enabled = true
+		mat.emission = color
+		mat.emission_energy_multiplier = 2.0
+		mat.no_depth_test = friendly
+		_team_indicator_materials[friendly] = mat
+
+	return _team_indicator_materials[friendly]
+
+
+func set_team_indicator(friendly: bool) -> void:
+	if is_local_player:
+		if team_indicator != null:
+			team_indicator.visible = false
+
+		return
+
+	if team_indicator == null:
+		team_indicator = MeshInstance3D.new()
+		team_indicator.name = "TeamIndicator"
+		team_indicator.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+		var sphere := SphereMesh.new()
+		sphere.radius = 0.09
+		sphere.height = 0.18
+		sphere.radial_segments = 12
+		sphere.rings = 6
+		team_indicator.mesh = sphere
+		team_indicator.position = Vector3(0.0, TEAM_INDICATOR_HEIGHT, 0.0)
+		add_child(team_indicator)
+
+	team_indicator.material_override = get_team_indicator_material(friendly)
+	team_indicator.visible = not is_dead
+
+
+func set_team_indicator_visible(value: bool) -> void:
+	if team_indicator != null:
+		team_indicator.visible = value and not is_local_player
 
 
 func set_death_glow_active(active: bool) -> void:
@@ -867,46 +1007,20 @@ func get_has_suit_boosters() -> bool:
 	return suit_boosters.get_has_suit_boosters()
 
 
-func purchase_minigun() -> bool:
-	if weapon_inventory == null:
-		return false
-	
-	return weapon_inventory.purchase_minigun()
-
-
-func get_has_minigun() -> bool:
+# Shop pass-throughs. Weapon ids are WeaponInventory's SLOT_IDS ("minigun", "railgun",
+# "rifle", "plasma_cannon", ...); the buy menu's weapon group names match them 1:1.
+func purchase_weapon(weapon_id: StringName) -> bool:
 	if weapon_inventory == null:
 		return false
 
-	return weapon_inventory.get_has_minigun()
+	return weapon_inventory.purchase_weapon(weapon_id)
 
 
-func purchase_railgun() -> bool:
+func has_weapon(weapon_id: StringName) -> bool:
 	if weapon_inventory == null:
 		return false
 
-	return weapon_inventory.purchase_railgun()
-
-
-func get_has_railgun() -> bool:
-	if weapon_inventory == null:
-		return false
-
-	return weapon_inventory.get_has_railgun()
-
-
-func purchase_rifle() -> bool:
-	if weapon_inventory == null:
-		return false
-
-	return weapon_inventory.purchase_rifle()
-
-
-func get_has_rifle() -> bool:
-	if weapon_inventory == null:
-		return false
-
-	return weapon_inventory.get_has_rifle()
+	return weapon_inventory.has_weapon(weapon_id)
 
 
 func get_equipped_weapon_id() -> StringName:

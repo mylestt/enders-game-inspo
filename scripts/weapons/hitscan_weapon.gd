@@ -1,9 +1,10 @@
 class_name HitscanWeapon
 extends Weapon
 
-# Cooldown-based hitscan gun. The base Weapon already does the raycast, tracer, ammo, and
+# Cooldown-based gun. The base Weapon already does the raycast, tracer, ammo, and
 # recoil; this just decides WHEN to fire. Covers the single-shot railgun (burst_count 1) and
-# burst rifles (burst_count > 1, e.g. a Halo-style battle rifle).
+# burst rifles (burst_count > 1, e.g. a Halo-style battle rifle). Subclasses that launch
+# something other than a ray (see ProjectileWeapon) override perform_shot().
 
 # Cadence between shots (or between bursts). Low = slow.
 @export var rounds_per_second: float = 1.0
@@ -49,7 +50,7 @@ func fire_round() -> void:
 			start_reload()   # click on empty -> chamber a fresh mag
 		return
 
-	fire_hitscan()
+	perform_shot()
 	consume_round()
 	apply_fire_recoil()
 	burst_left -= 1
@@ -58,3 +59,8 @@ func fire_round() -> void:
 		burst_timer = burst_interval
 	else:
 		fire_cooldown = 1.0 / maxf(rounds_per_second, 0.001)
+
+
+# What one fired round actually launches. Default is the base ray.
+func perform_shot() -> void:
+	fire_hitscan()

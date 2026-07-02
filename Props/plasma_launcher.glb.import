@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://cttull2n0sayn"
-path="res://.godot/imported/Arena.glb-533172877266123f0547de1bade8ff9f.scn"
+uid="uid://cf0o2ne4t2s5g"
+path="res://.godot/imported/plasma_launcher.glb-07671f9ead6e42d18bb7340759774e56.scn"
 
 [deps]
 
-source_file="res://Props/Arena.glb"
-dest_files=["res://.godot/imported/Arena.glb-533172877266123f0547de1bade8ff9f.scn"]
+source_file="res://Props/plasma_launcher.glb"
+dest_files=["res://.godot/imported/plasma_launcher.glb-07671f9ead6e42d18bb7340759774e56.scn"]
 
 [params]
 

@@ -194,7 +194,13 @@ func refresh_players() -> void:
 		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(name_label)
 
-		add_small_button(row, "+1", send_command.bind("add_score " + str(peer_id) + " 1"))
+		# Match score is per-team now; "+1" awards a point to this player's team.
+		var team := "a"
+
+		if network_manager.has_method("get_team_for_peer"):
+			team = String(network_manager.call("get_team_for_peer", int(peer_id)))
+
+		add_small_button(row, "+1", send_command.bind("add_score " + team + " 1"))
 		add_small_button(row, "+$", send_command.bind("give_money " + str(peer_id) + " 1000"))
 		add_small_button(row, "Kick", send_command.bind("kick " + str(peer_id)))
 

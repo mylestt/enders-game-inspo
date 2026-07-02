@@ -2,6 +2,7 @@ extends CanvasLayer
 class_name AdminConsole
 
 @export var server_admin_path: NodePath = NodePath("../ServerAdmin")
+@export var network_manager_path: NodePath = NodePath("../NetworkManager")
 
 var panel: PanelContainer
 var key_field: LineEdit
@@ -121,14 +122,45 @@ func toggle_console() -> void:
 func open_console() -> void:
 	panel.visible = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	set_player_menu_lock(true)
 
 	if command_field != null:
 		command_field.grab_focus()
 
 
 func close_console() -> void:
+	var was_open := panel != null and panel.visible
+
 	if panel != null:
 		panel.visible = false
+
+	# Only restore player input/mouse when the console was actually open (this also runs
+	# once from _ready, before any player exists).
+	if not was_open:
+		return
+
+	set_player_menu_lock(false)
+
+	# Recapture only when there is a local player to give control back to; in menus (lobby
+	# browser, pre-spawn) the mouse must stay visible.
+	if get_local_player() != null:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+func get_local_player() -> Node:
+	var network_manager := get_node_or_null(network_manager_path)
+
+	if network_manager != null and network_manager.has_method("get_local_player"):
+		return network_manager.call("get_local_player")
+
+	return null
+
+
+func set_player_menu_lock(locked: bool) -> void:
+	var player := get_local_player()
+
+	if player != null and player.has_method("set_external_menu_open"):
+		player.call("set_external_menu_open", locked)
 
 
 func _on_command_submitted(_text: String) -> void:

@@ -45,7 +45,10 @@ multiplayer with a lobby system, deployed to a DigitalOcean VPS at **147.182.160
 
 ## Systems map (current)
 - **Multiplayer/lobby:** `scenes/network_manager.gd` (spawn, transform/hit/slam relay,
-  weapon-tracer relay, admin cash RPCs, scoreboard backend), `scripts/lobby_manager.gd`
+  weapon-tracer + plasma-projectile relay, validated plasma blast damage/impulse, team
+  indicator refresh, scoreboard backend), `scripts/server_economy.gd` (server-authoritative
+  cash/purchases/ownership + per-weapon ammo ledger and fire-rate validation of damage
+  claims), `scripts/lobby_manager.gd`
   (ONE active lobby, API built to become many), `scripts/lobby_browser.gd` (in-game
   browser), `scripts/round_manager.gd` (team scoring, round ends when a whole team is
   eliminated), `scripts/round_hud.gd` (top-center team-score bar). Dedicated server doesn't
@@ -77,10 +80,17 @@ multiplayer with a lobby system, deployed to a DigitalOcean VPS at **147.182.160
   **`spawn_team_a` / `spawn_team_b`** for NetworkManager to pick them up (gates in
   `gate_team_a` / `gate_team_b`). New maps just need a scene + a one-line `MAPS` entry.
   Re-export the server binary after adding a map (the scenes are preloaded into the build).
-- **Three scoring systems coexist:** `team_scores` (drives match win), `score_by_peer_id`
-  (admin commands poke it but it no longer decides the match), scoreboard K/D. Reconcile so
-  admin `set_score` affects the match again.
-- `admin_console.gd` doesn't re-capture the mouse on close (minor).
-- **No death/spectate state** — a player at 0 health can still move/shoot until round reset.
+- **Scoring is reconciled:** `team_scores` is THE match score (admin `set_score`/`add_score`
+  now take a team letter and directly affect the match); scoreboard K/D is display-only
+  stats. The legacy per-peer `score_by_peer_id` is gone.
+- **Economy/ammo are server-authoritative** (`scripts/server_economy.gd`): cash ledger +
+  purchase validation + per-weapon ownership; damage claims carry a weapon id and are
+  checked against ownership, an ammo/reload ledger, a fire-rate token bucket, and the
+  weapon's real damage. The HUD ammo counter is still client-side display.
+- **No spectate state** — a dead player is input-locked and free-floats as a shoveable
+  corpse until round reset, but has no spectate camera. (Server-side, a dead peer's damage
+  claims are rejected after `weapon_hit_dead_attacker_grace` seconds.)
 - Lobby **late-joiners** see 0–0 until the next score change (no on-join state sync).
-- **Economy is client-side cash** (cheatable) — should move server-side.
+- **Team indicators:** remote players show a dot overhead — green teammate (visible through
+  walls), red enemy (depth-tested, no wallhack) — hidden while dead
+  (`player.gd set_team_indicator`, refreshed by `NetworkManager.refresh_team_indicators`).

@@ -10,10 +10,19 @@ extends CanvasLayer
 @export var panel_max_height: float = 660.0
 @export var panel_screen_margin: float = 32.0
 
+# Single-purchase weapon groups. Each group name doubles as the WeaponInventory weapon id,
+# so adding a gun to the shop is just a shop_items entry with group == its weapon id.
+const WEAPON_GROUPS: Array[String] = ["minigun", "railgun", "rifle", "plasma_cannon"]
+
+# Display copy of this player's cash. Online, the server's ledger (ServerEconomy) is
+# authoritative and every change arrives through purchase results / cash syncs; offline
+# (Test Arena) this is the real wallet.
 var cash: int = 0
 var menu_open: bool = false
 
 var local_player: Node
+# ServerEconomy node, assigned by NetworkManager. Null in offline Test Arena.
+var economy: Node
 
 var menu_root: Control
 var dim_background: ColorRect
@@ -52,6 +61,15 @@ var shop_items: Array[Dictionary] = [
 		"title": "Battle Rifle",
 		"description": "3-round burst. Semi-auto, punchy left/right recoil, aim down sights.",
 		"price": 4500
+	},
+	{
+		"id": "plasma_cannon",
+		"section": "WEAPONS",
+		"group": "plasma_cannon",
+		"level": 1,
+		"title": "Plasma Cannon",
+		"description": "Fires a slow travelling plasma bolt. Big damage, big kick — lead your shots.",
+		"price": 6000
 	},
 	{
 		"id": "grab_distance_1",
@@ -142,14 +160,57 @@ func set_starting_cash(amount: int) -> void:
 	update_menu_state()
 
 
-func admin_set_cash(amount: int) -> void:
-	cash = maxi(amount, 0)
+# Wires the server-authoritative economy in. Online purchases stop deducting locally and
+# instead wait for the server's confirmation.
+func set_economy(economy_node: Node) -> void:
+	economy = economy_node
+
+	if economy == null:
+		return
+
+	if economy.has_signal("purchase_result") and not economy.is_connected("purchase_result", _on_purchase_result):
+		economy.connect("purchase_result", _on_purchase_result)
+
+	if economy.has_signal("cash_changed") and not economy.is_connected("cash_changed", _on_cash_changed):
+		economy.connect("cash_changed", _on_cash_changed)
+
+	# Catch up on a balance the server pushed before we were wired up.
+	var synced = economy.get("last_synced_cash")
+
+	if synced != null and int(synced) >= 0:
+		cash = int(synced)
+		update_menu_state()
+
+
+func _on_cash_changed(new_cash: int) -> void:
+	cash = maxi(new_cash, 0)
 	update_menu_state()
 
 
-func admin_add_cash(amount: int) -> void:
-	cash = maxi(cash + amount, 0)
+func _on_purchase_result(item_id: String, success: bool, message: String, new_cash: int) -> void:
+	cash = maxi(new_cash, 0)
+
+	if success:
+		var item := get_item_by_id(item_id)
+
+		if not item.is_empty():
+			apply_item_upgrade(item)
+
+		update_menu_state()
+
+		if close_on_purchase:
+			close_menu()
+
+		return
+
 	update_menu_state()
+
+	if status_label != null:
+		status_label.text = "Purchase failed: " + message
+
+
+func is_purchase_server_validated() -> bool:
+	return economy != null and economy.has_method("is_online") and bool(economy.call("is_online"))
 
 
 func toggle_menu() -> void:
@@ -439,27 +500,34 @@ func add_shop_item_row(parent: VBoxContainer, item: Dictionary) -> void:
 
 func _on_buy_pressed(item_id: String) -> void:
 	var item := get_item_by_id(item_id)
-	
+
 	if item.is_empty():
 		return
-	
+
 	var state := get_item_state(item)
-	
+
 	if not bool(state["can_buy"]):
 		return
-	
+
 	var price := int(item["price"])
-	
+
 	if cash < price:
 		return
-	
+
+	# Online: the server owns cash and ownership. Ask it; the item is applied (and the
+	# wallet updated) when _on_purchase_result comes back confirmed.
+	if is_purchase_server_validated():
+		economy.call("request_purchase", item_id)
+		return
+
+	# Offline Test Arena: local wallet.
 	if not apply_item_upgrade(item):
 		return
-	
+
 	cash -= price
-	
+
 	update_menu_state()
-	
+
 	if close_on_purchase:
 		close_menu()
 
@@ -489,7 +557,7 @@ func get_item_state(item: Dictionary) -> Dictionary:
 			"button_text": "MISSING"
 		}
 	
-	if group == "suit_boosters" or group == "minigun" or group == "railgun" or group == "rifle":
+	if group == "suit_boosters" or group in WEAPON_GROUPS:
 		if get_has_single_purchase_item(group):
 			return {
 				"can_buy": false,
@@ -533,16 +601,14 @@ func get_item_state(item: Dictionary) -> Dictionary:
 	}
 
 
-# Maps a shop group to its target node, the method that applies the purchase/upgrade,
-# the method that reads its current level, and whether apply takes a level arg.
+# Maps a shop group to its target node, the method that applies the purchase/upgrade
+# (with optional extra args), the method that reads its current level, and whether apply
+# takes a level arg. Weapon groups all route through the player's generic purchase_weapon.
 func get_group_handler(group: String) -> Dictionary:
+	if group in WEAPON_GROUPS:
+		return {"obj": local_player, "apply": "purchase_weapon", "args": [StringName(group)], "level": "", "takes_level": false}
+
 	match group:
-		"minigun":
-			return {"obj": local_player, "apply": "purchase_minigun", "level": "", "takes_level": false}
-		"railgun":
-			return {"obj": local_player, "apply": "purchase_railgun", "level": "", "takes_level": false}
-		"rifle":
-			return {"obj": local_player, "apply": "purchase_rifle", "level": "", "takes_level": false}
 		"grab_distance":
 			return {"obj": local_player, "apply": "apply_grab_distance_upgrade", "level": "get_grab_distance_level", "takes_level": true}
 		"suit_boosters":
@@ -566,13 +632,16 @@ func apply_item_upgrade(item: Dictionary) -> bool:
 	if obj == null or not obj.has_method(apply_method):
 		return false
 
+	var args: Array = handler.get("args", [])
 	var result
-	
+
 	if bool(handler.get("takes_level", false)):
 		result = obj.call(apply_method, int(item["level"]))
-	else:
+	elif args.is_empty():
 		result = obj.call(apply_method)
-	
+	else:
+		result = obj.callv(apply_method, args)
+
 	if typeof(result) == TYPE_BOOL:
 		return bool(result)
 
@@ -597,37 +666,15 @@ func get_has_suit_boosters() -> bool:
 	return false
 
 
-func get_has_minigun() -> bool:
-	if local_player != null and local_player.has_method("get_has_minigun"):
-		return bool(local_player.call("get_has_minigun"))
-
-	return false
-
-
-func get_has_railgun() -> bool:
-	if local_player != null and local_player.has_method("get_has_railgun"):
-		return bool(local_player.call("get_has_railgun"))
-
-	return false
-
-
-func get_has_rifle() -> bool:
-	if local_player != null and local_player.has_method("get_has_rifle"):
-		return bool(local_player.call("get_has_rifle"))
-
-	return false
-
-
 func get_has_single_purchase_item(group: String) -> bool:
-	match group:
-		"suit_boosters":
-			return get_has_suit_boosters()
-		"minigun":
-			return get_has_minigun()
-		"railgun":
-			return get_has_railgun()
-		"rifle":
-			return get_has_rifle()
+	if group in WEAPON_GROUPS:
+		if local_player != null and local_player.has_method("has_weapon"):
+			return bool(local_player.call("has_weapon", StringName(group)))
+
+		return false
+
+	if group == "suit_boosters":
+		return get_has_suit_boosters()
 
 	return false
 

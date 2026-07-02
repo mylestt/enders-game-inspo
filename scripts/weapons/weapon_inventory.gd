@@ -6,13 +6,20 @@ signal weapon_equipped(weapon_id: StringName, weapon: Weapon)
 const MINIGUN_ID: StringName = &"minigun"
 const RAILGUN_ID: StringName = &"railgun"
 const RIFLE_ID: StringName = &"rifle"
-# Quick-swap slots: key 1 -> index 0, key 2 -> index 1, key 3 -> index 2.
-const SLOT_IDS: Array[StringName] = [MINIGUN_ID, RAILGUN_ID, RIFLE_ID]
+const PLASMA_CANNON_ID: StringName = &"plasma_cannon"
+# Quick-swap slots: key 1 -> index 0, key 2 -> index 1, key 3 -> index 2, key 4 -> index 3.
+const SLOT_IDS: Array[StringName] = [MINIGUN_ID, RAILGUN_ID, RIFLE_ID, PLASMA_CANNON_ID]
+
+# The single weapon registry. Static so the server (which never equips weapons) can read the
+# same scenes to build its validation stats — see ServerEconomy.get_weapon_stats.
+const WEAPON_SCENES: Dictionary = {
+	MINIGUN_ID: preload("res://scenes/minigun.tscn"),
+	RAILGUN_ID: preload("res://scenes/railgun.tscn"),
+	RIFLE_ID: preload("res://scenes/rifle.tscn"),
+	PLASMA_CANNON_ID: preload("res://scenes/plasma_cannon.tscn"),
+}
 
 @export var weapon_mount_path: NodePath = NodePath("../CameraRig/Camera3D/WeaponMount")
-@export var minigun_scene: PackedScene = preload("res://scenes/minigun.tscn")
-@export var railgun_scene: PackedScene = preload("res://scenes/railgun.tscn")
-@export var rifle_scene: PackedScene = preload("res://scenes/rifle.tscn")
 @export var ads_blend_speed: float = 12.0
 
 var owner_player: Node
@@ -166,6 +173,7 @@ func equip_weapon(weapon_id: StringName) -> bool:
 		return false
 
 	equipped_weapon_id = weapon_id
+	equipped_weapon.inventory_id = weapon_id
 	equipped_weapon.equip(owner_player)
 	_restore_equipped_ammo(weapon_id)
 	connect_weapon_signals(equipped_weapon)
@@ -218,16 +226,8 @@ func _restore_equipped_ammo(weapon_id: StringName) -> void:
 	equipped_weapon.ammo_changed.emit(equipped_weapon.current_ammo, equipped_weapon.current_reserve)
 
 
-func get_weapon_scene(weapon_id: StringName) -> PackedScene:
-	match weapon_id:
-		MINIGUN_ID:
-			return minigun_scene
-		RAILGUN_ID:
-			return railgun_scene
-		RIFLE_ID:
-			return rifle_scene
-
-	return null
+static func get_weapon_scene(weapon_id: StringName) -> PackedScene:
+	return WEAPON_SCENES.get(weapon_id) as PackedScene
 
 
 func connect_weapon_signals(weapon: Weapon) -> void:
@@ -289,6 +289,10 @@ func _on_weapon_reload_finished() -> void:
 	if weapon_spring_sway != null:
 		weapon_spring_sway.set_reloading(false)
 
+	# The server mirrors reloads in its ammo ledger (ServerEconomy) to validate hit claims.
+	if owner_player != null and owner_player.has_method("report_weapon_reloaded"):
+		owner_player.call("report_weapon_reloaded", equipped_weapon_id)
+
 	_refresh_ammo_hud()
 
 
@@ -327,30 +331,6 @@ func _fire_pressed() -> bool:
 
 func _aim_pressed() -> bool:
 	return InputMap.has_action("aim") and Input.is_action_pressed("aim")
-
-
-func purchase_minigun() -> bool:
-	return purchase_weapon(MINIGUN_ID)
-
-
-func get_has_minigun() -> bool:
-	return has_weapon(MINIGUN_ID)
-
-
-func purchase_railgun() -> bool:
-	return purchase_weapon(RAILGUN_ID)
-
-
-func get_has_railgun() -> bool:
-	return has_weapon(RAILGUN_ID)
-
-
-func purchase_rifle() -> bool:
-	return purchase_weapon(RIFLE_ID)
-
-
-func get_has_rifle() -> bool:
-	return has_weapon(RIFLE_ID)
 
 
 func get_equipped_weapon_id() -> StringName:

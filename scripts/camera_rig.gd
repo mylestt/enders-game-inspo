@@ -44,6 +44,20 @@ var prev_look_basis: Basis = Basis.IDENTITY
 var prev_speed: float = 0.0
 var was_grounded: bool = false
 
+# Transient explosion feedback is layered on this parent rig so it never fights the movement
+# controller or ImpactController, both of which legitimately write to the child Camera3D.
+var explosion_shake_time: float = 0.0
+var explosion_shake_duration: float = 0.0
+var explosion_shake_elapsed: float = 0.0
+var explosion_shake_frequency: float = 18.0
+var explosion_position_amplitude: float = 0.0
+var explosion_rotation_amplitude: float = 0.0
+var explosion_directional_punch: float = 0.0
+var explosion_direction_local: Vector3 = Vector3.BACK
+var explosion_phase: float = 0.0
+var explosion_position_offset: Vector3 = Vector3.ZERO
+var explosion_rotation_offset: Vector3 = Vector3.ZERO
+
 
 func _ready() -> void:
 	player = get_parent() as RigidBody3D
@@ -78,9 +92,88 @@ func _physics_process(delta: float) -> void:
 	update_landing(delta)
 	update_sway(delta)
 	update_tilt(delta, tangent_velocity, grounded)
+	update_explosion_shake(delta)
 
-	position = Vector3(0.0, dip, 0.0) + headbob_offset()
-	rotation = Vector3(sway.y, sway.x, tilt)
+	position = Vector3(0.0, dip, 0.0) + headbob_offset() + explosion_position_offset
+	rotation = Vector3(sway.y, sway.x, tilt) + explosion_rotation_offset
+
+
+# `world_direction` points outward from the blast toward the viewer. A short counter-motion
+# provides the initial pressure punch, followed by a higher-frequency decaying vibration.
+func trigger_explosion_shake(
+	world_direction: Vector3,
+	strength: float,
+	position_amplitude: float,
+	rotation_amplitude_degrees: float,
+	duration: float,
+	frequency_hz: float,
+	directional_punch: float
+) -> void:
+	var clamped_strength := clampf(strength, 0.0, 1.0)
+
+	if clamped_strength <= 0.0:
+		return
+
+	var local_direction := global_transform.basis.inverse() * world_direction.normalized()
+	var new_position_amplitude := maxf(position_amplitude, 0.0) * clamped_strength
+	var new_rotation_amplitude := (
+		deg_to_rad(maxf(rotation_amplitude_degrees, 0.0))
+		* clamped_strength
+	)
+	var new_punch := maxf(directional_punch, 0.0) * clamped_strength
+	var new_duration := maxf(duration, 0.01)
+	var was_inactive := explosion_shake_time <= 0.0
+
+	# Stronger/newer blasts take priority while still allowing nearby blasts to extend a shake.
+	if new_position_amplitude >= explosion_position_amplitude or was_inactive:
+		explosion_direction_local = local_direction
+		explosion_position_amplitude = new_position_amplitude
+		explosion_rotation_amplitude = new_rotation_amplitude
+		explosion_directional_punch = new_punch
+		explosion_shake_frequency = maxf(frequency_hz, 0.1)
+		explosion_phase = randf() * TAU
+
+	explosion_shake_duration = new_duration if was_inactive else maxf(explosion_shake_duration, new_duration)
+	explosion_shake_time = maxf(explosion_shake_time, new_duration)
+	explosion_shake_elapsed = 0.0
+
+
+func update_explosion_shake(delta: float) -> void:
+	if explosion_shake_time <= 0.0:
+		explosion_position_offset = explosion_position_offset.lerp(
+			Vector3.ZERO,
+			1.0 - exp(-28.0 * delta)
+		)
+		explosion_rotation_offset = explosion_rotation_offset.lerp(
+			Vector3.ZERO,
+			1.0 - exp(-28.0 * delta)
+		)
+		return
+
+	explosion_shake_time = maxf(explosion_shake_time - delta, 0.0)
+	explosion_shake_elapsed += delta
+	var remaining := clampf(
+		explosion_shake_time / maxf(explosion_shake_duration, 0.001),
+		0.0,
+		1.0
+	)
+	var vibration_envelope := remaining * remaining
+	var punch_envelope := remaining * remaining * remaining * remaining
+	var phase := explosion_phase + explosion_shake_elapsed * explosion_shake_frequency * TAU
+	var noise := Vector3(
+		sin(phase),
+		cos(phase * 1.37 + 0.8),
+		sin(phase * 0.73 + 2.1)
+	)
+
+	var vibration := noise * explosion_position_amplitude * vibration_envelope
+	var punch := -explosion_direction_local * explosion_directional_punch * punch_envelope
+	explosion_position_offset = vibration + punch
+	explosion_rotation_offset = (
+		Vector3(noise.y, noise.x, noise.z)
+		* explosion_rotation_amplitude
+		* vibration_envelope
+	)
 
 
 func update_headbob(delta: float, speed: float, grounded: bool) -> void:
