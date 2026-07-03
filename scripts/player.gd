@@ -40,6 +40,10 @@ var network_target_transform: Transform3D
 var network_target_linear_velocity: Vector3 = Vector3.ZERO
 var network_target_angular_velocity: Vector3 = Vector3.ZERO
 var has_network_target: bool = false
+# Monotonic per-sender packet counter. Unreliable state packets can arrive out of order;
+# applying an older one after a newer one rubber-bands the replica, so stale ones drop.
+var network_send_seq: int = 0
+var network_last_received_seq: int = -1
 # Seconds since the last authoritative state packet for this remote player; drives how far
 # we extrapolate before giving up.
 var network_time_since_update: float = 0.0
@@ -127,6 +131,22 @@ func set_multiplayer_player(new_peer_id: int, new_is_local_player: bool, new_net
 	# Only the local player's HUD should be visible (each player instance builds one).
 	if hud_controller != null and hud_controller.has_method("set_hud_active"):
 		hud_controller.set_hud_active(is_local_player)
+
+	# Remote replicas only interpolate their network target (_physics_process); the aim
+	# reticle (_process), camera-rig feel, and viewmodel animator are local-player-only
+	# work that would otherwise tick per replica — including on the dedicated server.
+	if not is_local_player:
+		set_process(false)
+
+		var camera_rig := get_node_or_null("CameraRig")
+
+		if camera_rig != null:
+			camera_rig.set_physics_process(false)
+
+		var weapon_mount := get_node_or_null("CameraRig/Camera3D/WeaponMount")
+
+		if weapon_mount != null:
+			weapon_mount.set_process(false)
 
 	print("Player ", peer_id, " multiplayer setup. Local: ", is_local_player)
 
@@ -811,8 +831,13 @@ func update_remote_network_state(delta: float) -> void:
 func receive_network_state(
 	new_transform: Transform3D,
 	new_linear_velocity: Vector3,
-	new_angular_velocity: Vector3
+	new_angular_velocity: Vector3,
+	state_seq: int
 ) -> void:
+	if state_seq <= network_last_received_seq:
+		return   # out-of-order packet; a newer state has already been applied
+
+	network_last_received_seq = state_seq
 	network_target_transform = new_transform
 	network_target_linear_velocity = new_linear_velocity
 	network_target_angular_velocity = new_angular_velocity
@@ -836,14 +861,16 @@ func update_network_send(delta: float) -> void:
 		return
 	
 	network_send_timer = 1.0 / network_send_rate
-	
+	network_send_seq += 1
+
 	if network_manager.has_method("submit_local_player_state"):
 		network_manager.call(
 			"submit_local_player_state",
 			peer_id,
 			global_transform,
 			linear_velocity,
-			angular_velocity
+			angular_velocity,
+			network_send_seq
 		)
 
 

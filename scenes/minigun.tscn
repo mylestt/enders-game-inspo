@@ -15,8 +15,6 @@ transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, -0.008401036, -0.6754142)
 script = ExtResource("2_sjy8w")
 barrel_node_path = NodePath("Barrel")
 box_node_path = NodePath("Box")
-wind_up_time = 0.92
-max_spin_radians_per_second = 58.145
 barrel_local_spin_axis = Vector3(-1, 0, 0)
 rounds_per_second = 50.0
 max_rounds_per_frame = 8
@@ -29,10 +27,11 @@ recoil_random_position_offset = Vector3(0.0004, 0.0012, 0.002)
 recoil_kick_up = 0.24
 recoil_kick_side = 0.1
 sustained_kickback = Vector3(0, 0.008, 0.06)
+hitscan_damage = 5.0
 hitscan_spread_degrees = Vector2(0.583333, 1.75)
 hitscan_tracer_scene = ExtResource("3_hitscan_tracer")
 fire_knockback_force = 0.12
-fire_torque_strength = 0.0
+fire_torque_strength = 0.085
 mag_size = 200
 starting_reserve = 600
 reload_time = 3.0
@@ -40,11 +39,11 @@ ads_fov = 62.0
 ads_spread_mult = 0.25
 ads_recoil_mult = 0.6
 
-[node name="Barrel" parent="." index="0" unique_id=1382899451]
+[node name="Barrel" parent="." index="0" unique_id=1862043188]
 transform = Transform3D(-1.525, 0, -3.019916e-07, 0, 2, 0, 2.302686e-07, 0, -2, 0.3958292, -0.3684173, -3.232963e-08)
 surface_material_override/0 = SubResource("StandardMaterial3D_02213")
 
-[node name="Box" parent="." index="1" unique_id=890863803]
+[node name="Box" parent="." index="1" unique_id=2006268743]
 transform = Transform3D(-0.182, 0, -3.352107e-08, 0, 0.227, 0, 2.7481235e-08, 0, -0.222, -0.73941565, -0.60316443, 3.232963e-08)
 surface_material_override/0 = SubResource("StandardMaterial3D_5pn0t")
 

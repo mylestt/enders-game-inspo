@@ -28,8 +28,8 @@ multiplayer with a lobby system, deployed to a DigitalOcean VPS at **147.182.160
    - `ssh root@147.182.160.52` → `tmux kill-session -t gameserver; pkill -f enders_server.x86_64; exit`
    - `scp build\enders_server.x86_64 root@147.182.160.52:/root/`
    - `ssh` back in → `chmod +x enders_server.x86_64 && ./run_server.sh 7000`
-- `server_control.ps1` (Codex) is a menu wrapper, but its "upload+restart" uploads BEFORE
-  stopping → same bug; fixing it (stop-before-upload) is an open TODO.
+- `server_control.ps1` (Codex) is a menu wrapper; its "upload+restart" now stops the
+  server BEFORE uploading (kill tmux session + pkill, then scp, then chmod).
 
 ## Conventions
 - **Server-authoritative.** NetworkManager / RoundManager / LobbyManager own state; clients
@@ -59,7 +59,7 @@ multiplayer with a lobby system, deployed to a DigitalOcean VPS at **147.182.160
   Maps are hand-built `.tscn` scenes registered in the `MAPS` const (id + display name +
   preloaded scene); each scene supplies its own `spawn_team_a` / `spawn_team_b` marker
   groups (and optional `gate_team_*`), which NetworkManager reads to place players. Current
-  maps: `diamond` (`DiamondArena.tscn`), `2v2` (`2v_2.tscn`). To add one: author the scene
+  maps: `diamond` (`DiamondArena.tscn`) only. To add one: author the scene
   with the spawn groups, add a line to `MAPS`. Selection is a single `GameLaunch.map_id`
   string that syncs to clients at lobby join (`rebuild_from_launch`); the map-setup menu's
   dropdown is populated from the registry. `scenes/test_map.tscn` previews it (set `map_id`

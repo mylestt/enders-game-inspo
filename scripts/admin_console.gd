@@ -13,6 +13,12 @@ var server_admin: ServerAdmin
 
 func _ready() -> void:
 	layer = 120
+
+	# Headless server admin goes through the command file / RPCs (ServerAdmin), not this UI.
+	if DisplayServer.get_name() == "headless":
+		set_process_unhandled_input(false)
+		return
+
 	server_admin = get_node_or_null(server_admin_path) as ServerAdmin
 
 	if server_admin != null:

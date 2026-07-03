@@ -48,6 +48,12 @@ var has_weapon_aim_reticle_screen_position: bool = false
 func setup(owner_player: RigidBody3D) -> void:
 	player = owner_player
 
+	# A dedicated server has no screen; every update_* method already null-checks its
+	# controls, so skipping the build makes the whole HUD a no-op there.
+	if DisplayServer.get_name() == "headless":
+		set_process(false)
+		return
+
 	build_hud()
 	update_jump_force(current_jump_force)
 
@@ -429,11 +435,16 @@ func update_health(current_health: float, max_health: float) -> void:
 
 
 func update_jump_force(force: float) -> void:
+	# Called every physics frame by the movement controller; skip the label rebuild
+	# unless the value actually changed.
+	if is_equal_approx(force, current_jump_force) and jump_force_label != null and jump_force_label.text != "":
+		return
+
 	current_jump_force = force
-	
+
 	if jump_force_label == null:
 		return
-	
+
 	jump_force_label.text = "Jump Force: " + format_number(force)
 
 

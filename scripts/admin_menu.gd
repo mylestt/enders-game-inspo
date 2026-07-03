@@ -1,12 +1,11 @@
 extends CanvasLayer
 
 # Password-gated admin panel (centered). Opened from the pause menu. Actions route through
-# ServerAdmin.submit_client_command(cmd, key); the server validates the key (which is the
-# same password). The password is typed once, then remembered in GameSettings.
+# ServerAdmin.submit_client_command(cmd, key); ONLY the server validates the key — the
+# client never knows the real password, it just remembers what was typed (GameSettings)
+# and shows the server's "Admin key rejected." response if it was wrong.
 
 signal closed
-
-const ADMIN_PASSWORD := "Aa123456!"
 
 var network_manager: Node
 var server_admin: Node
@@ -29,8 +28,9 @@ func setup(nm: Node, sa: Node) -> void:
 	if server_admin != null and server_admin.has_signal("admin_response_received"):
 		server_admin.admin_response_received.connect(_on_admin_response)
 
-	# Skip the prompt if the correct password was already entered and saved.
-	if GameSettings.admin_password == ADMIN_PASSWORD:
+	# Skip the prompt if a password was already entered and saved (the server rejects
+	# commands if it turns out to be wrong).
+	if GameSettings.admin_password != "":
 		show_panel()
 	else:
 		show_password()
@@ -132,6 +132,7 @@ func build_ui() -> void:
 	output_label.custom_minimum_size = Vector2(0.0, 38.0)
 	panel_box.add_child(output_label)
 
+	add_button(panel_box, "Change Password", show_password)
 	add_button(panel_box, "Close", _on_close_pressed)
 
 	password_box.visible = false
@@ -237,13 +238,13 @@ func _on_unlock_pressed() -> void:
 
 
 func try_unlock() -> void:
-	if password_field.text == ADMIN_PASSWORD:
-		GameSettings.admin_password = password_field.text
-		GameSettings.save()
-		show_panel()
-	else:
-		password_status.text = "Incorrect password."
-		password_field.text = ""
+	if password_field.text.strip_edges() == "":
+		password_status.text = "Enter the admin password."
+		return
+
+	GameSettings.admin_password = password_field.text
+	GameSettings.save()
+	show_panel()
 
 
 func _on_admin_response(response: String) -> void:

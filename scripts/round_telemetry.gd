@@ -20,6 +20,9 @@ extends Node
 # next to the existing 30Hz per-player position sync.
 
 @export var sample_interval: float = 0.1
+# Safety cap so an untimed round can't grow the in-memory buffers forever
+# (~10 rows/s x players; 200k rows is hours of play).
+@export var max_rows_per_file: int = 200000
 
 var network_manager: Node
 var is_recording: bool = false
@@ -74,7 +77,7 @@ func record_client_fps(peer_id: int, fps: float) -> void:
 
 
 func record_weapon_fired(shooter_peer_id: int, origin: Vector3, did_hit: bool) -> void:
-	if not is_recording:
+	if not is_recording or _event_rows.size() >= max_rows_per_file:
 		return
 
 	_event_rows.append(
@@ -122,6 +125,9 @@ func record_round_state(state_name: String) -> void:
 
 func _sample_tick() -> void:
 	if network_manager == null:
+		return
+
+	if _timeline_rows.size() >= max_rows_per_file:
 		return
 
 	var t := _elapsed()

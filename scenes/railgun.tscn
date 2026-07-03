@@ -25,7 +25,7 @@ ads_fov = 42.0
 transform = Transform3D(2.6226832e-08, 0, -0.29999998, 0, 0.29999998, 0, 0.29999998, 0, 2.6226832e-08, -0.14382677, 0.0009562969, -0.16876349)
 
 [node name="Muzzle" type="Marker3D" parent="RailgunModel" unique_id=679576480]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.9764082, 0, 0)
+transform = Transform3D(1, 0, -1.4210855e-14, 0, 1, 0, 1.4210855e-14, 0, 1, -2.1429257, 0, -2.9802322e-08)
 
 [node name="ADSmarker" type="Marker3D" parent="RailgunModel" unique_id=891540139]
 transform = Transform3D(1, 0, -7.1054274e-15, 0, 1, 0, 7.1054274e-15, 0, 1, 0, 0.31030202, 0)

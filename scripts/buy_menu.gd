@@ -113,22 +113,28 @@ var shop_items: Array[Dictionary] = [
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	layer = 100
-	
+
 	if GameLaunch.rules_configured:
 		starting_cash = GameLaunch.starting_cash
-	
+
 	cash = starting_cash
-	
+
+	# The dedicated server only needs shop_items as the purchase-validation catalog
+	# (ServerEconomy reads it via get_item_by_id); it has no screen to draw the menu on.
+	if DisplayServer.get_name() == "headless":
+		set_process_unhandled_input(false)
+		return
+
 	build_ui()
 	resize_menu_to_viewport()
 	close_menu(false)
-	
+
 	if not get_viewport().size_changed.is_connected(resize_menu_to_viewport):
 		get_viewport().size_changed.connect(resize_menu_to_viewport)
-	
+
 	if String(player_path) != "":
 		var found_player := get_node_or_null(player_path)
-		
+
 		if found_player != null:
 			set_local_player(found_player)
 

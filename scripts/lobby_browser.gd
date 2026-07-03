@@ -19,6 +19,11 @@ var pending_join_id: int = -1
 
 func _ready() -> void:
 	layer = 80
+
+	# The dedicated server never browses lobbies; skip the whole UI tree.
+	if DisplayServer.get_name() == "headless":
+		return
+
 	lobby_manager = get_node_or_null(lobby_manager_path)
 	_build_ui()
 	root.visible = false

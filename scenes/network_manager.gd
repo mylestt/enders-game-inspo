@@ -870,19 +870,36 @@ func get_player_summary() -> String:
 	return "Players: " + ", ".join(parts)
 
 
+# A hacked client can put NaN/Inf into any RPC float; clampf(NaN) stays NaN, which would
+# poison health, transforms, and physics on every peer that applies it. Every
+# client-supplied vector/float must pass these before it is used or relayed.
+func is_valid_vector(v: Vector3) -> bool:
+	return v.is_finite()
+
+
+func is_valid_transform(t: Transform3D) -> bool:
+	return (
+		t.origin.is_finite()
+		and t.basis.x.is_finite()
+		and t.basis.y.is_finite()
+		and t.basis.z.is_finite()
+	)
+
+
+# `state_seq` is a per-sender monotonic counter; unreliable packets can arrive out of
+# order, and applying an older state after a newer one visibly rubber-bands the replica.
 func submit_local_player_state(
 	peer_id: int,
 	player_transform: Transform3D,
 	linear_velocity: Vector3,
-	angular_velocity: Vector3
+	angular_velocity: Vector3,
+	state_seq: int
 ) -> void:
 	if multiplayer.multiplayer_peer == null:
 		return
-	
+
 	if multiplayer.is_server():
-		server_record_state_history(peer_id, player_transform.origin)
-		client_receive_player_state(peer_id, player_transform, linear_velocity, angular_velocity)
-		rpc("client_receive_player_state", peer_id, player_transform, linear_velocity, angular_velocity)
+		_relay_player_state(peer_id, player_transform, linear_velocity, angular_velocity, state_seq)
 	else:
 		rpc_id(
 			1,
@@ -890,7 +907,8 @@ func submit_local_player_state(
 			peer_id,
 			player_transform,
 			linear_velocity,
-			angular_velocity
+			angular_velocity,
+			state_seq
 		)
 
 
@@ -899,19 +917,47 @@ func server_receive_player_state(
 	peer_id: int,
 	player_transform: Transform3D,
 	linear_velocity: Vector3,
-	angular_velocity: Vector3
+	angular_velocity: Vector3,
+	state_seq: int
 ) -> void:
 	if not multiplayer.is_server():
 		return
-	
-	var sender_id := multiplayer.get_remote_sender_id()
 
-	if sender_id != peer_id:
+	if multiplayer.get_remote_sender_id() != peer_id:
 		return
 
+	if not is_valid_transform(player_transform):
+		return
+
+	if not is_valid_vector(linear_velocity) or not is_valid_vector(angular_velocity):
+		return
+
+	_relay_player_state(peer_id, player_transform, linear_velocity, angular_velocity, state_seq)
+
+
+# Server-side: records lag-comp history, applies to the server's own replica, and forwards
+# to every OTHER peer (the sender already has its own authoritative state).
+func _relay_player_state(
+	peer_id: int,
+	player_transform: Transform3D,
+	linear_velocity: Vector3,
+	angular_velocity: Vector3,
+	state_seq: int
+) -> void:
 	server_record_state_history(peer_id, player_transform.origin)
-	client_receive_player_state(peer_id, player_transform, linear_velocity, angular_velocity)
-	rpc("client_receive_player_state", peer_id, player_transform, linear_velocity, angular_velocity)
+	client_receive_player_state(peer_id, player_transform, linear_velocity, angular_velocity, state_seq)
+
+	for remote_peer_id in multiplayer.get_peers():
+		if remote_peer_id != peer_id:
+			rpc_id(
+				remote_peer_id,
+				"client_receive_player_state",
+				peer_id,
+				player_transform,
+				linear_velocity,
+				angular_velocity,
+				state_seq
+			)
 
 
 @rpc("authority", "unreliable")
@@ -919,7 +965,8 @@ func client_receive_player_state(
 	peer_id: int,
 	player_transform: Transform3D,
 	linear_velocity: Vector3,
-	angular_velocity: Vector3
+	angular_velocity: Vector3,
+	state_seq: int
 ) -> void:
 	if peer_id == multiplayer.get_unique_id():
 		return
@@ -932,7 +979,7 @@ func client_receive_player_state(
 	var player = players_by_peer_id[peer_id]
 
 	if player != null and player.has_method("receive_network_state"):
-		player.call("receive_network_state", player_transform, linear_velocity, angular_velocity)
+		player.call("receive_network_state", player_transform, linear_velocity, angular_velocity, state_seq)
 
 
 func request_body_slam(
@@ -985,6 +1032,9 @@ func server_process_body_slam(
 	var target: Node3D = players_by_peer_id[target_peer_id] as Node3D
 
 	if attacker == null or target == null:
+		return
+
+	if not is_valid_vector(impulse) or not is_valid_vector(contact_position):
 		return
 
 	# Honest clients never report slams while dead (see detect_player_body_slam_contacts).
@@ -1124,6 +1174,9 @@ func server_process_plasma_explosion_hit(
 	if attacker == null or target == null:
 		return
 
+	if not is_finite(damage) or not is_valid_vector(impulse):
+		return
+
 	if not server_attacker_may_deal_damage(attacker_peer_id, attacker):
 		return
 
@@ -1188,6 +1241,12 @@ func is_plasma_explosion_hit_plausible(
 	shot_origin: Vector3,
 	shot_direction: Vector3
 ) -> bool:
+	if not is_valid_vector(explosion_position) or not is_valid_vector(shot_origin) or not is_valid_vector(shot_direction):
+		return false
+
+	if not is_finite(explosion_radius):
+		return false
+
 	if shot_direction.length_squared() < 0.0001 or explosion_radius <= 0.0:
 		return false
 
@@ -1357,6 +1416,9 @@ func server_process_weapon_hit(
 	if attacker == null or target == null:
 		return
 
+	if not is_finite(damage):
+		return
+
 	if not server_attacker_may_deal_damage(attacker_peer_id, attacker):
 		return
 
@@ -1441,6 +1503,9 @@ func is_weapon_hit_plausible(
 	shot_origin: Vector3,
 	shot_direction: Vector3
 ) -> bool:
+	if not is_valid_vector(hit_position) or not is_valid_vector(shot_origin) or not is_valid_vector(shot_direction):
+		return false
+
 	if shot_direction.length() < 0.001:
 		return false
 
@@ -1628,6 +1693,9 @@ func _relay_weapon_shot(
 	if not players_by_peer_id.has(shooter_peer_id):
 		return
 
+	if not is_valid_vector(origin) or not is_valid_vector(shot_end) or not is_valid_vector(normal):
+		return
+
 	if round_telemetry != null:
 		round_telemetry.call("record_weapon_fired", shooter_peer_id, origin, did_hit)
 
@@ -1693,6 +1761,9 @@ func server_relay_projectile_shot(origin: Vector3, velocity: Vector3) -> void:
 
 func _relay_projectile_shot(shooter_peer_id: int, origin: Vector3, velocity: Vector3) -> void:
 	if not players_by_peer_id.has(shooter_peer_id):
+		return
+
+	if not is_valid_vector(origin) or not is_valid_vector(velocity):
 		return
 
 	if round_telemetry != null:

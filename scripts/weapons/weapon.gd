@@ -456,13 +456,13 @@ func get_hitscan_effect_parent() -> Node:
 	return created_parent
 
 
-func get_owner_collision_exclusions() -> Array:
-	var exclusions: Array = []
+func get_owner_collision_exclusions() -> Array[RID]:
+	var exclusions: Array[RID] = []
 	add_collision_exclusions_from_node(owner_player, exclusions)
 	return exclusions
 
 
-func add_collision_exclusions_from_node(node: Node, exclusions: Array) -> void:
+func add_collision_exclusions_from_node(node: Node, exclusions: Array[RID]) -> void:
 	if node == null:
 		return
 

@@ -125,7 +125,7 @@ var fire_origin: Vector3 = Vector3.ZERO
 var fire_direction: Vector3 = Vector3.FORWARD
 
 var velocity: Vector3 = Vector3.ZERO
-var exclusions: Array = []
+var exclusions: Array[RID] = []
 var age: float = 0.0
 var exploded: bool = false
 

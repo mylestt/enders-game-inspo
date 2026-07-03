@@ -18,6 +18,12 @@ var current_timer: float = 0.0
 
 func _ready() -> void:
 	layer = 65
+
+	# Nothing to draw on a dedicated server; the label handlers all null-check.
+	if DisplayServer.get_name() == "headless":
+		set_process(false)
+		return
+
 	round_manager = get_node_or_null(round_manager_path)
 	_build_ui()
 
@@ -81,7 +87,7 @@ func _process(delta: float) -> void:
 	if current_timer <= 0.0:
 		return
 
-	if current_state == 1 or current_state == 2:   # COUNTDOWN or ACTIVE (timed)
+	if current_state == RoundManager.State.COUNTDOWN or current_state == RoundManager.State.ACTIVE:
 		current_timer = maxf(current_timer - delta, 0.0)
 		_update_center()
 
@@ -110,14 +116,14 @@ func _update_center() -> void:
 		return
 
 	match current_state:
-		1:   # COUNTDOWN
+		RoundManager.State.COUNTDOWN:
 			center_label.text = "Round starts in " + str(ceili(current_timer))
-		2:   # ACTIVE
+		RoundManager.State.ACTIVE:
 			if current_timer > 0.0:
 				center_label.text = "ROUND ACTIVE   " + str(ceili(current_timer))
 			else:
 				center_label.text = "ROUND ACTIVE"
-		3:   # ROUND_END
+		RoundManager.State.ROUND_END:
 			center_label.text = "Round over"
 		_:   # WAITING_FOR_PLAYERS
 			center_label.text = "Waiting for players…"

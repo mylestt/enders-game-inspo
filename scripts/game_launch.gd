@@ -37,9 +37,11 @@ static var min_players_to_start: int = 2
 static var starting_cash: int = 200000
 static var points_to_win: int = 8
 static var round_time_limit: float = 0.0
-# Shared admin password. The in-game admin menu sends this to authorize server commands, so
-# it doubles as the server's admin key. Override per-server with --admin-key if you want.
-static var admin_key: String = "Aa123456!"
+# Server admin key. In-game admin commands are DISABLED unless the server is started with
+# --admin-key <key> (or ADMIN_KEY for run_server.sh) — never ship a real key as a default
+# here, since it ends up readable inside every client build. The polled admin command file
+# works regardless.
+static var admin_key: String = ""
 
 # Map selection from the map-setup menu, consumed by MapGenerator at runtime.
 # Maps are hand-built scenes referenced by id; see MapGenerator.MAPS.

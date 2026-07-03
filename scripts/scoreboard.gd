@@ -12,6 +12,12 @@ var latest_entries: Array = []
 
 func _ready() -> void:
 	layer = 95
+
+	# Nothing to draw (or press Tab on) on a dedicated server.
+	if DisplayServer.get_name() == "headless":
+		set_process_unhandled_input(false)
+		return
+
 	network_manager = get_node_or_null(network_manager_path)
 	build_ui()
 	hide_scoreboard()

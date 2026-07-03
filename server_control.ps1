@@ -44,11 +44,9 @@ function Prompt-Rules {
     $roundTime = Read-Host "Round time seconds, 0 means no limit [0]"
     if ([string]::IsNullOrWhiteSpace($roundTime)) { $roundTime = "0" }
 
-    $map = Read-Host "Map: designed, core, module_station, asteroid_field, default_arena_3 [designed]"
-    if ([string]::IsNullOrWhiteSpace($map)) { $map = "designed" }
-
-    $seed = Read-Host "Map seed [1]"
-    if ([string]::IsNullOrWhiteSpace($seed)) { $seed = "1" }
+    # Map ids come from MapGenerator.MAPS (hand-built scenes; procedural maps are gone).
+    $map = Read-Host "Map id [diamond]"
+    if ([string]::IsNullOrWhiteSpace($map)) { $map = "diamond" }
 
     $Script:AdminKey = Read-Host "In-game admin key, blank disables in-game admin"
 
@@ -58,7 +56,6 @@ function Prompt-Rules {
         PointsToWin = $pointsToWin
         RoundTime = $roundTime
         Map = $map
-        Seed = $seed
     }
 }
 
@@ -77,7 +74,6 @@ function Start-ServerWithRules {
         "POINTS_TO_WIN='$($rules.PointsToWin)' " +
         "ROUND_TIME='$($rules.RoundTime)' " +
         "MAP='$($rules.Map)' " +
-        "MAP_SEED='$($rules.Seed)' " +
         "ADMIN_FILE='$AdminFile' " +
         "/root/run_server.sh $Port"
     )
@@ -91,8 +87,14 @@ function Upload-LatestBuild {
         return
     }
 
+    # STOP the server BEFORE uploading: scp over a running executable fails with
+    # "text file busy" and silently leaves the old binary in place.
+    Write-Host "Stopping any running server before upload..." -ForegroundColor DarkGray
+    Invoke-Remote "tmux kill-session -t gameserver 2>/dev/null; pkill -f enders_server.x86_64 2>/dev/null; true"
+
     scp "build\enders_server.x86_64" "${Remote}:/root/"
     scp "run_server.sh" "${Remote}:/root/"
+    Invoke-Remote "chmod +x /root/enders_server.x86_64 /root/run_server.sh"
 }
 
 while ($true) {
