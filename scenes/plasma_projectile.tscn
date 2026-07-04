@@ -7,12 +7,16 @@ _data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(0.60106385, 0.8539326), 0.0, 0.0
 point_count = 3
 
 [sub_resource type="Curve" id="Curve_damage_falloff"]
-_data = [Vector2(0, 1), 0.0, -1.0, 0, 1, Vector2(1, 0), -1.0, 0.0, 1, 0]
-point_count = 2
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 1, Vector2(0.11170214, 1), 0.0, 0.0, 0, 0, Vector2(1, 0), -1.1257485, 0.0, 1, 0]
+point_count = 3
 
 [sub_resource type="Curve" id="Curve_airburst_falloff"]
 _data = [Vector2(0, 1), 0.0, -0.44167504, 0, 1, Vector2(0.58510643, 0.7415731), -2.429213, -2.429213, 0, 0, Vector2(0.6648936, 0.59550565), 0.0, 0.0, 0, 0, Vector2(1, 0), -1.7770646, 0.0, 1, 0]
 point_count = 4
+
+[sub_resource type="Gradient" id="Gradient_1tv0t"]
+offsets = PackedFloat32Array(0, 0.72839504)
+colors = PackedColorArray(0.8817761, 0.5292016, 0.14291698, 1, 1, 1, 1, 1)
 
 [sub_resource type="Gradient" id="Gradient_ion_streak"]
 offsets = PackedFloat32Array(0, 0.18, 0.72, 1)
@@ -21,14 +25,14 @@ colors = PackedColorArray(1, 0.96, 0.72, 1, 0.32, 0.82, 1, 1, 0.886433, 0.682105
 [node name="PlasmaProjectile" type="Node3D" unique_id=314346046]
 script = ExtResource("1_projectile")
 lifetime = 8.0
-projectile_color = Color(1, 1, 1, 1)
-projectile_radius = 0.13
-projectile_emission_energy = 9.1
-projectile_light_energy = 7.1
-projectile_light_range = 13.4
-explosion_radius = 16.5
+projectile_color = Color(0.99563247, 0.93970853, 0.9089955, 1)
+projectile_radius = 0.15000000000000002
+projectile_emission_energy = 65.5
+projectile_light_energy = 10.3
+projectile_light_range = 11.0
+explosion_radius = 16.0
 explosion_duration = 0.52
-explosion_color = Color(0.89520216, 0.62247634, 0.41689527, 1)
+explosion_color = Color(0.9696792, 0.6335907, 0.3188606, 1)
 explosion_emission_energy = 15.0
 explosion_light_energy = 17.2
 explosion_light_range = 35.7
@@ -37,23 +41,25 @@ impact_core_color = Color(1, 1, 1, 1)
 impact_core_radius_multiplier = 0.63
 impact_core_duration = 0.73
 impact_core_emission_energy = 35.3
-shockwave_color = Color(0.7130536, 0.9142881, 1, 1)
+shockwave_color = Color(0.65850765, 0.8980313, 0.9999996, 1)
 shockwave_radius_multiplier = 1.28
 shockwave_emission_energy = 32.4
 screen_shake_radius_multiplier = 5.8999999999999995
 screen_shake_falloff_curve = SubResource("Curve_screen_shake_falloff")
 damage_falloff_curve = SubResource("Curve_damage_falloff")
-airburst_center_impulse = 58.5
-airburst_edge_impulse = 24.5
+airburst_edge_impulse = 9.5
 airburst_falloff_curve = SubResource("Curve_airburst_falloff")
-particle_amount = 2048
-particle_lifetime = 1.65
+particle_amount = 800
+particle_lifetime = 1.6500000000000001
 particle_min_speed = 13.4
 particle_max_speed = 20.4
 particle_size = 0.026
-particle_max_scale = 0.71
-particle_max_damping = 5.0
-particle_randomness = 0.51
-particle_emission_energy = 10.6
+particle_min_scale = 0.45
+particle_max_scale = 1.01
+particle_max_damping = 3.6
+particle_randomness = 0.58
+particle_emission_energy = 15.7
+particle_color_over_lifetime = SubResource("Gradient_1tv0t")
+ion_streak_amount = 100
 ion_streak_lifetime = 0.67
 ion_streak_color_over_lifetime = SubResource("Gradient_ion_streak")
