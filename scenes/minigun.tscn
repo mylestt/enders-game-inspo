@@ -2,7 +2,8 @@
 
 [ext_resource type="PackedScene" uid="uid://1htclttf2g2r" path="res://Props/Minigun.glb" id="1_2sjy8"]
 [ext_resource type="Script" uid="uid://cbefnfc875w1l" path="res://scripts/weapons/minigun_weapon.gd" id="2_sjy8w"]
-[ext_resource type="PackedScene" uid="uid://dy5jkj0mbdb5x" path="res://scenes/hitscan_tracer_effect.tscn" id="3_hitscan_tracer"]
+[ext_resource type="PackedScene" path="res://scenes/minigun_tracer_effect.tscn" id="3_hitscan_tracer"]
+[ext_resource type="PackedScene" path="res://scenes/minigun_muzzle_flash.tscn" id="4_flash"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_02213"]
 albedo_color = Color(0.30692267, 0.3069227, 0.3069227, 1)
@@ -30,6 +31,7 @@ sustained_kickback = Vector3(0, 0.008, 0.06)
 hitscan_damage = 5.0
 hitscan_spread_degrees = Vector2(0.583333, 1.75)
 hitscan_tracer_scene = ExtResource("3_hitscan_tracer")
+muzzle_flash_scene = ExtResource("4_flash")
 fire_knockback_force = 0.12
 fire_torque_strength = 0.085
 mag_size = 200

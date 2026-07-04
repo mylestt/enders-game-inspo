@@ -1,0 +1,20 @@
+[gd_scene format=3 uid="uid://jc7rqsn5hp38"]
+
+[ext_resource type="Script" uid="uid://dytr63lws3rdh" path="res://scripts/weapons/weapon_hitscan_tracer_effect.gd" id="1_tracer_effect"]
+
+[node name="RailgunTracerEffect" type="Node3D" unique_id=1056406925]
+script = ExtResource("1_tracer_effect")
+visual_speed = 2200.0
+min_travel_time = 0.03
+max_travel_time = 0.52
+fade_time = 1.07
+max_visible_length = 200.0
+tracer_width = 0.07
+jagged_radius = 0.555
+segment_count = 17
+strand_count = 4
+tail_width_multiplier = 0.42
+tracer_color = Color(0.7858085, 0.6594014, 0.23258293, 0.9490196)
+tracer_emission_energy = 16.65
+head_glow_length = 3.19
+head_glow_boost = 3.2

@@ -1,0 +1,11 @@
+[gd_scene format=3 uid="uid://eso5j1v14qqy"]
+
+[ext_resource type="Script" uid="uid://b10s7d0s4ebr8" path="res://scripts/weapons/weapon_muzzle_flash.gd" id="1_wmf"]
+
+[node name="RailgunMuzzleFlash" type="Node3D" unique_id=1531840176]
+script = ExtResource("1_wmf")
+overall_scale = 1.0
+flash_length = 1.3
+override_colors = true
+primary_color = Color(0.9999998, 0.891035, 0.737036, 1)
+secondary_color = Color(1, 0.7153286, 0.60540205, 1)

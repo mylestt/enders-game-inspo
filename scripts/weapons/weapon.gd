@@ -34,6 +34,17 @@ signal ads_changed(aiming: bool)
 @export var hitscan_tracer_scene: PackedScene
 @export var hitscan_effect_parent_path: NodePath
 
+@export_group("Muzzle Flash")
+# Per-gun muzzle-flash scene, assigned here exactly like hitscan_tracer_scene: point it at
+# this gun's own scenes/<gun>_muzzle_flash.tscn (a WeaponMuzzleFlash wrapper whose inspector
+# exposes effect choice, flash length/width/scale, colors, light, and speed). ONE instance
+# is created at equip, auto-placed at the muzzle (aim_origin_node_path, its +X facing
+# aim_local_direction), and re-triggered per fired round in fire_hitscan(), so the flash
+# follows the gun's exact fire rate and fire pattern. Blank = no muzzle flash.
+@export var muzzle_flash_scene: PackedScene
+
+var muzzle_flash: Node3D
+
 @export_group("Body Recoil")
 @export var fire_knockback_enabled: bool = true
 # Per-round backward impulse pushing the owner opposite the barrel. Only applied
@@ -82,6 +93,7 @@ func equip(new_owner: Node) -> void:
 	set_trigger_held(false)
 	set_aiming(false)
 	reset_ammo()
+	_setup_muzzle_flash()
 
 
 func unequip() -> void:
@@ -321,9 +333,17 @@ func fire_hitscan() -> Dictionary:
 		submit_hitscan_damage(hit_collider, hit_position, origin, direction)
 
 	spawn_hitscan_tracer(origin, hit_position, hit_something, hit_normal)
+	trigger_muzzle_flash()
 
 	if owner_player != null and owner_player.has_method("report_weapon_shot"):
-		owner_player.call("report_weapon_shot", origin, hit_position, hit_something, hit_normal)
+		owner_player.call(
+			"report_weapon_shot",
+			origin,
+			hit_position,
+			hit_something,
+			hit_normal,
+			String(inventory_id)
+		)
 
 	return {
 		"origin": origin,
@@ -433,6 +453,65 @@ func spawn_hitscan_tracer(
 	return tracer
 
 
+# --- Muzzle flash -----------------------------------------------------------------------
+# One WeaponMuzzleFlash instance (see muzzle_flash_scene), created at equip and parented to
+# the weapon so it tracks the viewmodel. All look/shape tuning lives in the per-gun flash
+# scene; this only handles placement and per-shot triggering. Weapons exist only on the
+# local shooter, so the flash is inherently first-person.
+
+func _setup_muzzle_flash() -> void:
+	if muzzle_flash != null or muzzle_flash_scene == null:
+		return
+
+	var instance := muzzle_flash_scene.instantiate() as Node3D
+
+	if instance == null:
+		push_warning("Weapon muzzle_flash_scene must be Node3D-rooted (see WeaponMuzzleFlash).")
+		return
+
+	add_child(instance)
+	instance.transform = Transform3D(_muzzle_flash_basis(), _muzzle_local_position())
+	muzzle_flash = instance
+
+
+# The barrel tip in weapon-local space (the aim origin marker's position).
+func _muzzle_local_position() -> Vector3:
+	if String(aim_origin_node_path) != "":
+		var node := get_node_or_null(aim_origin_node_path) as Node3D
+
+		if node != null:
+			return to_local(node.global_position)
+
+	return Vector3.ZERO
+
+
+# Right-handed unit basis with local +X (the flash's fire axis) pointing down the barrel
+# (aim_local_direction). Right-handed matters: a negative-determinant basis mirrors the
+# effect's particles.
+func _muzzle_flash_basis() -> Basis:
+	var forward := aim_local_direction
+
+	if forward.length() < 0.001:
+		forward = Vector3.FORWARD
+
+	forward = forward.normalized()
+	var reference := Vector3.UP
+
+	if absf(forward.dot(reference)) > 0.98:
+		reference = Vector3.RIGHT
+
+	var z_axis := forward.cross(reference).normalized()
+	var y_axis := z_axis.cross(forward).normalized()
+	return Basis(forward, y_axis, z_axis)
+
+
+# One fired round -> one flash burst. Called from fire_hitscan(), so cadence and pattern
+# follow the gun exactly (rifle bursts, minigun full-auto, railgun single shots).
+func trigger_muzzle_flash() -> void:
+	if muzzle_flash != null and muzzle_flash.has_method("play"):
+		muzzle_flash.call("play")
+
+
 func get_hitscan_effect_parent() -> Node:
 	if String(hitscan_effect_parent_path) != "":
 		var explicit_parent := get_node_or_null(hitscan_effect_parent_path)
@@ -501,3 +580,8 @@ func set_firing(value: bool) -> void:
 
 	firing = value
 	firing_state_changed.emit(firing)
+
+	# Sustained-fire flashes cut the instant the gun stops firing (trigger release, barrels
+	# below speed, reload) — see WeaponMuzzleFlash.cut_on_fire_stop, a per-gun flash knob.
+	if not firing and muzzle_flash != null and muzzle_flash.has_method("on_fire_stopped"):
+		muzzle_flash.call("on_fire_stopped")

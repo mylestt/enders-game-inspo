@@ -1,0 +1,13 @@
+[gd_scene format=3 uid="uid://rgaq4ehfsoxn"]
+
+[ext_resource type="Script" uid="uid://b10s7d0s4ebr8" path="res://scripts/weapons/weapon_muzzle_flash.gd" id="1_wmf"]
+
+[node name="MinigunMuzzleFlash" type="Node3D" unique_id=75548708]
+script = ExtResource("1_wmf")
+overall_scale = 1.0
+cut_on_fire_stop = true
+override_colors = true
+primary_color = Color(0.99999994, 0.8695031, 0.6836788, 1)
+secondary_color = Color(1, 0.6901961, 0, 1)
+override_light = true
+light_color = Color(1, 0.6901961, 0, 0.49019608)

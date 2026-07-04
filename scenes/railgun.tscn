@@ -1,12 +1,15 @@
 [gd_scene format=3 uid="uid://brg7w2laxq3ny"]
 
 [ext_resource type="Script" uid="uid://b42le5ln2dntt" path="res://scripts/weapons/hitscan_weapon.gd" id="1_rg"]
-[ext_resource type="PackedScene" uid="uid://dnaj1se7cdyf0" path="res://Props/railgun.glb" id="2_rg"]
-[ext_resource type="PackedScene" uid="uid://dy5jkj0mbdb5x" path="res://scenes/hitscan_tracer_effect.tscn" id="3_rg"]
+[ext_resource type="PackedScene" uid="uid://coc1go1sk8ber" path="res://Props/RailCannon.glb" id="3_b1trn"]
+[ext_resource type="PackedScene" uid="uid://jc7rqsn5hp38" path="res://scenes/railgun_tracer_effect.tscn" id="3_rg"]
+[ext_resource type="PackedScene" path="res://scenes/railgun_muzzle_flash.tscn" id="4_flash"]
 
 [node name="Railgun" type="Node3D" unique_id=1026138234]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.3255074, -0.04050757, -0.027912103)
 script = ExtResource("1_rg")
-aim_origin_node_path = NodePath("RailgunModel/Muzzle")
+weapon_weight = 2.02
+aim_origin_node_path = NodePath("RailCannon/Muzzle")
 recoil_rotation_degrees = Vector3(1.26, 0, 0)
 recoil_position_offset = Vector3(0, 0.016, 0.1)
 recoil_kick_up = 16.0
@@ -14,6 +17,7 @@ recoil_kick_side = 0.35
 hitscan_range = 264.505
 hitscan_damage = 90.0
 hitscan_tracer_scene = ExtResource("3_rg")
+muzzle_flash_scene = ExtResource("4_flash")
 fire_knockback_force = 13.33
 max_recoil_angular_speed = 4.415
 mag_size = 5
@@ -21,11 +25,11 @@ starting_reserve = 20
 reload_time = 1.8
 ads_fov = 42.0
 
-[node name="RailgunModel" parent="." unique_id=1075772672 instance=ExtResource("2_rg")]
-transform = Transform3D(2.6226832e-08, 0, -0.29999998, 0, 0.29999998, 0, 0.29999998, 0, 2.6226832e-08, -0.14382677, 0.0009562969, -0.16876349)
+[node name="RailCannon" parent="." unique_id=1576688049 instance=ExtResource("3_b1trn")]
+transform = Transform3D(-0.29999998, 0, -2.6226832e-08, 0, 0.29999998, 0, 2.6226832e-08, 0, -0.29999998, -1.4211832, -0.048026577, 0.097427875)
 
-[node name="Muzzle" type="Marker3D" parent="RailgunModel" unique_id=679576480]
-transform = Transform3D(1, 0, -1.4210855e-14, 0, 1, 0, 1.4210855e-14, 0, 1, -2.1429257, 0, -2.9802322e-08)
+[node name="Muzzle" type="Marker3D" parent="RailCannon" unique_id=679576480]
+transform = Transform3D(1.4210855e-14, 0, 1, 0, 1, 0, -1, 0, 1.4210855e-14, -4.9739447, -0.09000313, 2.3292232)
 
-[node name="ADSmarker" type="Marker3D" parent="RailgunModel" unique_id=891540139]
-transform = Transform3D(1, 0, -7.1054274e-15, 0, 1, 0, 7.1054274e-15, 0, 1, 0, 0.31030202, 0)
+[node name="ADSmarker" type="Marker3D" parent="RailCannon" unique_id=891540139]
+transform = Transform3D(1.4210855e-14, 0, 1, 0, 1, 0, -1, 0, 1.4210855e-14, -4.9497995, 1.1719253, 0.3201613)
