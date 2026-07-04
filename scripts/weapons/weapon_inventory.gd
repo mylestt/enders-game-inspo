@@ -132,6 +132,29 @@ func purchase_weapon(weapon_id: StringName) -> bool:
 	return false
 
 
+# Refills every owned weapon's ammo without touching equips/ADS (the "ammo on kill" rule).
+# Clearing the swap stash means any weapon swapped to next comes up full.
+func refill_all_ammo() -> void:
+	ammo_by_weapon_id.clear()
+
+	if equipped_weapon != null:
+		equipped_weapon.reset_ammo()
+
+	_refresh_ammo_hud()
+
+
+# FFA loadout: make `weapon_id` the ONLY owned weapon and equip it fresh. Wipes any prior
+# unlock + stashed ammo so a new life can't quick-swap to last life's guns.
+func set_exclusive_weapon(weapon_id: StringName) -> bool:
+	if get_weapon_scene(weapon_id) == null:
+		return false
+
+	unlocked_weapon_ids.clear()
+	ammo_by_weapon_id.clear()
+	unlocked_weapon_ids[weapon_id] = true
+	return equip_weapon(weapon_id)
+
+
 func can_purchase_weapon(weapon_id: StringName) -> bool:
 	if has_weapon(weapon_id):
 		return false

@@ -5,6 +5,11 @@ class_name ScoreboardOverlay
 
 var network_manager: Node
 var panel: PanelContainer
+var teams_row: HBoxContainer
+var team_a_panel: PanelContainer
+var team_b_panel: PanelContainer
+var team_a_title: Label
+var team_b_title: Label
 var team_a_rows: VBoxContainer
 var team_b_rows: VBoxContainer
 var latest_entries: Array = []
@@ -96,15 +101,22 @@ func build_ui() -> void:
 	title.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.96))
 	column.add_child(title)
 
-	var teams := HBoxContainer.new()
-	teams.add_theme_constant_override("separation", 18)
-	column.add_child(teams)
+	teams_row = HBoxContainer.new()
+	teams_row.add_theme_constant_override("separation", 18)
+	column.add_child(teams_row)
 
-	team_a_rows = build_team_panel(teams, "TEAM A", Color(0.45, 0.7, 1.0, 0.96))
-	team_b_rows = build_team_panel(teams, "TEAM B", Color(1.0, 0.6, 0.42, 0.96))
+	var panel_a := build_team_panel(teams_row, "TEAM A", Color(0.45, 0.7, 1.0, 0.96))
+	team_a_panel = panel_a["panel"]
+	team_a_title = panel_a["title"]
+	team_a_rows = panel_a["rows"]
+
+	var panel_b := build_team_panel(teams_row, "TEAM B", Color(1.0, 0.6, 0.42, 0.96))
+	team_b_panel = panel_b["panel"]
+	team_b_title = panel_b["title"]
+	team_b_rows = panel_b["rows"]
 
 
-func build_team_panel(parent: Node, title_text: String, title_color: Color) -> VBoxContainer:
+func build_team_panel(parent: Node, title_text: String, title_color: Color) -> Dictionary:
 	var team_panel := PanelContainer.new()
 	team_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	team_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -140,7 +152,7 @@ func build_team_panel(parent: Node, title_text: String, title_color: Color) -> V
 	title.add_theme_color_override("font_color", title_color)
 	rows.add_child(title)
 
-	return rows
+	return {"panel": team_panel, "title": title, "rows": rows}
 
 
 func show_scoreboard() -> void:
@@ -161,9 +173,22 @@ func _on_scoreboard_changed(entries: Array) -> void:
 		refresh_rows()
 
 
+func _is_ffa() -> bool:
+	return GameLaunch.game_mode_id == "ffa"
+
+
 func refresh_rows() -> void:
 	if team_a_rows == null or team_b_rows == null:
 		return
+
+	if _is_ffa():
+		refresh_rows_ffa()
+		return
+
+	# Team mode: two side-by-side team columns.
+	team_b_panel.visible = true
+	team_a_title.text = "TEAM A"
+	team_b_title.text = "TEAM B"
 
 	clear_dynamic_rows(team_a_rows)
 	clear_dynamic_rows(team_b_rows)
@@ -194,6 +219,28 @@ func refresh_rows() -> void:
 
 	if not added_b:
 		add_empty_row(team_b_rows)
+
+
+# FFA: one kill-ranked list, no teams. Everyone goes in the (relabelled) first column and
+# the second column is hidden.
+func refresh_rows_ffa() -> void:
+	team_b_panel.visible = false
+	team_a_title.text = "PLAYERS"
+
+	clear_dynamic_rows(team_a_rows)
+	add_table_header(team_a_rows)
+
+	var added := false
+
+	for entry in latest_entries:
+		if not (entry is Dictionary):
+			continue
+
+		add_player_row(team_a_rows, entry)
+		added = true
+
+	if not added:
+		add_empty_row(team_a_rows)
 
 
 func clear_dynamic_rows(rows: VBoxContainer) -> void:

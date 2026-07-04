@@ -1,12 +1,15 @@
 extends Node
 class_name LobbyManager
 
-# Server-authoritative lobby system. ONE active lobby for now, but the data model and
-# RPCs are shaped to grow into many. Clients connect to the server only to BROWSE; they
-# spawn into the world only when they JOIN a lobby. The server owns all lobby state.
+# Server-authoritative lobby system. Up to MAX_LOBBIES lobbies run CONCURRENTLY, each with
+# its own RoundManager session (state machine, scores, mode, rules); every game relay
+# (player state, tracers, damage, scoreboard) is scoped to the lobby's members by
+# NetworkManager. Clients connect to the server only to BROWSE; they spawn into the world
+# only when they JOIN a lobby. A lobby closes when its last member leaves.
 #
-# Flow:
-#   client connects -> (no spawn) -> browse list / create lobby / join lobby -> spawn.
+# All lobbies currently share the server's single loaded map: spawn markers are read from
+# scene-tree groups, which can only hold one map at a time, so a created lobby's map is
+# forced to the server's active map. Per-lobby maps need per-instance marker lookup.
 
 signal lobby_list_received(lobbies: Array)
 signal lobby_result(success: bool, message: String)
@@ -15,7 +18,7 @@ signal lobby_result(success: bool, message: String)
 @export var round_manager_path: NodePath = NodePath("../RoundManager")
 @export var generated_map_path: NodePath = NodePath("../GeneratedMap")
 
-const SINGLE_LOBBY_ID := 1
+const MAX_LOBBIES := 5
 
 var network_manager: Node
 var round_manager: Node
@@ -23,15 +26,13 @@ var generated_map: Node
 
 var lobbies: Dictionary = {}            # lobby_id -> lobby dict
 var lobby_id_by_peer: Dictionary = {}   # peer_id -> lobby_id (only joined/spawned peers)
+var next_lobby_id: int = 1
 
 
 func _ready() -> void:
 	network_manager = get_node_or_null(network_manager_path)
 	round_manager = get_node_or_null(round_manager_path)
 	generated_map = get_node_or_null(generated_map_path)
-
-	if is_server():
-		call_deferred("_ensure_default_lobby")
 
 
 func is_server() -> bool:
@@ -89,27 +90,55 @@ func server_request_join_lobby(lobby_id: int, password: String) -> void:
 
 # --- Server logic ------------------------------------------------------------------
 
-func _ensure_default_lobby() -> void:
-	if not is_server() or not lobbies.is_empty():
-		return
-
-	# Test Arena / local host don't use the lobby system; only lobby-mode servers do.
-	if network_manager != null and "lobby_mode" in network_manager and not network_manager.lobby_mode:
-		return
-
-	_create_or_reconfigure_lobby(_default_lobby_settings())
-	print("LobbyManager: default lobby ready.")
-
-
 func _server_handle_create_lobby(peer_id: int, settings: Dictionary) -> void:
-	# One lobby for now: only allow (re)configuring when no game is in progress.
-	if _any_lobby_in_progress():
-		_send_result_to(peer_id, false, "A game is already running. Try again after it ends.")
+	if lobby_id_by_peer.has(peer_id):
+		_send_result_to(peer_id, false, "Already in a lobby.")
 		return
 
-	var lobby := _create_or_reconfigure_lobby(settings)
-	print("LobbyManager: lobby created/reconfigured by ", peer_id, ": ", lobby["name"])
+	if lobbies.size() >= MAX_LOBBIES:
+		_send_result_to(
+			peer_id,
+			false,
+			"Max lobbies reached (" + str(MAX_LOBBIES) + "/" + str(MAX_LOBBIES) + "). Join an existing lobby or try again later."
+		)
+		return
+
+	var lobby := _create_lobby(settings)
+	print("LobbyManager: lobby ", lobby["id"], " created by ", peer_id, ": ", lobby["name"])
 	_join_peer_to_lobby(peer_id, int(lobby["id"]))
+
+
+func _create_lobby(settings: Dictionary) -> Dictionary:
+	var lobby_id := next_lobby_id
+	next_lobby_id += 1
+
+	var lobby := {
+		"id": lobby_id,
+		"name": String(settings.get("name", "Lobby " + str(lobby_id))),
+		"password": String(settings.get("password", "")),
+		"max_players": clampi(int(settings.get("max_players", GameLaunch.max_players)), 2, 64),
+		"min_players": clampi(int(settings.get("min_players", GameLaunch.min_players_to_start)), 1, 64),
+		"starting_cash": maxi(int(settings.get("starting_cash", GameLaunch.starting_cash)), 0),
+		"points_to_win": maxi(int(settings.get("points_to_win", GameLaunch.points_to_win)), 1),
+		"round_time": maxf(float(settings.get("round_time", GameLaunch.round_time_limit)), 0.0),
+		"game_mode": GameLaunch.normalize_game_mode(String(settings.get("game_mode", GameLaunch.game_mode_id))),
+		"respawn_time": maxf(float(settings.get("respawn_time", GameLaunch.ffa_respawn_time)), 0.5),
+		"booster_fuel": maxf(float(settings.get("booster_fuel", GameLaunch.ffa_booster_fuel)), 0.0),
+		"ffa_weapons": (settings.get("ffa_weapons", GameLaunch.ffa_weapons) as Array).duplicate(),
+		"kill_limit": maxi(int(settings.get("kill_limit", GameLaunch.ffa_kill_limit)), 0),
+		"heal_on_kill": bool(settings.get("heal_on_kill", GameLaunch.heal_on_kill)),
+		"ammo_on_kill": bool(settings.get("ammo_on_kill", GameLaunch.ammo_on_kill)),
+		# Forced to the server's active map — see the header note.
+		"map": {"id": GameLaunch.map_id},
+		"members": [],
+	}
+
+	lobbies[lobby_id] = lobby
+
+	if round_manager != null and round_manager.has_method("server_create_session"):
+		round_manager.call("server_create_session", lobby_id, lobby)
+
+	return lobby
 
 
 func _server_handle_join_lobby(peer_id: int, lobby_id: int, password: String) -> void:
@@ -144,13 +173,19 @@ func _join_peer_to_lobby(peer_id: int, lobby_id: int) -> void:
 
 	lobby_id_by_peer[peer_id] = lobby_id
 
-	# Make the joining client's map match the lobby (the server already built its own).
+	# Make the joining client's map match the lobby (skips the rebuild when it's already
+	# the same map, which it currently always is).
 	if peer_id != 1:
 		rpc_id(peer_id, "client_apply_map_config", lobby["map"])
 
-	# Spawn them via NetworkManager (assigns the next alternating team slot).
+	# Spawn them via NetworkManager (assigns the lobby's next alternating team slot and
+	# replicates only to this lobby's members).
 	if network_manager != null and network_manager.has_method("server_spawn_in_lobby"):
-		network_manager.call("server_spawn_in_lobby", peer_id, members.duplicate())
+		network_manager.call("server_spawn_in_lobby", peer_id, members.duplicate(), lobby)
+
+	# Catch the newcomer up on the lobby's mode, score, and round state.
+	if peer_id != 1 and round_manager != null and round_manager.has_method("server_sync_session_to_peer"):
+		round_manager.call("server_sync_session_to_peer", lobby_id, peer_id)
 
 	_send_result_to(peer_id, true, "Joined " + String(lobby["name"]) + ".")
 
@@ -165,51 +200,45 @@ func server_on_peer_left(peer_id: int) -> void:
 	var lobby_id := int(lobby_id_by_peer[peer_id])
 	lobby_id_by_peer.erase(peer_id)
 
-	if lobbies.has(lobby_id):
-		var members: Array = lobbies[lobby_id]["members"]
-		members.erase(peer_id)
+	if not lobbies.has(lobby_id):
+		return
+
+	var members: Array = lobbies[lobby_id]["members"]
+	members.erase(peer_id)
+
+	if members.is_empty():
+		_close_lobby(lobby_id)
 
 
-func _create_or_reconfigure_lobby(settings: Dictionary) -> Dictionary:
-	var lobby := {
-		"id": SINGLE_LOBBY_ID,
-		"name": String(settings.get("name", "Server Lobby")),
-		"password": String(settings.get("password", "")),
-		"max_players": clampi(int(settings.get("max_players", GameLaunch.max_players)), 2, 64),
-		"min_players": clampi(int(settings.get("min_players", GameLaunch.min_players_to_start)), 1, 64),
-		"starting_cash": maxi(int(settings.get("starting_cash", GameLaunch.starting_cash)), 0),
-		"points_to_win": maxi(int(settings.get("points_to_win", GameLaunch.points_to_win)), 1),
-		"round_time": maxf(float(settings.get("round_time", GameLaunch.round_time_limit)), 0.0),
-		"map": _extract_map_settings(settings),
-		"members": [],
-	}
+func _close_lobby(lobby_id: int) -> void:
+	lobbies.erase(lobby_id)
 
-	lobbies[SINGLE_LOBBY_ID] = lobby
-	_apply_lobby_rules_and_map(lobby)
-	return lobby
+	if round_manager != null and round_manager.has_method("server_close_session"):
+		round_manager.call("server_close_session", lobby_id)
+
+	print("LobbyManager: lobby ", lobby_id, " closed (empty).")
 
 
-func _extract_map_settings(settings: Dictionary) -> Dictionary:
-	return {
-		"id": String(settings.get("map_id", GameLaunch.map_id)),
-	}
+# --- Lookups used by NetworkManager / RoundManager ----------------------------------
+
+func get_lobby(lobby_id: int) -> Dictionary:
+	return lobbies.get(lobby_id, {})
 
 
-func _apply_lobby_rules_and_map(lobby: Dictionary) -> void:
-	if round_manager != null:
-		if round_manager.has_method("server_set_min_players_to_start"):
-			round_manager.call("server_set_min_players_to_start", int(lobby["min_players"]))
-		if round_manager.has_method("server_set_points_to_win"):
-			round_manager.call("server_set_points_to_win", int(lobby["points_to_win"]))
-		if round_manager.has_method("server_set_round_time_limit"):
-			round_manager.call("server_set_round_time_limit", float(lobby["round_time"]))
+func get_lobby_members(lobby_id: int) -> Array:
+	var lobby: Dictionary = lobbies.get(lobby_id, {})
+	return (lobby.get("members", []) as Array).duplicate()
 
-	if network_manager != null and network_manager.has_method("server_set_starting_cash"):
-		network_manager.call("server_set_starting_cash", int(lobby["starting_cash"]))
 
-	_apply_map_config_to_launch(lobby["map"])
-	_rebuild_local_map()
+func get_lobby_id_for_peer(peer_id: int) -> int:
+	return int(lobby_id_by_peer.get(peer_id, -1))
 
+
+func get_lobby_for_peer(peer_id: int) -> Dictionary:
+	return get_lobby(get_lobby_id_for_peer(peer_id))
+
+
+# --- Map sync ------------------------------------------------------------------------
 
 func _apply_map_config_to_launch(map_cfg: Dictionary) -> void:
 	GameLaunch.map_configured = true
@@ -226,6 +255,11 @@ func _rebuild_local_map() -> void:
 
 @rpc("authority", "reliable")
 func client_apply_map_config(map_cfg: Dictionary) -> void:
+	var new_id := String(map_cfg.get("id", ""))
+
+	if GameLaunch.map_configured and new_id == GameLaunch.map_id:
+		return   # already on this map; skip the rebuild
+
 	_apply_map_config_to_launch(map_cfg)
 	_rebuild_local_map()
 
@@ -255,7 +289,8 @@ func _build_lobby_list() -> Array:
 			"players": members.size(),
 			"max_players": int(lobby["max_players"]),
 			"map": _map_label(lobby["map"]),
-			"state": _lobby_state_label(),
+			"mode": _mode_label(String(lobby.get("game_mode", "team"))),
+			"state": _lobby_state_label(int(lobby["id"])),
 		})
 
 	return list
@@ -269,8 +304,10 @@ func client_receive_lobby_list(list: Array) -> void:
 func _send_result_to(peer_id: int, success: bool, message: String) -> void:
 	if peer_id == 1:
 		lobby_result.emit(success, message)
-	else:
+	elif Array(multiplayer.get_peers()).has(peer_id):
 		rpc_id(peer_id, "client_lobby_result", success, message)
+	else:
+		print("LobbyManager: result for gone peer ", peer_id, ": ", message)
 
 
 @rpc("authority", "reliable")
@@ -284,37 +321,12 @@ func _map_label(map_cfg: Dictionary) -> String:
 	return MapGenerator.get_map_name(String(map_cfg.get("id", "")))
 
 
-func _lobby_state_label() -> String:
-	if round_manager == null or not ("state" in round_manager):
-		return "waiting"
+func _mode_label(mode_id: String) -> String:
+	return "FFA" if mode_id == "ffa" else "Team"
 
-	match int(round_manager.get("state")):
-		1:
-			return "countdown"
-		2:
-			return "in round"
-		3:
-			return "ended"
+
+func _lobby_state_label(lobby_id: int) -> String:
+	if round_manager != null and round_manager.has_method("get_session_state_label"):
+		return String(round_manager.call("get_session_state_label", lobby_id))
 
 	return "waiting"
-
-
-func _any_lobby_in_progress() -> bool:
-	if round_manager == null or not ("state" in round_manager):
-		return false
-
-	var state := int(round_manager.get("state"))
-	return state == 1 or state == 2   # countdown or active
-
-
-func _default_lobby_settings() -> Dictionary:
-	return {
-		"name": "Server Lobby",
-		"password": "",
-		"max_players": GameLaunch.max_players,
-		"min_players": GameLaunch.min_players_to_start,
-		"starting_cash": GameLaunch.starting_cash,
-		"points_to_win": GameLaunch.points_to_win,
-		"round_time": GameLaunch.round_time_limit,
-		"map_id": GameLaunch.map_id,
-	}

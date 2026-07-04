@@ -12,6 +12,7 @@
 [ext_resource type="Script" uid="uid://dtglsq7hq2vtw" path="res://scripts/lobby_browser.gd" id="10_browser"]
 [ext_resource type="Script" uid="uid://dg56k8ek316nr" path="res://scripts/round_hud.gd" id="11_roundhud"]
 [ext_resource type="Script" uid="uid://cwcakba58fk0q" path="res://scripts/scoreboard.gd" id="12_scoreboard"]
+[ext_resource type="Script" path="res://scripts/game_over_hud.gd" id="13_gameover"]
 
 [node name="World Node3D" type="Node3D" unique_id=878825741]
 script = ExtResource("1_sugp2")
@@ -44,6 +45,9 @@ script = ExtResource("11_roundhud")
 
 [node name="Scoreboard" type="CanvasLayer" parent="." unique_id=845839312]
 script = ExtResource("12_scoreboard")
+
+[node name="GameOverHUD" type="CanvasLayer" parent="." unique_id=845839313]
+script = ExtResource("13_gameover")
 
 [node name="ServerAdmin" type="Node" parent="." unique_id=217199436]
 script = ExtResource("7_admin")

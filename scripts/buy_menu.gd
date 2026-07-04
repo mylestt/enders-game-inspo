@@ -226,11 +226,19 @@ func toggle_menu() -> void:
 		open_menu()
 
 
+# FFA has no economy: players spawn with a random gun, so the buy menu is disabled.
+func is_buy_menu_enabled() -> bool:
+	return GameLaunch.game_mode_id != "ffa"
+
+
 func open_menu() -> void:
+	if not is_buy_menu_enabled():
+		return
+
 	if local_player == null:
 		push_warning("BuyMenu has no local player assigned yet.")
 		return
-	
+
 	menu_open = true
 	
 	if menu_root != null:

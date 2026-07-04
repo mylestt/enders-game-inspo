@@ -9,6 +9,7 @@ var multiplayer_view: VBoxContainer
 var username_view: VBoxContainer
 var username_field: LineEdit
 var username_status_label: Label
+var server_ip_field: LineEdit
 var joke_popup: PanelContainer
 var status_label: Label
 var multiplayer_status_label: Label
@@ -138,13 +139,22 @@ func build_multiplayer_view() -> VBoxContainer:
 	column.add_child(make_title("MULTIPLAYER"))
 	column.add_child(make_spacer(10.0))
 
+	# Which server Join/Host talk to. Blank = the official server; 127.0.0.1 = a local
+	# dedicated server (host_server.bat) for development.
+	server_ip_field = LineEdit.new()
+	server_ip_field.text = GameLaunch.server_ip
+	server_ip_field.placeholder_text = "Server IP — blank = official (" + GameLaunch.DEFAULT_SERVER_IP + ")"
+	server_ip_field.custom_minimum_size = Vector2(0.0, 40.0)
+	server_ip_field.add_theme_font_size_override("font_size", 15)
+	column.add_child(server_ip_field)
+
 	add_menu_button(column, "Join", _on_join_pressed)
 	add_menu_button(column, "Host", _on_host_pressed)
 	add_menu_button(column, "Back", _on_back_pressed)
 
 	column.add_child(make_spacer(10.0))
 
-	multiplayer_status_label = make_status_label("Join browses lobbies on the VPS. Host creates one.")
+	multiplayer_status_label = make_status_label("Join lists the server's lobbies. Host creates one. Leave the IP blank for the official server.")
 	column.add_child(multiplayer_status_label)
 
 	return column
@@ -312,7 +322,10 @@ func _on_host_pressed() -> void:
 
 
 func _direct_server_ip() -> String:
-	# Always the default VPS now (NetworkManager fills in DEFAULT_SERVER_IP).
+	# Blank falls through to DEFAULT_SERVER_IP in NetworkManager._resolve_server_ip.
+	if server_ip_field != null:
+		return server_ip_field.text.strip_edges()
+
 	return ""
 
 

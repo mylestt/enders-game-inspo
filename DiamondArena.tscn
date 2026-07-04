@@ -20,7 +20,7 @@ data = PackedVector3Array(0.18249999, -0.9359, 0, -0.1476, -0.9359, 0.1072, 0.05
 
 [node name="Diamond" unique_id=1718768935 instance=ExtResource("1_ug2fc")]
 
-[node name="Arena" parent="." index="0" unique_id=343428539]
+[node name="Arena" parent="." index="0" unique_id=1760314481]
 transform = Transform3D(-2, 3.019916e-07, 0, -3.019916e-07, -2, 0, 0, 0, 2, 0, 0, 0)
 surface_material_override/0 = SubResource("StandardMaterial3D_tkpfl")
 
@@ -29,7 +29,7 @@ surface_material_override/0 = SubResource("StandardMaterial3D_tkpfl")
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Arena/StaticBody3D" index="0" unique_id=710252333]
 shape = SubResource("ConcavePolygonShape3D_mvqfr")
 
-[node name="Icosphere" parent="." index="1" unique_id=654737993]
+[node name="Icosphere" parent="." index="1" unique_id=465685197]
 transform = Transform3D(14.082, 0, 0, 0, 14.082, 0, 0, 0, 14.082, 0, 0, 0)
 surface_material_override/0 = SubResource("StandardMaterial3D_smytg")
 

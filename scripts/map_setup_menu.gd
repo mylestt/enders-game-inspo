@@ -18,10 +18,30 @@ var lobby_password_field: LineEdit
 var max_players_spin: SpinBox
 
 var map_option: OptionButton
+var game_mode_option: OptionButton
 var min_players_spin: SpinBox
 var starting_cash_spin: SpinBox
 var points_to_win_spin: SpinBox
 var round_time_spin: SpinBox
+var heal_on_kill_check: CheckBox
+var ammo_on_kill_check: CheckBox
+
+# Mode-specific control groups: exactly one is visible at a time, driven by the mode
+# dropdown (_on_game_mode_selected), so each mode only shows its own settings.
+var team_section: VBoxContainer
+var ffa_section: VBoxContainer
+var respawn_time_spin: SpinBox
+var booster_fuel_spin: SpinBox
+var kill_limit_spin: SpinBox
+var weapon_checks: Dictionary = {}
+
+# Friendly display names for the FFA weapon-pool checkboxes, keyed by WeaponInventory id.
+const WEAPON_DISPLAY_NAMES := {
+	"minigun": "Minigun",
+	"railgun": "Railgun",
+	"rifle": "Battle Rifle",
+	"plasma_cannon": "Plasma Cannon",
+}
 
 
 func _ready() -> void:
@@ -89,6 +109,25 @@ func _build_ui() -> void:
 	map_row.add_child(map_option)
 	column.add_child(map_row)
 
+	# Game mode picker. Team = the original elimination mode; FFA reveals the extra
+	# free-for-all settings below.
+	var mode_row := HBoxContainer.new()
+	mode_row.add_theme_constant_override("separation", 12)
+	var mode_label := Label.new()
+	mode_label.text = "Game Mode"
+	mode_label.custom_minimum_size = Vector2(160.0, 0.0)
+	mode_row.add_child(mode_label)
+	game_mode_option = OptionButton.new()
+	game_mode_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	game_mode_option.add_item("Team Elimination", 0)
+	game_mode_option.set_item_metadata(0, "team")
+	game_mode_option.add_item("Free-For-All", 1)
+	game_mode_option.set_item_metadata(1, "ffa")
+	game_mode_option.selected = 1 if GameLaunch.game_mode_id == "ffa" else 0
+	game_mode_option.item_selected.connect(_on_game_mode_selected)
+	mode_row.add_child(game_mode_option)
+	column.add_child(mode_row)
+
 	var rules_header := Label.new()
 	rules_header.text = "RULES"
 	rules_header.add_theme_font_size_override("font_size", 18)
@@ -100,10 +139,15 @@ func _build_ui() -> void:
 	if not GameLaunch.rules_configured:
 		min_players_value = default_min_players
 
+	# Shared rules — apply in every mode.
 	min_players_spin = _add_spin(column, "Min Players", 1, 10, 1, min_players_value)
-	starting_cash_spin = _add_spin(column, "Starting Cash", 0, 1000000, 1000, GameLaunch.starting_cash)
-	points_to_win_spin = _add_spin(column, "Points To Win", 1, 99, 1, GameLaunch.points_to_win)
-	round_time_spin = _add_spin(column, "Round Time", 0, 3600, 30, int(GameLaunch.round_time_limit))
+	round_time_spin = _add_spin(column, "Round Time / Time Limit", 0, 3600, 30, int(GameLaunch.round_time_limit))
+	heal_on_kill_check = _add_check(column, "Full Heal On Kill", GameLaunch.heal_on_kill)
+	ammo_on_kill_check = _add_check(column, "Ammo Refill On Kill", GameLaunch.ammo_on_kill)
+
+	_build_team_section(column)
+	_build_ffa_section(column)
+	_on_game_mode_selected(game_mode_option.selected)
 
 	if show_lobby_fields:
 		var lobby_header := Label.new()
@@ -143,6 +187,79 @@ func _build_ui() -> void:
 	bottom.add_child(back_button)
 
 
+# Team-elimination-only block: economy and round-win settings (FFA has no buy menu and no
+# team points, so these hide in FFA).
+func _build_team_section(parent: Node) -> void:
+	team_section = VBoxContainer.new()
+	team_section.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	team_section.add_theme_constant_override("separation", 14)
+	parent.add_child(team_section)
+
+	var header := Label.new()
+	header.text = "TEAM ELIMINATION"
+	header.add_theme_font_size_override("font_size", 18)
+	header.add_theme_color_override("font_color", Color(0.55, 0.75, 1.0, 0.95))
+	team_section.add_child(header)
+
+	starting_cash_spin = _add_spin(team_section, "Starting Cash", 0, 1000000, 1000, GameLaunch.starting_cash)
+	points_to_win_spin = _add_spin(team_section, "Points To Win", 1, 99, 1, GameLaunch.points_to_win)
+
+
+# Free-for-all-only block: respawn time, booster fuel, kill limit, and the weapon pool.
+func _build_ffa_section(parent: Node) -> void:
+	ffa_section = VBoxContainer.new()
+	ffa_section.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ffa_section.add_theme_constant_override("separation", 14)
+	parent.add_child(ffa_section)
+
+	var header := Label.new()
+	header.text = "FREE-FOR-ALL"
+	header.add_theme_font_size_override("font_size", 18)
+	header.add_theme_color_override("font_color", Color(1.0, 0.78, 0.5, 0.95))
+	ffa_section.add_child(header)
+
+	respawn_time_spin = _add_spin(ffa_section, "Respawn Time (s)", 1, 30, 1, int(GameLaunch.ffa_respawn_time))
+	booster_fuel_spin = _add_spin(ffa_section, "Booster Fuel", 0, 1000, 10, int(GameLaunch.ffa_booster_fuel))
+	kill_limit_spin = _add_spin(ffa_section, "Kill Limit (0 = none)", 0, 100, 1, GameLaunch.ffa_kill_limit)
+
+	var weapons_label := Label.new()
+	weapons_label.text = "Available Weapons (random spawn)"
+	weapons_label.add_theme_font_size_override("font_size", 14)
+	weapons_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.7))
+	ffa_section.add_child(weapons_label)
+
+	# Empty ffa_weapons means "all weapons", so every box starts checked in that case.
+	var allow_all := GameLaunch.ffa_weapons.is_empty()
+
+	for weapon_id in WeaponInventory.SLOT_IDS:
+		var id := String(weapon_id)
+		var check := CheckBox.new()
+		check.text = String(WEAPON_DISPLAY_NAMES.get(id, id))
+		check.button_pressed = allow_all or GameLaunch.ffa_weapons.has(id)
+		ffa_section.add_child(check)
+		weapon_checks[id] = check
+
+
+# Shows exactly the selected mode's section (team settings in team mode, FFA settings in
+# FFA) — never both.
+func _on_game_mode_selected(_index: int) -> void:
+	var ffa := _selected_game_mode() == "ffa"
+
+	if team_section != null:
+		team_section.visible = not ffa
+
+	if ffa_section != null:
+		ffa_section.visible = ffa
+
+
+func _selected_game_mode() -> String:
+	if game_mode_option == null:
+		return GameLaunch.game_mode_id
+
+	var meta = game_mode_option.get_item_metadata(game_mode_option.selected)
+	return String(meta) if meta != null else "team"
+
+
 func _add_spin(parent: Node, label_text: String, min_value: int, max_value: int, step: int, value: int) -> SpinBox:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 12)
@@ -162,6 +279,23 @@ func _add_spin(parent: Node, label_text: String, min_value: int, max_value: int,
 
 	parent.add_child(row)
 	return spin
+
+
+func _add_check(parent: Node, label_text: String, value: bool) -> CheckBox:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+
+	var label := Label.new()
+	label.text = label_text
+	label.custom_minimum_size = Vector2(160.0, 0.0)
+	row.add_child(label)
+
+	var check := CheckBox.new()
+	check.button_pressed = value
+	row.add_child(check)
+
+	parent.add_child(row)
+	return check
 
 
 func _add_text_row(parent: Node, label_text: String, value: String) -> LineEdit:
@@ -207,6 +341,14 @@ func _on_launch_pressed() -> void:
 	GameLaunch.points_to_win = int(points_to_win_spin.value)
 	GameLaunch.round_time_limit = float(round_time_spin.value)
 
+	GameLaunch.game_mode_id = _selected_game_mode()
+	GameLaunch.heal_on_kill = heal_on_kill_check.button_pressed
+	GameLaunch.ammo_on_kill = ammo_on_kill_check.button_pressed
+	GameLaunch.ffa_respawn_time = float(respawn_time_spin.value)
+	GameLaunch.ffa_booster_fuel = float(booster_fuel_spin.value)
+	GameLaunch.ffa_kill_limit = int(kill_limit_spin.value)
+	GameLaunch.ffa_weapons = _selected_ffa_weapons()
+
 	if show_lobby_fields:
 		GameLaunch.lobby_name = lobby_name_field.text.strip_edges()
 		GameLaunch.max_players = int(max_players_spin.value)
@@ -218,3 +360,21 @@ func _on_launch_pressed() -> void:
 
 func _on_back_pressed() -> void:
 	closed.emit()
+
+
+# The checked weapon ids. If every box (or none) is checked it returns [], meaning "all" —
+# the server treats an empty pool as every weapon, so there's always something to spawn with.
+func _selected_ffa_weapons() -> Array:
+	var chosen: Array = []
+
+	for weapon_id in WeaponInventory.SLOT_IDS:
+		var id := String(weapon_id)
+		var check: CheckBox = weapon_checks.get(id)
+
+		if check != null and check.button_pressed:
+			chosen.append(id)
+
+	if chosen.size() == WeaponInventory.SLOT_IDS.size():
+		return []
+
+	return chosen

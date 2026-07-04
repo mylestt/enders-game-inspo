@@ -300,6 +300,20 @@ func server_grant_weapon_ammo(peer_id: int, weapon_id: String) -> void:
 	ammo_by_peer_id[peer_id] = ammo
 
 
+# FFA loadout grant: records ownership and refills the ammo ledger for a gun the server
+# handed the player for free (no purchase / cash deduction). Mirrors what the client does
+# when it equips the random weapon, so hit-claim validation passes.
+func server_grant_ffa_weapon(peer_id: int, weapon_id: String) -> void:
+	if not is_server() or not owned_by_peer_id.has(peer_id):
+		return
+
+	var owned: Dictionary = owned_by_peer_id[peer_id]
+	owned[weapon_id] = 1
+	owned_by_peer_id[peer_id] = owned
+
+	server_grant_weapon_ammo(peer_id, weapon_id)
+
+
 func _fresh_ammo_entry(stats: Dictionary) -> Dictionary:
 	return {
 		"consumed": 0,
@@ -312,6 +326,20 @@ func _fresh_ammo_entry(stats: Dictionary) -> Dictionary:
 	}
 
 
+# Refills one peer's whole ammo ledger (round start, or the "ammo on kill" rule).
+func server_refill_peer_ammo(peer_id: int) -> void:
+	if not is_server():
+		return
+
+	var ammo: Dictionary = ammo_by_peer_id.get(peer_id, {})
+
+	for weapon_id in ammo.keys():
+		var stats := get_weapon_stats(String(weapon_id))
+
+		if not stats.is_empty():
+			ammo[weapon_id] = _fresh_ammo_entry(stats)
+
+
 # Round start: every client refills all its weapons (WeaponInventory.reset_state), so the
 # server ledger does the same.
 func server_refill_all_ammo() -> void:
@@ -319,13 +347,7 @@ func server_refill_all_ammo() -> void:
 		return
 
 	for peer_id in ammo_by_peer_id.keys():
-		var ammo: Dictionary = ammo_by_peer_id[peer_id]
-
-		for weapon_id in ammo.keys():
-			var stats := get_weapon_stats(String(weapon_id))
-
-			if not stats.is_empty():
-				ammo[weapon_id] = _fresh_ammo_entry(stats)
+		server_refill_peer_ammo(peer_id)
 
 
 # --- Reload mirroring -------------------------------------------------------------------

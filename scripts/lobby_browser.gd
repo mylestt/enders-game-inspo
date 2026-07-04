@@ -9,12 +9,16 @@ class_name LobbyBrowser
 @export var network_manager_path: NodePath = NodePath("../NetworkManager")
 
 var lobby_manager: Node
+var network_manager: Node
 var root: Control
 var list_box: VBoxContainer
 var status_label: Label
 var password_panel: PanelContainer
 var password_field: LineEdit
 var pending_join_id: int = -1
+# While set (unix-ish seconds), routine status updates must not clobber an error message
+# (e.g. "Max lobbies reached" arriving right before the refreshed lobby list).
+var sticky_status_until: float = 0.0
 
 
 func _ready() -> void:
@@ -25,6 +29,7 @@ func _ready() -> void:
 		return
 
 	lobby_manager = get_node_or_null(lobby_manager_path)
+	network_manager = get_node_or_null(network_manager_path)
 	_build_ui()
 	root.visible = false
 
@@ -33,6 +38,45 @@ func _ready() -> void:
 			lobby_manager.connect("lobby_list_received", _on_lobby_list_received)
 		if lobby_manager.has_signal("lobby_result"):
 			lobby_manager.connect("lobby_result", _on_lobby_result)
+
+	if network_manager != null:
+		if network_manager.has_signal("connection_attempt_finished"):
+			network_manager.connect("connection_attempt_finished", _on_connection_attempt_finished)
+
+		# In a browse/host session, show immediately with a live status instead of waiting
+		# for a lobby list that may never arrive (dead/old server = silent grey screen).
+		var flow = network_manager.get("lobby_flow_action")
+
+		if flow != null and String(flow) != "":
+			_show_connecting_state(String(flow))
+
+
+func _flow_action() -> String:
+	if network_manager != null:
+		var flow = network_manager.get("lobby_flow_action")
+
+		if flow != null:
+			return String(flow)
+
+	return ""
+
+
+func _show_connecting_state(action: String) -> void:
+	root.visible = true
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	status_label.text = "Creating your lobby…" if action == "host" else "Connecting to server…"
+
+
+func _on_connection_attempt_finished(success: bool, message: String) -> void:
+	if success:
+		if _flow_action() != "host":
+			status_label.text = "Loading lobbies…"
+
+		return
+
+	root.visible = true
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	status_label.text = message + "  Refresh retries; Leave returns to the menu."
 
 
 func _build_ui() -> void:
@@ -153,11 +197,15 @@ func _on_lobby_list_received(list: Array) -> void:
 	for child in list_box.get_children():
 		child.queue_free()
 
+	var sticky := Time.get_ticks_msec() / 1000.0 < sticky_status_until
+
 	if list.is_empty():
-		status_label.text = "No lobbies yet. Back out and use Host to create one."
+		if not sticky:
+			status_label.text = "No lobbies yet. Back out and use Host to create one."
 		return
 
-	status_label.text = "Select a lobby to join."
+	if not sticky:
+		status_label.text = "Select a lobby to join."
 
 	for lobby in list:
 		_add_lobby_row(lobby)
@@ -170,10 +218,11 @@ func _add_lobby_row(lobby: Dictionary) -> void:
 
 	var lock := "[P] " if bool(lobby.get("has_password", false)) else ""
 	var info := Label.new()
-	info.text = "%s%s    [%s]    %d/%d    %s" % [
+	info.text = "%s%s    [%s · %s]    %d/%d    %s" % [
 		lock,
 		String(lobby.get("name", "Lobby")),
 		String(lobby.get("map", "Map")),
+		String(lobby.get("mode", "Team")),
 		int(lobby.get("players", 0)),
 		int(lobby.get("max_players", 0)),
 		String(lobby.get("state", "waiting")),
@@ -218,11 +267,32 @@ func _on_lobby_result(success: bool, message: String) -> void:
 	if success:
 		root.visible = false
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	else:
-		status_label.text = message
+		return
+
+	# Failure (lobby full, wrong password, max lobbies reached, …): show the message and
+	# pull the list so a would-be host can join an existing lobby instead.
+	root.visible = true
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	status_label.text = message
+	sticky_status_until = Time.get_ticks_msec() / 1000.0 + 5.0
+
+	if lobby_manager != null:
+		lobby_manager.call("client_request_lobby_list")
 
 
 func _on_refresh_pressed() -> void:
+	# Disconnected (failed/timed-out attempt): Refresh doubles as Retry.
+	if (
+		network_manager != null
+		and network_manager.has_method("has_active_multiplayer_peer")
+		and not bool(network_manager.call("has_active_multiplayer_peer"))
+	):
+		if network_manager.has_method("retry_connection"):
+			_show_connecting_state(_flow_action())
+			network_manager.call("retry_connection")
+
+		return
+
 	status_label.text = "Refreshing…"
 
 	if lobby_manager != null:
@@ -230,8 +300,6 @@ func _on_refresh_pressed() -> void:
 
 
 func _on_leave_pressed() -> void:
-	var network_manager := get_node_or_null(network_manager_path)
-
 	if network_manager != null and network_manager.has_method("clear_runtime_multiplayer_state"):
 		network_manager.call("clear_runtime_multiplayer_state")
 

@@ -64,6 +64,12 @@ enum MovementMode {
 @export var surface_walk_entry_shake_strength: float = 0.07
 @export var surface_walk_entry_shake_frequency: float = 52.0
 
+# Spawn ground-lock: how far to search around a spawn point for a surface to stand on. It
+# always snaps to the NEAREST surface found (instant, no slide), so a generous radius only
+# widens coverage — a capsule resting ~1 m off a floor still lands on that floor. If nothing
+# is within range the player just spawns free-floating (zero-G) instead.
+@export var surface_walk_spawn_probe_distance: float = 8.0
+
 @export var surface_walk_edge_check_extra_distance: float = 0.35
 @export var surface_walk_edge_grace_time: float = 0.06
 @export var surface_walk_surface_normal_min_dot: float = 0.65
@@ -138,6 +144,13 @@ var last_surface_result: Dictionary = {}
 var last_ctrl_push_result: Dictionary = {}
 var last_limb_push_state: Dictionary = {}
 var last_surface_walk_entry_result: Dictionary = {}
+
+# Set when the player (re)spawns: the next physics tick drops them into ground mode on the
+# nearest surface. Deferred to a physics frame so the surface raycasts run safely; retried for
+# a few frames in case the map/collision isn't queryable yet on the very first tick.
+var pending_spawn_ground_mode: bool = false
+var pending_spawn_ground_frames: int = 0
+const SPAWN_GROUND_MODE_MAX_FRAMES := 20
 
 
 func setup(owner_player: RigidBody3D, owner_hud_controller: PlayerHUDController) -> void:
@@ -255,7 +268,16 @@ func physics_update(
 ) -> void:
 	if player == null:
 		return
-	
+
+	# A fresh spawn requested ground mode; resolve it now that we're in a physics frame (the
+	# surface raycasts need it). Runs even while input_locked so the daze/immobilize on spawn
+	# doesn't leave the player floating. Retries a few frames, then gives up (stays zero-G).
+	if pending_spawn_ground_mode:
+		if enter_spawn_surface_walk() or pending_spawn_ground_frames <= 0:
+			pending_spawn_ground_mode = false
+		else:
+			pending_spawn_ground_frames -= 1
+
 	update_surface_cache()
 	update_ctrl_push_cache()
 	update_limb_push_cache()
@@ -401,6 +423,74 @@ func try_enter_surface_walk_mode() -> void:
 	enter_surface_walk_mode(hit_position, surface_normal.normalized())
 
 
+# Called on (re)spawn: find the nearest surface around the spawn point and drop straight into
+# ground mode on it (no transition, no daze). Returns true if a surface was found; if not, the
+# player is left free-floating in zero-G. Facing comes from the spawn transform's forward.
+func request_spawn_ground_mode() -> void:
+	pending_spawn_ground_mode = true
+	pending_spawn_ground_frames = SPAWN_GROUND_MODE_MAX_FRAMES
+
+
+func enter_spawn_surface_walk() -> bool:
+	var surface := find_spawn_surface(surface_walk_spawn_probe_distance)
+
+	if surface.is_empty():
+		return false
+
+	# Fresh spawn: no leftover mistimed-lock daze.
+	surface_walk_daze_timer = 0.0
+	surface_walk_daze_duration = 0.0
+	surface_walk_daze_strength = 0.0
+
+	enter_surface_walk_mode(surface["position"], (surface["normal"] as Vector3).normalized(), true)
+	return true
+
+
+# The nearest lockable surface around the player, probing the body's own axes (feet first, so
+# an upright spawn capsule resting on a floor wins). Returns {position, normal} or {}.
+func find_spawn_surface(max_distance: float) -> Dictionary:
+	if player == null:
+		return {}
+
+	var basis := player.global_transform.basis
+	# Feet first (-Y), then the remaining five body axes.
+	var directions := [-basis.y, basis.y, basis.x, -basis.x, -basis.z, basis.z]
+
+	var best: Dictionary = {}
+	var best_distance := INF
+	var origin := player.global_position
+
+	for i in range(directions.size()):
+		var direction: Vector3 = directions[i]
+
+		if direction.length() < 0.01:
+			continue
+
+		direction = direction.normalized()
+		var result := raycast_from_player(origin, origin + direction * max_distance)
+
+		if result.is_empty():
+			continue
+
+		var normal: Vector3 = result.get("normal", Vector3.ZERO)
+
+		if normal.length() < 0.01:
+			continue
+
+		var hit_position: Vector3 = result.get("position", origin)
+		var distance := origin.distance_to(hit_position)
+
+		# Tiny bias toward the feet direction so a clean upright placement wins near-ties.
+		if i == 0:
+			distance -= 0.01
+
+		if distance < best_distance:
+			best_distance = distance
+			best = {"position": hit_position, "normal": normal.normalized()}
+
+	return best
+
+
 # Probes straight off the player's feet (body -Y) for a lockable surface within the max lock
 # distance. Returns {position, normal, distance(metres)} or {} if nothing is in range. You must
 # first angle your body so your feet face the surface, then time the press as you approach.
@@ -501,9 +591,9 @@ func can_ground_lock() -> bool:
 	return movement_mode == MovementMode.ZERO_G and not last_surface_walk_entry_result.is_empty()
 
 
-func enter_surface_walk_mode(hit_position: Vector3, surface_normal: Vector3) -> void:
+func enter_surface_walk_mode(hit_position: Vector3, surface_normal: Vector3, instant: bool = false) -> void:
 	release_grab()
-	
+
 	movement_mode = MovementMode.SURFACE_WALK
 
 	# Surface-walk drives the body's velocity directly each frame; contact friction
@@ -537,13 +627,22 @@ func enter_surface_walk_mode(hit_position: Vector3, surface_normal: Vector3) -> 
 	player.linear_velocity = Vector3.ZERO
 	player.angular_velocity = Vector3.ZERO
 	player.sleeping = false
-	
+
 	if camera != null:
 		camera.rotation = Vector3.ZERO
-	
+
+	if instant:
+		# Spawn path: snap straight onto the surface with no slide-in animation or entry shake.
+		surface_walk_transition_active = false
+		surface_walk_no_surface_timer = 0.0
+		player.global_transform = target_transform
+		player.reset_physics_interpolation()
+		print("Spawned in surface-walk mode.")
+		return
+
 	start_surface_walk_transition(target_transform)
 	start_surface_walk_entry_shake()
-	
+
 	print("Entered surface-walk mode.")
 
 

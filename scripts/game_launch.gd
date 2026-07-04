@@ -48,6 +48,24 @@ static var admin_key: String = ""
 static var map_configured: bool = false
 static var map_id: String = "diamond"
 
+# Game mode. "team" = team elimination (the original mode), "ffa" = free-for-all
+# deathmatch (random edge spawns, per-player K/D, timed match, auto-respawn, random gun).
+# RoundManager owns the authoritative copy and syncs it to clients; UI reads this field.
+const GAME_MODES := ["team", "ffa"]
+static var game_mode_id: String = "team"
+# FFA tuning, also settable in the host menu. round_time_limit doubles as the FFA time
+# limit (0 → RoundManager falls back to a default). ffa_weapons lists the weapon ids a
+# player may randomly spawn with; empty = every weapon. ffa_kill_limit ends the FFA match
+# early when a player reaches that many kills (0 = time limit only).
+static var ffa_respawn_time: float = 5.0
+static var ffa_booster_fuel: float = 100.0
+static var ffa_weapons: Array = []
+static var ffa_kill_limit: int = 0
+# Kill-reward rules (both modes): the killer is fully healed / has their ammo refilled on
+# every confirmed kill.
+static var heal_on_kill: bool = false
+static var ammo_on_kill: bool = false
+
 
 static func apply_cmdline_overrides() -> void:
 	var username_value := read_cmdline_value("--username", "")
@@ -62,13 +80,31 @@ static func apply_cmdline_overrides() -> void:
 	starting_cash = read_cmdline_int("--starting-cash", starting_cash)
 	points_to_win = read_cmdline_int("--points-to-win", points_to_win)
 	round_time_limit = read_cmdline_float("--round-time", round_time_limit)
+	ffa_respawn_time = read_cmdline_float("--respawn-time", ffa_respawn_time)
+	ffa_booster_fuel = read_cmdline_float("--booster-fuel", ffa_booster_fuel)
+	ffa_kill_limit = read_cmdline_int("--kill-limit", ffa_kill_limit)
+	heal_on_kill = read_cmdline_bool("--heal-on-kill", heal_on_kill)
+	ammo_on_kill = read_cmdline_bool("--ammo-on-kill", ammo_on_kill)
 	admin_key = read_cmdline_value("--admin-key", admin_key)
+
+	var mode_value := read_cmdline_value("--mode", "")
+
+	if mode_value != "":
+		game_mode_id = normalize_game_mode(mode_value)
+
+	var weapons_value := read_cmdline_value("--ffa-weapons", "")
+
+	if weapons_value != "":
+		ffa_weapons = parse_weapon_list(weapons_value)
 
 	if (
 		read_cmdline_value("--min-players", "") != ""
 		or read_cmdline_value("--starting-cash", "") != ""
 		or read_cmdline_value("--points-to-win", "") != ""
 		or read_cmdline_value("--round-time", "") != ""
+		or read_cmdline_value("--respawn-time", "") != ""
+		or read_cmdline_value("--booster-fuel", "") != ""
+		or mode_value != ""
 	):
 		rules_configured = true
 
@@ -81,6 +117,29 @@ static func apply_cmdline_overrides() -> void:
 static func apply_map_name(value: String) -> void:
 	map_configured = true
 	map_id = MapGenerator.normalize_map_id(value)
+
+
+static func normalize_game_mode(value: String) -> String:
+	match value.strip_edges().to_lower():
+		"team", "teams", "elimination", "team_elimination":
+			return "team"
+		"ffa", "free_for_all", "freeforall", "free-for-all", "deathmatch", "dm":
+			return "ffa"
+
+	return "team"
+
+
+# Parses a comma-separated weapon-id list ("minigun,rifle") into normalized lowercase ids.
+static func parse_weapon_list(value: String) -> Array:
+	var out: Array = []
+
+	for part in value.split(",", false):
+		var id := String(part).strip_edges().to_lower()
+
+		if id != "" and not out.has(id):
+			out.append(id)
+
+	return out
 
 
 static func set_player_username(value: String) -> void:

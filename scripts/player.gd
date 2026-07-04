@@ -151,8 +151,15 @@ func set_multiplayer_player(new_peer_id: int, new_is_local_player: bool, new_net
 	print("Player ", peer_id, " multiplayer setup. Local: ", is_local_player)
 
 
-# Replicates this player's weapon shot so other clients can draw the tracer.
-func report_weapon_shot(origin: Vector3, end: Vector3, did_hit: bool, normal: Vector3) -> void:
+# Replicates this player's weapon shot so other clients can draw the SAME weapon's tracer
+# (weapon_id picks which per-gun tracer scene the relay spawns — see NetworkManager).
+func report_weapon_shot(
+	origin: Vector3,
+	end: Vector3,
+	did_hit: bool,
+	normal: Vector3,
+	weapon_id: String
+) -> void:
 	if not is_local_player:
 		return
 
@@ -160,7 +167,7 @@ func report_weapon_shot(origin: Vector3, end: Vector3, did_hit: bool, normal: Ve
 		return
 
 	if network_manager != null and network_manager.has_method("broadcast_weapon_shot"):
-		network_manager.call("broadcast_weapon_shot", peer_id, origin, end, did_hit, normal)
+		network_manager.call("broadcast_weapon_shot", peer_id, origin, end, did_hit, normal, weapon_id)
 
 
 # Replicates a fired projectile so other clients spawn a cosmetic copy of the bolt.
@@ -468,11 +475,12 @@ func apply_network_body_slam_impulse(impulse: Vector3, contact_position: Vector3
 
 # Called by RoundManager (via RPC) at the start of each round: snap back to spawn,
 # kill momentum, and reset health. Safe to call before a PlayerHealth node exists.
-func reset_for_round(spawn_transform: Transform3D) -> void:
+# `ground_mode` drops the local player into surface-walk on the nearest surface at the spawn.
+func reset_for_round(spawn_transform: Transform3D, ground_mode: bool = true) -> void:
 	is_dead = false
 
 	set_death_glow_active(false)
-	set_team_indicator_visible(true)
+	set_health_bar_visible(true)
 
 	if hud_controller != null and hud_controller.has_method("set_dead_screen_active"):
 		hud_controller.set_dead_screen_active(false)
@@ -501,6 +509,44 @@ func reset_for_round(spawn_transform: Transform3D) -> void:
 
 	if weapon_inventory != null:
 		weapon_inventory.reset_state()
+
+	# Drop the local player onto the nearest surface at the spawn (all game modes). Remote
+	# copies just take the transform; they replicate the walked orientation over the network.
+	if ground_mode:
+		request_spawn_ground_mode()
+
+
+# Ask the movement controller to drop the local player onto the nearest surface at the spawn
+# (all game modes). No-op for remote copies, which just replicate the walked transform.
+func request_spawn_ground_mode() -> void:
+	if is_local_player and movement_controller != null and movement_controller.has_method("request_spawn_ground_mode"):
+		movement_controller.request_spawn_ground_mode()
+
+
+# FFA loadout: called (server-driven) each life to arm this player with the random gun the
+# server chose and top up boosters to the match's fuel limit. Runs on the owning client
+# (its player is the local one) and offline; remote copies never receive it.
+func apply_ffa_loadout(weapon_id: StringName, booster_fuel: float) -> void:
+	if suit_boosters != null and suit_boosters.has_method("grant_with_fuel"):
+		suit_boosters.grant_with_fuel(booster_fuel)
+
+	if weapon_inventory != null and weapon_inventory.has_method("set_exclusive_weapon"):
+		weapon_inventory.set_exclusive_weapon(weapon_id)
+
+	update_booster_hud()
+
+
+# Server-confirmed full heal (the "heal on kill" rule). Runs on every lobby member's copy so
+# health stays consistent everywhere (scoreboard alive-flags, overhead bars, dead grace).
+func apply_full_heal() -> void:
+	if health != null:
+		health.reset_health()
+
+
+# Server-granted ammo refill (the "ammo on kill" rule). Only meaningful on the owning client.
+func refill_all_ammo() -> void:
+	if weapon_inventory != null and weapon_inventory.has_method("refill_all_ammo"):
+		weapon_inventory.refill_all_ammo()
 
 
 func submit_plasma_explosion_hit(
@@ -656,6 +702,9 @@ func _on_health_changed(current_health: float, max_health: float) -> void:
 	if hud_controller != null and is_local_player:
 		hud_controller.update_health(current_health, max_health)
 
+	# Remote copies mirror their health into the overhead bar (no-op before it exists).
+	update_health_bar_ratio()
+
 
 func _on_died(attacker_peer_id: int) -> void:
 	is_dead = true
@@ -676,7 +725,7 @@ func _on_died(attacker_peer_id: int) -> void:
 
 	# Runs on every peer's copy of this player, so the red "disabled" glow shows for everyone.
 	set_death_glow_active(true)
-	set_team_indicator_visible(false)
+	set_health_bar_visible(false)
 
 	if is_local_player and hud_controller != null and hud_controller.has_method("set_dead_screen_active"):
 		hud_controller.set_dead_screen_active(true)
@@ -709,63 +758,67 @@ static func get_death_glow_material() -> StandardMaterial3D:
 	return _shared_death_glow_material
 
 
-# --- Team indicator -------------------------------------------------------------------
-# Simple dot floating above every REMOTE player's head: green = teammate of this machine's
-# player, red = enemy. Colored by NetworkManager.refresh_team_indicators after spawns and
-# hidden while the player is dead. Friendly dots draw through walls (teammate QoL, no
-# information advantage); enemy dots are depth-tested so they can't act as a wallhack.
-# Materials are shared statics for the same shader-compile-hitch reason as the death glow.
+# --- Overhead health bar ----------------------------------------------------------------
+# Billboard health bar above every REMOTE player's head (replaces the old team-indicator
+# dot): green = teammate of this machine's player, red = enemy (always red in FFA). Colored
+# by NetworkManager.refresh_player_health_bars after spawns and hidden while dead. Health is
+# already replicated — the server-confirmed damage/heal RPCs run on every lobby member's
+# copy of the player — so the bar just mirrors this copy's PlayerHealth. One shared
+# ShaderMaterial (same shader-compile-hitch reason as the death glow); the per-player fill
+# and color are instance shader parameters. Depth-tested, so it can't act as a wallhack.
 
-const TEAM_INDICATOR_HEIGHT := 1.45
+const HEALTH_BAR_HEIGHT := 1.45
+const HEALTH_BAR_SIZE := Vector2(0.95, 0.11)
+const HEALTH_BAR_SHADER := preload("res://shaders/health_bar.gdshader")
 
-static var _team_indicator_materials: Dictionary = {}
+static var _health_bar_material: ShaderMaterial
 
-var team_indicator: MeshInstance3D
-
-
-static func get_team_indicator_material(friendly: bool) -> StandardMaterial3D:
-	if not _team_indicator_materials.has(friendly):
-		var mat := StandardMaterial3D.new()
-		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		var color := Color(0.2, 0.95, 0.35) if friendly else Color(1.0, 0.18, 0.15)
-		mat.albedo_color = color
-		mat.emission_enabled = true
-		mat.emission = color
-		mat.emission_energy_multiplier = 2.0
-		mat.no_depth_test = friendly
-		_team_indicator_materials[friendly] = mat
-
-	return _team_indicator_materials[friendly]
+var health_bar: MeshInstance3D
 
 
-func set_team_indicator(friendly: bool) -> void:
+static func get_health_bar_material() -> ShaderMaterial:
+	if _health_bar_material == null:
+		_health_bar_material = ShaderMaterial.new()
+		_health_bar_material.shader = HEALTH_BAR_SHADER
+
+	return _health_bar_material
+
+
+func set_health_bar_friendly(friendly: bool) -> void:
 	if is_local_player:
-		if team_indicator != null:
-			team_indicator.visible = false
+		if health_bar != null:
+			health_bar.visible = false
 
 		return
 
-	if team_indicator == null:
-		team_indicator = MeshInstance3D.new()
-		team_indicator.name = "TeamIndicator"
-		team_indicator.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	if health_bar == null:
+		health_bar = MeshInstance3D.new()
+		health_bar.name = "HealthBar"
+		health_bar.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
-		var sphere := SphereMesh.new()
-		sphere.radius = 0.09
-		sphere.height = 0.18
-		sphere.radial_segments = 12
-		sphere.rings = 6
-		team_indicator.mesh = sphere
-		team_indicator.position = Vector3(0.0, TEAM_INDICATOR_HEIGHT, 0.0)
-		add_child(team_indicator)
+		var quad := QuadMesh.new()
+		quad.size = HEALTH_BAR_SIZE
+		health_bar.mesh = quad
+		health_bar.material_override = get_health_bar_material()
+		health_bar.position = Vector3(0.0, HEALTH_BAR_HEIGHT, 0.0)
+		add_child(health_bar)
 
-	team_indicator.material_override = get_team_indicator_material(friendly)
-	team_indicator.visible = not is_dead
+	var color := Color(0.2, 0.95, 0.35) if friendly else Color(1.0, 0.2, 0.16)
+	health_bar.set_instance_shader_parameter("bar_color", color)
+	update_health_bar_ratio()
+	health_bar.visible = not is_dead
 
 
-func set_team_indicator_visible(value: bool) -> void:
-	if team_indicator != null:
-		team_indicator.visible = value and not is_local_player
+func set_health_bar_visible(value: bool) -> void:
+	if health_bar != null:
+		health_bar.visible = value and not is_local_player
+
+
+func update_health_bar_ratio() -> void:
+	if health_bar == null or health == null:
+		return
+
+	health_bar.set_instance_shader_parameter("health_ratio", health.get_health_ratio())
 
 
 func set_death_glow_active(active: bool) -> void:
@@ -1013,18 +1066,22 @@ func get_grab_distance_level() -> int:
 	return movement_controller.get_grab_distance_level()
 
 
-func purchase_suit_boosters() -> void:
-	if suit_boosters == null:
-		return
-	
-	suit_boosters.purchase_suit_boosters()
-	
-	if hud_controller != null:
+# One shared refresh for every path that changes booster state (purchase, refill, loadout).
+func update_booster_hud() -> void:
+	if is_local_player and hud_controller != null and suit_boosters != null:
 		hud_controller.update_booster_ui(
 			suit_boosters.get_has_suit_boosters(),
 			suit_boosters.get_booster_fuel(),
 			suit_boosters.get_max_booster_fuel()
 		)
+
+
+func purchase_suit_boosters() -> void:
+	if suit_boosters == null:
+		return
+
+	suit_boosters.purchase_suit_boosters()
+	update_booster_hud()
 
 
 func get_has_suit_boosters() -> bool:
@@ -1065,12 +1122,6 @@ func suppress_launch_impact() -> void:
 func refill_booster_fuel() -> void:
 	if suit_boosters == null:
 		return
-	
+
 	suit_boosters.refill_booster_fuel()
-	
-	if hud_controller != null:
-		hud_controller.update_booster_ui(
-			suit_boosters.get_has_suit_boosters(),
-			suit_boosters.get_booster_fuel(),
-			suit_boosters.get_max_booster_fuel()
-		)
+	update_booster_hud()

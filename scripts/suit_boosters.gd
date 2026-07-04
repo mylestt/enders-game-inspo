@@ -70,5 +70,13 @@ func get_max_booster_fuel() -> float:
 func refill_booster_fuel() -> void:
 	if not has_suit_boosters:
 		return
-	
+
+	booster_fuel = max_booster_fuel
+
+
+# FFA loadout: enable boosters and set the match's fuel capacity, filled to full. Used when
+# a player (re)spawns into a free-for-all, where boosters aren't a purchase.
+func grant_with_fuel(max_fuel: float) -> void:
+	has_suit_boosters = true
+	max_booster_fuel = maxf(max_fuel, 0.0)
 	booster_fuel = max_booster_fuel

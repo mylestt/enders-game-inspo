@@ -14,6 +14,7 @@ var center_label: Label
 
 var current_state: int = 0
 var current_timer: float = 0.0
+var is_ffa_mode: bool = false
 
 
 func _ready() -> void:
@@ -25,13 +26,17 @@ func _ready() -> void:
 		return
 
 	round_manager = get_node_or_null(round_manager_path)
+	is_ffa_mode = GameLaunch.game_mode_id == "ffa"
 	_build_ui()
+	_apply_mode()
 
 	if round_manager != null:
 		if round_manager.has_signal("team_scores_changed"):
 			round_manager.connect("team_scores_changed", _on_team_scores_changed)
 		if round_manager.has_signal("round_state_changed"):
 			round_manager.connect("round_state_changed", _on_round_state_changed)
+		if round_manager.has_signal("game_mode_changed"):
+			round_manager.connect("game_mode_changed", _on_game_mode_changed)
 
 		if "state" in round_manager:
 			_on_round_state_changed(int(round_manager.get("state")))
@@ -92,6 +97,23 @@ func _process(delta: float) -> void:
 		_update_center()
 
 
+func _on_game_mode_changed(mode_id: String) -> void:
+	is_ffa_mode = mode_id == "ffa"
+	_apply_mode()
+
+
+# FFA has no team scores, so hide the two side score numbers and let the center bar carry
+# the mode label + timer.
+func _apply_mode() -> void:
+	if team_a_label != null:
+		team_a_label.visible = not is_ffa_mode
+
+	if team_b_label != null:
+		team_b_label.visible = not is_ffa_mode
+
+	_update_center()
+
+
 func _on_team_scores_changed(scores: Dictionary) -> void:
 	if team_a_label != null:
 		team_a_label.text = str(int(scores.get("a", 0)))
@@ -115,15 +137,30 @@ func _update_center() -> void:
 	if center_label == null:
 		return
 
+	var active_label := "FREE FOR ALL" if is_ffa_mode else "ROUND ACTIVE"
+
 	match current_state:
 		RoundManager.State.COUNTDOWN:
-			center_label.text = "Round starts in " + str(ceili(current_timer))
+			var verb := "Match" if is_ffa_mode else "Round"
+			center_label.text = verb + " starts in " + str(ceili(current_timer))
 		RoundManager.State.ACTIVE:
 			if current_timer > 0.0:
-				center_label.text = "ROUND ACTIVE   " + str(ceili(current_timer))
+				center_label.text = active_label + "   " + _format_time(current_timer)
 			else:
-				center_label.text = "ROUND ACTIVE"
+				center_label.text = active_label
 		RoundManager.State.ROUND_END:
 			center_label.text = "Round over"
+		RoundManager.State.MATCH_END:
+			center_label.text = "Match over"
 		_:   # WAITING_FOR_PLAYERS
 			center_label.text = "Waiting for players…"
+
+
+# mm:ss for longer FFA timers; plain seconds for short team countdowns.
+func _format_time(seconds: float) -> String:
+	var total := ceili(seconds)
+
+	if total < 60:
+		return str(total)
+
+	return "%d:%02d" % [total / 60, total % 60]

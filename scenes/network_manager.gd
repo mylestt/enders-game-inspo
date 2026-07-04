@@ -1,6 +1,9 @@
 extends Node
 
 signal scoreboard_changed(entries: Array)
+# Fired when a join/host connection attempt resolves, so the lobby browser can show
+# "couldn't reach the server" instead of leaving the player on a silent grey screen.
+signal connection_attempt_finished(success: bool, message: String)
 
 @export var player_scene: PackedScene
 @export var players_parent_path: NodePath
@@ -12,6 +15,9 @@ signal scoreboard_changed(entries: Array)
 @export var max_players: int = 10
 @export var default_join_ip: String = "127.0.0.1"
 @export var starting_cash: int = 200000
+# A dead/unreachable server can leave ENet in CONNECTING forever (no failure event); give
+# up after this long so the player gets feedback instead of an eternal grey screen.
+@export var connect_timeout_seconds: float = 8.0
 
 @export var body_slam_server_cooldown: float = 0.2
 @export var body_slam_validation_distance: float = 4.0
@@ -26,6 +32,9 @@ signal scoreboard_changed(entries: Array)
 # kills and plasma bolts already in flight when the shooter died; after this window a dead
 # (or cheating) client can no longer deal damage until it respawns.
 @export var weapon_hit_dead_attacker_grace: float = 2.5
+# Fallback tracer for an unrecognized/blank weapon_id. Each real weapon relays its OWN
+# hitscan_tracer_scene (see get_tracer_scene_for_weapon) so every gun keeps its distinct
+# look for every client, not just the shooter.
 @export var weapon_tracer_scene: PackedScene = preload("res://scenes/hitscan_tracer_effect.tscn")
 
 @export_group("Plasma Explosion Validation")
@@ -65,6 +74,11 @@ signal scoreboard_changed(entries: Array)
 var players_parent: Node3D
 var buy_menu: Node
 
+# FFA loadout fallbacks for OFFLINE / non-lobby sessions (read from GameLaunch). Online,
+# each lobby carries its own ffa_weapons / booster_fuel in its settings dict.
+var ffa_weapons: Array = []
+var ffa_booster_fuel: float = 100.0
+
 var players_by_peer_id: Dictionary = {}
 var spawn_index_by_peer_id: Dictionary = {}
 var player_names_by_peer_id: Dictionary = {}
@@ -102,6 +116,12 @@ var _client_perf_report_timer: float = 0.0
 # spawn only when they join a lobby through LobbyManager.
 var lobby_mode: bool = false
 var pending_lobby_action: String = ""
+# Sticky copy of the lobby action ("browse"/"host"); pending_lobby_action is consumed on
+# connect, but the browser UI and retry_connection() still need to know the session intent.
+var lobby_flow_action: String = ""
+var last_join_ip: String = ""
+var _awaiting_connection: bool = false
+var _connect_wait: float = 0.0
 var lobby_manager: Node
 
 # Server-authoritative cash / ownership / ammo ledger. Created on every machine (the RPC
@@ -112,6 +132,8 @@ var server_economy: ServerEconomy
 func _ready() -> void:
 	GameLaunch.apply_cmdline_overrides()
 	starting_cash = GameLaunch.starting_cash
+	ffa_weapons = GameLaunch.ffa_weapons.duplicate()
+	ffa_booster_fuel = maxf(GameLaunch.ffa_booster_fuel, 0.0)
 
 	players_parent = get_node_or_null(players_parent_path) as Node3D
 	buy_menu = get_node_or_null(buy_menu_path)
@@ -127,8 +149,14 @@ func _ready() -> void:
 
 	round_manager = get_node_or_null("../RoundManager")
 
-	if round_manager != null and round_manager.has_signal("round_state_changed"):
-		round_manager.round_state_changed.connect(_on_round_state_changed_for_report)
+	if round_manager != null:
+		# Client machines: their own lobby's replicated state drives the net report window.
+		if round_manager.has_signal("round_state_changed"):
+			round_manager.round_state_changed.connect(_on_round_state_changed_for_report)
+
+		# Server: per-lobby session transitions drive ammo refills, telemetry, and reports.
+		if round_manager.has_signal("session_state_changed"):
+			round_manager.session_state_changed.connect(_on_session_state_changed)
 
 	server_economy = ServerEconomy.new()
 	server_economy.name = "ServerEconomy"
@@ -160,18 +188,21 @@ func apply_launch_mode() -> void:
 
 		GameLaunch.Mode.MULTIPLAYER:
 			pending_lobby_action = "browse"
+			lobby_flow_action = "browse"
 			var direct_ip := GameLaunch.join_ip if GameLaunch.join_ip != "" else default_join_ip
 			print("Launch mode: Direct join ", direct_ip, ":", port, ".")
 			call_deferred("join_game", direct_ip)
 
 		GameLaunch.Mode.MULTIPLAYER_BROWSE:
 			pending_lobby_action = "browse"
+			lobby_flow_action = "browse"
 			var browse_ip := _resolve_server_ip()
 			print("Launch mode: Browse lobbies on ", browse_ip, ":", port, ".")
 			call_deferred("join_game", browse_ip)
 
 		GameLaunch.Mode.MULTIPLAYER_HOST:
 			pending_lobby_action = "host"
+			lobby_flow_action = "host"
 			var host_ip := _resolve_server_ip()
 			print("Launch mode: Host lobby on ", host_ip, ":", port, ".")
 			call_deferred("join_game", host_ip)
@@ -219,6 +250,13 @@ func _build_lobby_settings_from_launch() -> Dictionary:
 		"points_to_win": GameLaunch.points_to_win,
 		"round_time": GameLaunch.round_time_limit,
 		"map_id": GameLaunch.map_id,
+		"game_mode": GameLaunch.game_mode_id,
+		"respawn_time": GameLaunch.ffa_respawn_time,
+		"booster_fuel": GameLaunch.ffa_booster_fuel,
+		"ffa_weapons": GameLaunch.ffa_weapons.duplicate(),
+		"kill_limit": GameLaunch.ffa_kill_limit,
+		"heal_on_kill": GameLaunch.heal_on_kill,
+		"ammo_on_kill": GameLaunch.ammo_on_kill,
 	}
 
 
@@ -305,6 +343,10 @@ func start_single_player() -> void:
 	spawn_index_by_peer_id[1] = 0
 	client_spawn_player(1, 0, starting_cash, get_player_name(1))
 
+	# Offline FFA (RoundManager stays dormant without a peer), so arm the solo player here.
+	if is_ffa():
+		server_apply_ffa_loadout(1)
+
 	print("Single-player Test Arena started.")
 
 
@@ -314,20 +356,34 @@ func join_game(ip: String) -> void:
 		print("Peer type: ", multiplayer.multiplayer_peer.get_class())
 		print("Peer status: ", multiplayer.multiplayer_peer.get_connection_status())
 		return
-	
+
 	clear_runtime_multiplayer_state()
-	
+
 	var peer := ENetMultiplayerPeer.new()
 	var error := peer.create_client(ip, port)
-	
+
 	if error != OK:
 		push_error("Failed to join game. Error: " + str(error))
 		multiplayer.multiplayer_peer = null
+		connection_attempt_finished.emit(false, "Could not start a connection to " + ip + ".")
 		return
-	
+
 	multiplayer.multiplayer_peer = peer
-	
+	last_join_ip = ip
+	_awaiting_connection = true
+	_connect_wait = 0.0
+
 	print("Joining ", ip, ":", port)
+
+
+# Re-attempts the last join (used by the lobby browser's Retry after a failed/timed-out
+# connect). Re-arms the original browse/host intent so the flow resumes on connect.
+func retry_connection() -> void:
+	if has_active_multiplayer_peer() or last_join_ip == "":
+		return
+
+	pending_lobby_action = lobby_flow_action
+	join_game(last_join_ip)
 
 
 func clear_runtime_multiplayer_state() -> void:
@@ -361,18 +417,41 @@ func clear_runtime_multiplayer_state() -> void:
 
 func _on_connected_to_server() -> void:
 	print("Connected to server. My peer id: ", multiplayer.get_unique_id())
+	_awaiting_connection = false
+	connection_attempt_finished.emit(true, "Connected.")
 	rpc_id(1, "server_register_player_name", GameLaunch.player_username)
 	call_deferred("_handle_pending_lobby_action")
 
 
 func _on_connection_failed() -> void:
 	push_error("Connection failed.")
+	_awaiting_connection = false
 	clear_runtime_multiplayer_state()
+	connection_attempt_finished.emit(false, "Couldn't reach the server at " + last_join_ip + ".")
 
 
 func _on_server_disconnected() -> void:
 	print("Disconnected from server.")
+	_awaiting_connection = false
 	clear_runtime_multiplayer_state()
+	connection_attempt_finished.emit(false, "Lost connection to the server.")
+
+
+# ENet can sit in CONNECTING forever against a dead address (no failure event ever fires,
+# which used to leave the player on a silent grey screen). Give up after the timeout.
+func _tick_connect_timeout(delta: float) -> void:
+	if not _awaiting_connection:
+		return
+
+	_connect_wait += delta
+
+	if _connect_wait < connect_timeout_seconds:
+		return
+
+	_awaiting_connection = false
+	print("Connection attempt to ", last_join_ip, " timed out.")
+	clear_runtime_multiplayer_state()
+	connection_attempt_finished.emit(false, "Server not responding at " + last_join_ip + ".")
 
 
 @rpc("any_peer", "reliable")
@@ -418,13 +497,17 @@ func _on_peer_connected(peer_id: int) -> void:
 		server_economy.server_init_peer(peer_id, starting_cash)
 
 	rpc("client_spawn_player", peer_id, spawn_index, starting_cash, get_player_name(peer_id))
+
+	if is_ffa():
+		server_apply_ffa_loadout(peer_id)
+
 	server_broadcast_scoreboard()
 
 
-# Called by LobbyManager when a player joins a lobby: assigns the next alternating
-# team slot (even=A, odd=B → 1v1 at 2, 2v1 at 3, 2v2 at 4) and replicates the spawn
-# only to that lobby's members.
-func server_spawn_in_lobby(peer_id: int, members: Array) -> void:
+# Called by LobbyManager when a player joins a lobby: assigns the lobby's next alternating
+# team slot (even=A, odd=B → 1v1 at 2, 2v1 at 3, 2v2 at 4) and replicates the spawn only to
+# that lobby's members. `lobby` carries the lobby's own rules (starting cash, mode, …).
+func server_spawn_in_lobby(peer_id: int, members: Array, lobby: Dictionary = {}) -> void:
 	if not multiplayer.is_server():
 		return
 
@@ -433,36 +516,61 @@ func server_spawn_in_lobby(peer_id: int, members: Array) -> void:
 
 	ensure_player_metadata(peer_id)
 
-	# Send already-spawned lobby players to the newcomer.
-	for existing_peer_id in spawn_index_by_peer_id.keys():
+	var lobby_cash := maxi(int(lobby.get("starting_cash", starting_cash)), 0)
+
+	# Send already-spawned players of THIS LOBBY to the newcomer — members only, so other
+	# lobbies' players never replicate across.
+	for member in members:
+		var member_id := int(member)
+
+		if member_id == peer_id or not spawn_index_by_peer_id.has(member_id):
+			continue
+
 		rpc_id(
 			peer_id,
 			"client_spawn_player",
-			int(existing_peer_id),
-			int(spawn_index_by_peer_id[existing_peer_id]),
-			starting_cash,
-			get_player_name(int(existing_peer_id))
+			member_id,
+			int(spawn_index_by_peer_id[member_id]),
+			lobby_cash,
+			get_player_name(member_id)
 		)
 
-	var spawn_index := spawn_index_by_peer_id.size()
+	# Team slots alternate PER LOBBY: take the lowest slot not used by a current member, so
+	# teams stay balanced within the lobby regardless of what other lobbies are doing.
+	var used_slots: Dictionary = {}
+
+	for member in members:
+		var member_id := int(member)
+
+		if member_id != peer_id and spawn_index_by_peer_id.has(member_id):
+			used_slots[int(spawn_index_by_peer_id[member_id])] = true
+
+	var spawn_index := 0
+
+	while used_slots.has(spawn_index):
+		spawn_index += 1
+
 	spawn_index_by_peer_id[peer_id] = spawn_index
 
 	if server_economy != null:
-		server_economy.server_init_peer(peer_id, starting_cash)
+		server_economy.server_init_peer(peer_id, lobby_cash)
 
 	# Server's authoritative copy.
-	client_spawn_player(peer_id, spawn_index, starting_cash, get_player_name(peer_id))
+	client_spawn_player(peer_id, spawn_index, lobby_cash, get_player_name(peer_id))
 
 	# Replicate the newcomer to every other lobby member (clients).
 	for member in members:
 		var member_id := int(member)
 
 		if member_id != 1 and member_id != peer_id:
-			rpc_id(member_id, "client_spawn_player", peer_id, spawn_index, starting_cash, get_player_name(peer_id))
+			rpc_id(member_id, "client_spawn_player", peer_id, spawn_index, lobby_cash, get_player_name(peer_id))
 
 	# And give the newcomer their own player.
 	if peer_id != 1:
-		rpc_id(peer_id, "client_spawn_player", peer_id, spawn_index, starting_cash, get_player_name(peer_id))
+		rpc_id(peer_id, "client_spawn_player", peer_id, spawn_index, lobby_cash, get_player_name(peer_id))
+
+	if String(lobby.get("game_mode", "team")) == "ffa":
+		server_apply_ffa_loadout(peer_id)
 
 	server_broadcast_scoreboard()
 
@@ -481,10 +589,18 @@ func _on_peer_disconnected(peer_id: int) -> void:
 	if server_economy != null:
 		server_economy.server_remove_peer(peer_id)
 
+	# Capture the lobby audience BEFORE the lobby drops the member (only they have a copy).
+	var audience := _lobby_client_peers_for(peer_id)
+
 	if lobby_manager != null and lobby_manager.has_method("server_on_peer_left"):
 		lobby_manager.call("server_on_peer_left", peer_id)
 
-	rpc("client_remove_player", peer_id)
+	client_remove_player(peer_id)   # server's own copy
+
+	for audience_id in audience:
+		if int(audience_id) != peer_id:
+			rpc_id(int(audience_id), "client_remove_player", peer_id)
+
 	server_broadcast_scoreboard()
 
 
@@ -587,15 +703,20 @@ func client_spawn_player(
 	if is_local:
 		call_deferred("bind_local_player_to_buy_menu", player, server_starting_cash)
 
-	refresh_team_indicators()
+		# Spawn onto the nearest surface (ground mode) for the initial pre-round spawn too, so
+		# players start standing rather than floating. Round start / respawn re-runs this.
+		if player.has_method("request_spawn_ground_mode"):
+			player.call("request_spawn_ground_mode")
+
+	refresh_player_health_bars()
 
 	print("Spawned player ", peer_id, ". Local: ", is_local)
 
 
-# Colors the dot above every remote player: green = same team as this machine's player,
-# red = enemy. Re-run after every spawn — the local player may spawn after others were
-# replayed to us, and only then can earlier dots be resolved against our own team.
-func refresh_team_indicators() -> void:
+# Colors the health bar above every remote player: green = same team as this machine's
+# player, red = enemy. Re-run after every spawn — the local player may spawn after others
+# were replayed to us, and only then can earlier bars be resolved against our own team.
+func refresh_player_health_bars() -> void:
 	if DisplayServer.get_name() == "headless":
 		return   # nothing renders on a dedicated server
 
@@ -604,6 +725,7 @@ func refresh_team_indicators() -> void:
 	if not players_by_peer_id.has(local_id):
 		return
 
+	var ffa := is_ffa()
 	var local_team := get_team_for_peer(local_id)
 
 	for peer_id in players_by_peer_id.keys():
@@ -612,8 +734,10 @@ func refresh_team_indicators() -> void:
 
 		var player = players_by_peer_id[peer_id]
 
-		if player != null and player.has_method("set_team_indicator"):
-			player.call("set_team_indicator", get_team_for_peer(int(peer_id)) == local_team)
+		if player != null and player.has_method("set_health_bar_friendly"):
+			# FFA has no teammates: every other player reads as an enemy (red).
+			var friendly := false if ffa else (get_team_for_peer(int(peer_id)) == local_team)
+			player.call("set_health_bar_friendly", friendly)
 
 
 func bind_local_player_to_buy_menu(player: Node, server_starting_cash: int = -1) -> void:
@@ -699,6 +823,261 @@ func get_team_for_peer(peer_id: int) -> String:
 	return "a" if spawn_index % 2 == 0 else "b"
 
 
+# True when THIS machine's session is a free-for-all. Client-side display checks only —
+# reads GameLaunch, which RoundManager.client_sync_game_mode keeps in sync with the lobby.
+# Server-side logic must use the per-peer lobby helpers below instead (each lobby has its
+# own mode).
+func is_ffa() -> bool:
+	return GameLaunch.game_mode_id == "ffa"
+
+
+# --- Per-lobby lookups (server) -------------------------------------------------------
+# With multiple concurrent lobbies, every relay/broadcast and every rules check is scoped
+# to ONE lobby. These resolve a peer's lobby via LobbyManager; on non-lobby servers they
+# fall back to "everyone / GameLaunch defaults" so direct-connect and offline still work.
+
+func _lobby_for_peer(peer_id: int) -> Dictionary:
+	if lobby_mode and lobby_manager != null and lobby_manager.has_method("get_lobby_for_peer"):
+		return lobby_manager.call("get_lobby_for_peer", peer_id)
+
+	return {}
+
+
+# The connected client peer ids sharing `peer_id`'s lobby (including peer_id itself when
+# it's a client). Fallback: every connected peer.
+func _lobby_client_peers_for(peer_id: int) -> Array:
+	var lobby := _lobby_for_peer(peer_id)
+	var connected := multiplayer.get_peers()
+
+	if lobby.is_empty():
+		return Array(connected)
+
+	var out: Array = []
+
+	for member in lobby.get("members", []):
+		var member_id := int(member)
+
+		if member_id != 1 and connected.has(member_id):
+			out.append(member_id)
+
+	return out
+
+
+func _same_lobby(peer_a: int, peer_b: int) -> bool:
+	if not lobby_mode or lobby_manager == null or not lobby_manager.has_method("get_lobby_id_for_peer"):
+		return true
+
+	return int(lobby_manager.call("get_lobby_id_for_peer", peer_a)) == int(lobby_manager.call("get_lobby_id_for_peer", peer_b))
+
+
+func _is_ffa_for_peer(peer_id: int) -> bool:
+	var lobby := _lobby_for_peer(peer_id)
+
+	if lobby.is_empty():
+		return is_ffa()
+
+	return String(lobby.get("game_mode", "team")) == "ffa"
+
+
+# All arena-edge spawn markers, both team groups pooled (FFA ignores teams).
+func get_all_spawn_markers() -> Array:
+	var markers: Array = []
+	markers.append_array(get_team_spawn_markers("a"))
+	markers.append_array(get_team_spawn_markers("b"))
+	return markers
+
+
+# --- FFA spawning ----------------------------------------------------------------------
+# FFA spawns players all around the arena shell, not just at the authored markers: a ray is
+# cast from the arena's centre in a random direction, and the player is placed just inside
+# whatever wall it hits, standing on it (the ground-mode spawn probe then locks them to the
+# surface). Several candidates are sampled and the one farthest from the other players wins
+# (anti-spawn-camping). Falls back to a random authored marker if the rays find nothing
+# (open/unenclosed maps, or collision not ready yet).
+
+const FFA_SPAWN_CANDIDATES := 6
+const FFA_SPAWN_SURFACE_OFFSET := 1.4
+
+func get_ffa_spawn_transform(avoid_positions: Array = []) -> Transform3D:
+	var center := _arena_center()
+	var best: Dictionary = {}
+	var best_score := -INF
+
+	for i in range(FFA_SPAWN_CANDIDATES):
+		var candidate := _random_edge_spawn(center)
+
+		if candidate.is_empty():
+			continue
+
+		var score: float
+
+		if avoid_positions.is_empty():
+			score = randf()
+		else:
+			score = INF
+
+			for avoid in avoid_positions:
+				score = minf(score, (candidate["position"] as Vector3).distance_to(avoid))
+
+		if score > best_score:
+			best_score = score
+			best = candidate
+
+	if not best.is_empty():
+		return _edge_spawn_transform(best, center)
+
+	# Fallback: random authored marker.
+	var markers := get_all_spawn_markers()
+
+	if markers.size() > 0:
+		var marker := markers[randi() % markers.size()] as Node3D
+
+		if marker != null:
+			return marker.global_transform
+
+	return get_spawn_transform(0)
+
+
+# The arena's rough centre: the centroid of every authored spawn marker.
+func _arena_center() -> Vector3:
+	var markers := get_all_spawn_markers()
+
+	if markers.is_empty():
+		return Vector3.ZERO
+
+	var sum := Vector3.ZERO
+
+	for marker in markers:
+		sum += (marker as Node3D).global_position
+
+	return sum / float(markers.size())
+
+
+# One random point on the arena shell: {position (offset off the wall), normal} or {}.
+func _random_edge_spawn(center: Vector3) -> Dictionary:
+	if players_parent == null:
+		return {}
+
+	var world := players_parent.get_world_3d()
+
+	if world == null:
+		return {}
+
+	var direction := Vector3(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0), randf_range(-1.0, 1.0))
+
+	if direction.length() < 0.05:
+		direction = Vector3.UP
+
+	direction = direction.normalized()
+
+	var query := PhysicsRayQueryParameters3D.create(center, center + direction * 1000.0)
+	query.collide_with_bodies = true
+	query.collide_with_areas = false
+	query.exclude = _player_body_rids()
+
+	var hit := world.direct_space_state.intersect_ray(query)
+
+	if hit.is_empty():
+		return {}
+
+	var normal: Vector3 = hit.get("normal", Vector3.ZERO)
+
+	if normal.length() < 0.01:
+		return {}
+
+	normal = normal.normalized()
+	return {
+		"position": (hit["position"] as Vector3) + normal * FFA_SPAWN_SURFACE_OFFSET,
+		"normal": normal,
+	}
+
+
+func _player_body_rids() -> Array[RID]:
+	var rids: Array[RID] = []
+
+	for peer_id in players_by_peer_id.keys():
+		var player = players_by_peer_id[peer_id]
+
+		if player is CollisionObject3D:
+			rids.append((player as CollisionObject3D).get_rid())
+
+	return rids
+
+
+# Stands the spawn on the wall: up = surface normal, facing back toward the arena centre.
+func _edge_spawn_transform(spot: Dictionary, center: Vector3) -> Transform3D:
+	var up: Vector3 = spot["normal"]
+	var origin: Vector3 = spot["position"]
+	var forward := (center - origin).slide(up)
+
+	if forward.length() < 0.01:
+		forward = Vector3.FORWARD.slide(up)
+
+	if forward.length() < 0.01:
+		forward = Vector3.RIGHT.slide(up)
+
+	forward = forward.normalized()
+	var right := forward.cross(up).normalized()
+	var corrected_forward := up.cross(right).normalized()
+
+	return Transform3D(Basis(right, up, -corrected_forward), origin)
+
+
+# --- FFA loadout (server) ------------------------------------------------------------
+# FFA has no buy menu: the server picks a random gun per life from the lobby's weapon pool,
+# grants it in the economy ledger (so hit claims validate) and the lobby's booster fuel,
+# and tells the owning client to equip. The `ffa_weapons` / `ffa_booster_fuel` fields are
+# the offline/non-lobby fallbacks.
+
+func _pick_ffa_weapon(allowed: Array) -> StringName:
+	var pool: Array = []
+
+	for id in allowed:
+		var weapon_id := StringName(String(id))
+
+		if WeaponInventory.get_weapon_scene(weapon_id) != null:
+			pool.append(weapon_id)
+
+	if pool.is_empty():
+		pool = WeaponInventory.SLOT_IDS.duplicate()
+
+	return pool[randi() % pool.size()]
+
+
+func server_apply_ffa_loadout(peer_id: int) -> void:
+	if not _is_ffa_for_peer(peer_id):
+		return
+
+	# Server (or offline) only: a plain client must never pick its own loadout.
+	if has_active_multiplayer_peer() and not multiplayer.is_server():
+		return
+
+	if not players_by_peer_id.has(peer_id):
+		return
+
+	var lobby := _lobby_for_peer(peer_id)
+	var allowed: Array = lobby.get("ffa_weapons", ffa_weapons)
+	var booster_fuel := maxf(float(lobby.get("booster_fuel", ffa_booster_fuel)), 0.0)
+	var weapon_id := _pick_ffa_weapon(allowed)
+
+	if server_economy != null and server_economy.has_method("server_grant_ffa_weapon"):
+		server_economy.server_grant_ffa_weapon(peer_id, String(weapon_id))
+
+	# Apply directly for the local/offline player, or send to the owning client.
+	if not has_active_multiplayer_peer() or peer_id == get_local_peer_id():
+		client_apply_ffa_loadout(peer_id, String(weapon_id), booster_fuel)
+	else:
+		rpc_id(peer_id, "client_apply_ffa_loadout", peer_id, String(weapon_id), booster_fuel)
+
+
+@rpc("authority", "reliable")
+func client_apply_ffa_loadout(peer_id: int, weapon_id: String, booster_fuel: float) -> void:
+	var player = players_by_peer_id.get(peer_id)
+
+	if player != null and player.has_method("apply_ffa_loadout"):
+		player.call("apply_ffa_loadout", StringName(weapon_id), booster_fuel)
+
+
 func ensure_player_metadata(peer_id: int, player_name: String = "") -> void:
 	if player_name.strip_edges() != "":
 		player_names_by_peer_id[peer_id] = GameLaunch.sanitize_username(player_name)
@@ -744,35 +1123,63 @@ func server_record_player_death(dead_peer_id: int, attacker_peer_id: int) -> voi
 	server_broadcast_scoreboard()
 
 
-func server_reset_player_stats() -> void:
+# Resets K/D for the given peers (empty = everyone). Sessions pass their own member list so
+# one lobby's round start doesn't wipe another lobby's stats.
+func server_reset_player_stats(peer_ids: Array = []) -> void:
 	if not multiplayer.is_server():
 		return
 
-	for peer_id in player_stats_by_peer_id.keys():
-		player_stats_by_peer_id[peer_id] = {
-			"kills": 0,
-			"deaths": 0,
-		}
+	var targets := peer_ids if not peer_ids.is_empty() else player_stats_by_peer_id.keys()
+
+	for peer_id in targets:
+		if player_stats_by_peer_id.has(peer_id):
+			player_stats_by_peer_id[peer_id] = {
+				"kills": 0,
+				"deaths": 0,
+			}
 
 	server_broadcast_scoreboard()
 
 
+# Rebuilds and sends every lobby its OWN scoreboard (players + sort order are per lobby).
+# Cheap at MAX_LOBBIES scale, so any stat change just refreshes them all.
 func server_broadcast_scoreboard() -> void:
 	if not multiplayer.is_server():
 		return
 
-	var entries := build_scoreboard_entries()
-	client_sync_scoreboard(entries)
+	if lobby_mode and lobby_manager != null and "lobbies" in lobby_manager:
+		for lobby_id in lobby_manager.lobbies.keys():
+			var lobby: Dictionary = lobby_manager.lobbies[lobby_id]
+			var members: Array = lobby.get("members", [])
+			var entries := build_scoreboard_entries(members, String(lobby.get("game_mode", "team")) == "ffa")
+
+			for member in members:
+				var member_id := int(member)
+
+				if member_id != 1 and Array(multiplayer.get_peers()).has(member_id):
+					rpc_id(member_id, "client_sync_scoreboard", entries)
+
+		return
+
+	# Non-lobby servers: one global board, as before.
+	var all_entries := build_scoreboard_entries([], is_ffa())
+	client_sync_scoreboard(all_entries)
 
 	for remote_peer_id in multiplayer.get_peers():
-		rpc_id(remote_peer_id, "client_sync_scoreboard", entries)
+		rpc_id(remote_peer_id, "client_sync_scoreboard", all_entries)
 
 
-func build_scoreboard_entries() -> Array:
+# `filter_ids` limits the board to those peers (empty = all spawned players); `ffa` picks
+# the sort: one kill-ranked list vs grouped-by-team.
+func build_scoreboard_entries(filter_ids: Array = [], ffa: bool = false) -> Array:
 	var entries: Array = []
 
 	for peer_id in players_by_peer_id.keys():
 		var id := int(peer_id)
+
+		if not filter_ids.is_empty() and not filter_ids.has(id):
+			continue
+
 		ensure_player_metadata(id)
 
 		var stats: Dictionary = player_stats_by_peer_id[id]
@@ -794,16 +1201,19 @@ func build_scoreboard_entries() -> Array:
 			"alive": alive,
 		})
 
-	entries.sort_custom(Callable(self, "_sort_scoreboard_entries"))
+	entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return _compare_scoreboard_entries(a, b, ffa))
 	return entries
 
 
-func _sort_scoreboard_entries(a: Dictionary, b: Dictionary) -> bool:
-	var team_a := String(a.get("team", "a"))
-	var team_b := String(b.get("team", "a"))
+func _compare_scoreboard_entries(a: Dictionary, b: Dictionary, ffa: bool) -> bool:
+	# FFA is a single kill-ranked list; team mode groups by team first.
+	if not ffa:
+		var team_a := String(a.get("team", "a"))
+		var team_b := String(b.get("team", "a"))
 
-	if team_a != team_b:
-		return team_a < team_b
+		if team_a != team_b:
+			return team_a < team_b
 
 	var kills_a := int(a.get("kills", 0))
 	var kills_b := int(b.get("kills", 0))
@@ -936,7 +1346,7 @@ func server_receive_player_state(
 
 
 # Server-side: records lag-comp history, applies to the server's own replica, and forwards
-# to every OTHER peer (the sender already has its own authoritative state).
+# to every OTHER member of the sender's lobby (other lobbies don't have this player).
 func _relay_player_state(
 	peer_id: int,
 	player_transform: Transform3D,
@@ -947,10 +1357,10 @@ func _relay_player_state(
 	server_record_state_history(peer_id, player_transform.origin)
 	client_receive_player_state(peer_id, player_transform, linear_velocity, angular_velocity, state_seq)
 
-	for remote_peer_id in multiplayer.get_peers():
-		if remote_peer_id != peer_id:
+	for remote_peer_id in _lobby_client_peers_for(peer_id):
+		if int(remote_peer_id) != peer_id:
 			rpc_id(
-				remote_peer_id,
+				int(remote_peer_id),
 				"client_receive_player_state",
 				peer_id,
 				player_transform,
@@ -1037,6 +1447,10 @@ func server_process_body_slam(
 	if not is_valid_vector(impulse) or not is_valid_vector(contact_position):
 		return
 
+	# Players can only interact with their own lobby (a hacked client could claim any id).
+	if not _same_lobby(attacker_peer_id, target_peer_id):
+		return
+
 	# Honest clients never report slams while dead (see detect_player_body_slam_contacts).
 	if not server_attacker_may_deal_damage(attacker_peer_id, attacker):
 		return
@@ -1060,8 +1474,11 @@ func server_process_body_slam(
 	if clamped_impulse.length() > body_slam_max_impulse:
 		clamped_impulse = clamped_impulse.normalized() * body_slam_max_impulse
 	
-	rpc("client_apply_body_slam_impulse", target_peer_id, clamped_impulse, contact_position)
-	
+	client_apply_body_slam_impulse(target_peer_id, clamped_impulse, contact_position)
+
+	for peer_id in _lobby_client_peers_for(target_peer_id):
+		rpc_id(int(peer_id), "client_apply_body_slam_impulse", target_peer_id, clamped_impulse, contact_position)
+
 	print("Body slam: ", attacker_peer_id, " shoved ", target_peer_id, " impulse ", clamped_impulse)
 
 
@@ -1177,6 +1594,9 @@ func server_process_plasma_explosion_hit(
 	if not is_finite(damage) or not is_valid_vector(impulse):
 		return
 
+	if not _same_lobby(attacker_peer_id, target_peer_id):
+		return
+
 	if not server_attacker_may_deal_damage(attacker_peer_id, attacker):
 		return
 
@@ -1222,13 +1642,23 @@ func server_process_plasma_explosion_hit(
 		outward_direction = outward_direction.normalized()
 
 	var applied_impulse := outward_direction * applied_impulse_magnitude
-	rpc(
-		"client_apply_plasma_explosion_hit",
-		target_peer_id,
-		attacker_peer_id,
-		applied_damage,
-		applied_impulse
-	)
+
+	# Server's own copy first (captures whether this blast was the killing blow), then the
+	# lobby's members.
+	var killed := apply_confirmed_damage(target_peer_id, attacker_peer_id, applied_damage)
+
+	for peer_id in _lobby_client_peers_for(target_peer_id):
+		rpc_id(
+			int(peer_id),
+			"client_apply_plasma_explosion_hit",
+			target_peer_id,
+			attacker_peer_id,
+			applied_damage,
+			applied_impulse
+		)
+
+	if killed:
+		_handle_kill_rewards(attacker_peer_id, target_peer_id)
 
 
 func is_plasma_explosion_hit_plausible(
@@ -1300,10 +1730,11 @@ func client_apply_plasma_explosion_hit(
 		target.call("apply_network_plasma_impulse", impulse)
 
 
-# Server-confirmed damage, applied to this machine's copy of the target. Runs on every peer
-# (the client_apply_* RPCs are call_local). Also shows the attacker's hitmarker on their own
-# machine, and — on the server — records the kill time backing the dead-attacker grace check.
-func apply_confirmed_damage(target_peer_id: int, attacker_peer_id: int, damage: float) -> void:
+# Server-confirmed damage, applied to this machine's copy of the target. Runs on the server
+# directly and on lobby members via the client_apply_* RPCs. Shows the attacker's hitmarker
+# on their own machine and — on the server — records the kill time backing the dead-attacker
+# grace check. Returns true when this damage was the killing blow (on this machine's copy).
+func apply_confirmed_damage(target_peer_id: int, attacker_peer_id: int, damage: float) -> bool:
 	var target = players_by_peer_id.get(target_peer_id)
 	var killed := false
 
@@ -1328,6 +1759,56 @@ func apply_confirmed_damage(target_peer_id: int, attacker_peer_id: int, damage: 
 
 		if attacker != null and attacker.has_method("show_hitmarker"):
 			attacker.call("show_hitmarker", killed)
+
+	return killed
+
+
+# --- Kill rewards (server) --------------------------------------------------------------
+# Optional per-lobby rules: on a confirmed kill the killer is fully healed and/or has all
+# their ammo refilled. Heals replicate to every lobby member's copy (health must agree
+# everywhere); the ammo refill mirrors into the server ledger and the killer's own client.
+
+func _handle_kill_rewards(attacker_peer_id: int, target_peer_id: int) -> void:
+	if attacker_peer_id == 0 or attacker_peer_id == target_peer_id:
+		return
+
+	if not players_by_peer_id.has(attacker_peer_id):
+		return
+
+	var lobby := _lobby_for_peer(attacker_peer_id)
+	var heal := bool(lobby.get("heal_on_kill", GameLaunch.heal_on_kill))
+	var refill := bool(lobby.get("ammo_on_kill", GameLaunch.ammo_on_kill))
+
+	if heal:
+		client_apply_heal(attacker_peer_id)   # server's own copy
+
+		for peer_id in _lobby_client_peers_for(attacker_peer_id):
+			rpc_id(int(peer_id), "client_apply_heal", attacker_peer_id)
+
+	if refill:
+		if server_economy != null and server_economy.has_method("server_refill_peer_ammo"):
+			server_economy.server_refill_peer_ammo(attacker_peer_id)
+
+		if attacker_peer_id == get_local_peer_id():
+			client_refill_ammo(attacker_peer_id)
+		elif Array(multiplayer.get_peers()).has(attacker_peer_id):
+			rpc_id(attacker_peer_id, "client_refill_ammo", attacker_peer_id)
+
+
+@rpc("authority", "reliable")
+func client_apply_heal(peer_id: int) -> void:
+	var player = players_by_peer_id.get(peer_id)
+
+	if player != null and player.has_method("apply_full_heal"):
+		player.call("apply_full_heal")
+
+
+@rpc("authority", "reliable")
+func client_refill_ammo(peer_id: int) -> void:
+	var player = players_by_peer_id.get(peer_id)
+
+	if player != null and player.has_method("refill_all_ammo"):
+		player.call("refill_all_ammo")
 
 
 func request_weapon_hit(
@@ -1419,6 +1900,9 @@ func server_process_weapon_hit(
 	if not is_finite(damage):
 		return
 
+	if not _same_lobby(attacker_peer_id, target_peer_id):
+		return
+
 	if not server_attacker_may_deal_damage(attacker_peer_id, attacker):
 		return
 
@@ -1451,7 +1935,16 @@ func server_process_weapon_hit(
 			return
 
 	mark_weapon_hit_pair(attacker_peer_id, target_peer_id)
-	rpc("client_apply_weapon_damage", target_peer_id, attacker_peer_id, applied_damage)
+
+	# Server's own copy first (captures whether this shot was the killing blow), then the
+	# lobby's members.
+	var killed := apply_confirmed_damage(target_peer_id, attacker_peer_id, applied_damage)
+
+	for peer_id in _lobby_client_peers_for(target_peer_id):
+		rpc_id(int(peer_id), "client_apply_weapon_damage", target_peer_id, attacker_peer_id, applied_damage)
+
+	if killed:
+		_handle_kill_rewards(attacker_peer_id, target_peer_id)
 
 	print(
 		"Weapon hit: ",
@@ -1649,23 +2142,55 @@ func client_apply_weapon_damage(
 
 
 # --- Weapon shot tracer replication ------------------------------------------------
-# The shooter already drew its own tracer locally; this relays the shot so every OTHER
-# client draws the same streak. Unreliable on purpose — tracers are cosmetic.
+# The shooter already drew its own tracer locally (using its own weapon's
+# hitscan_tracer_scene); this relays the shot so every OTHER client draws the SAME gun's
+# tracer, not a generic one. Unreliable on purpose — tracers are cosmetic.
+
+# weapon_id (WeaponInventory slot id, e.g. "minigun") -> that weapon's own
+# hitscan_tracer_scene. Built lazily by instantiating each weapon scene once — cheap
+# because it only happens once per weapon type per client process, same pattern as
+# ServerEconomy.get_weapon_stats.
+var _tracer_scene_by_weapon_id: Dictionary = {}
+
+
+func get_tracer_scene_for_weapon(weapon_id: String) -> PackedScene:
+	if weapon_id == "":
+		return weapon_tracer_scene
+
+	if _tracer_scene_by_weapon_id.has(weapon_id):
+		return _tracer_scene_by_weapon_id[weapon_id]
+
+	var tracer_scene := weapon_tracer_scene
+	var weapon_scene := WeaponInventory.get_weapon_scene(StringName(weapon_id))
+
+	if weapon_scene != null:
+		var weapon := weapon_scene.instantiate() as Weapon
+
+		if weapon != null:
+			if weapon.hitscan_tracer_scene != null:
+				tracer_scene = weapon.hitscan_tracer_scene
+
+			weapon.free()
+
+	_tracer_scene_by_weapon_id[weapon_id] = tracer_scene
+	return tracer_scene
+
 
 func broadcast_weapon_shot(
 	shooter_peer_id: int,
 	origin: Vector3,
 	shot_end: Vector3,
 	did_hit: bool,
-	normal: Vector3
+	normal: Vector3,
+	weapon_id: String
 ) -> void:
 	if multiplayer.multiplayer_peer == null:
 		return
 
 	if multiplayer.is_server():
-		_relay_weapon_shot(shooter_peer_id, origin, shot_end, did_hit, normal)
+		_relay_weapon_shot(shooter_peer_id, origin, shot_end, did_hit, normal, weapon_id)
 	else:
-		rpc_id(1, "server_relay_weapon_shot", origin, shot_end, did_hit, normal)
+		rpc_id(1, "server_relay_weapon_shot", origin, shot_end, did_hit, normal, weapon_id)
 
 
 @rpc("any_peer", "unreliable")
@@ -1673,12 +2198,13 @@ func server_relay_weapon_shot(
 	origin: Vector3,
 	shot_end: Vector3,
 	did_hit: bool,
-	normal: Vector3
+	normal: Vector3,
+	weapon_id: String
 ) -> void:
 	if not multiplayer.is_server():
 		return
 
-	_relay_weapon_shot(multiplayer.get_remote_sender_id(), origin, shot_end, did_hit, normal)
+	_relay_weapon_shot(multiplayer.get_remote_sender_id(), origin, shot_end, did_hit, normal, weapon_id)
 
 
 func _relay_weapon_shot(
@@ -1686,7 +2212,8 @@ func _relay_weapon_shot(
 	origin: Vector3,
 	shot_end: Vector3,
 	did_hit: bool,
-	normal: Vector3
+	normal: Vector3,
+	weapon_id: String
 ) -> void:
 	# Only spawned players get their effects relayed (a connected-but-unspawned peer in
 	# lobby mode has nothing to shoot with).
@@ -1699,9 +2226,9 @@ func _relay_weapon_shot(
 	if round_telemetry != null:
 		round_telemetry.call("record_weapon_fired", shooter_peer_id, origin, did_hit)
 
-	for peer_id in multiplayer.get_peers():
-		if peer_id != shooter_peer_id:
-			rpc_id(peer_id, "client_play_weapon_shot", origin, shot_end, did_hit, normal)
+	for peer_id in _lobby_client_peers_for(shooter_peer_id):
+		if int(peer_id) != shooter_peer_id:
+			rpc_id(int(peer_id), "client_play_weapon_shot", origin, shot_end, did_hit, normal, weapon_id)
 
 
 @rpc("authority", "unreliable")
@@ -1709,14 +2236,16 @@ func client_play_weapon_shot(
 	origin: Vector3,
 	shot_end: Vector3,
 	did_hit: bool,
-	normal: Vector3
+	normal: Vector3,
+	weapon_id: String
 ) -> void:
 	var parent := get_world_effect_parent()
+	var tracer_scene := get_tracer_scene_for_weapon(weapon_id)
 
-	if parent == null or weapon_tracer_scene == null:
+	if parent == null or tracer_scene == null:
 		return
 
-	var tracer := weapon_tracer_scene.instantiate()
+	var tracer := tracer_scene.instantiate()
 	parent.add_child(tracer)
 
 	if tracer.has_method("play"):
@@ -1769,9 +2298,9 @@ func _relay_projectile_shot(shooter_peer_id: int, origin: Vector3, velocity: Vec
 	if round_telemetry != null:
 		round_telemetry.call("record_weapon_fired", shooter_peer_id, origin, false)
 
-	for peer_id in multiplayer.get_peers():
-		if peer_id != shooter_peer_id:
-			rpc_id(peer_id, "client_play_projectile_shot", shooter_peer_id, origin, velocity)
+	for peer_id in _lobby_client_peers_for(shooter_peer_id):
+		if int(peer_id) != shooter_peer_id:
+			rpc_id(int(peer_id), "client_play_projectile_shot", shooter_peer_id, origin, velocity)
 
 
 @rpc("authority", "reliable")
@@ -1804,6 +2333,8 @@ func client_play_projectile_shot(shooter_peer_id: int, origin: Vector3, velocity
 # here — the direct measure of the freeze/skip symptom.
 
 func _process(delta: float) -> void:
+	_tick_connect_timeout(delta)
+
 	if not has_active_multiplayer_peer():
 		return
 
@@ -1952,26 +2483,46 @@ func _local_send_rate_hz() -> float:
 
 # --- Per-round report ---------------------------------------------------------------
 
+# Client-side: this machine's own lobby round window drives its net report.
 func _on_round_state_changed_for_report(new_state: int) -> void:
 	if new_state == RoundManager.State.ACTIVE:
 		reset_net_report()          # start a clean measurement window for the round
-
-		# Round start refills every client's weapons (WeaponInventory.reset_state), so the
-		# server ammo ledger must match.
-		if server_economy != null:
-			server_economy.server_refill_all_ammo()
 	elif new_state == RoundManager.State.ROUND_END:
 		write_net_report()          # flush what we measured during the round
 
+
+# Server-side: one lobby's session changed state. Refills that lobby's ammo ledgers on
+# round start (clients refill via WeaponInventory.reset_state, so the ledger must match)
+# and feeds telemetry/reports. With several lobbies the report window is approximate.
+func _on_session_state_changed(lobby_id: int, new_state: int) -> void:
+	if new_state == RoundManager.State.ACTIVE:
+		reset_net_report()
+
+		if server_economy != null:
+			var members: Array = []
+
+			if lobby_manager != null and lobby_manager.has_method("get_lobby_members"):
+				members = lobby_manager.call("get_lobby_members", lobby_id)
+
+			if members.is_empty():
+				server_economy.server_refill_all_ammo()
+			else:
+				for member in members:
+					server_economy.server_refill_peer_ammo(int(member))
+	elif new_state == RoundManager.State.ROUND_END:
+		write_net_report()
+
 	if round_telemetry != null:
+		var label: String = "L" + str(lobby_id) + ":" + String(round_manager.call("state_name", new_state))
+
 		if new_state == RoundManager.State.ACTIVE:
 			round_telemetry.call("start_round")     # clears last round's buffers first
-			round_telemetry.call("record_round_state", round_manager.state_name(new_state))
+			round_telemetry.call("record_round_state", label)
 		elif new_state == RoundManager.State.ROUND_END:
-			round_telemetry.call("record_round_state", round_manager.state_name(new_state))
+			round_telemetry.call("record_round_state", label)
 			round_telemetry.call("end_round")       # flushes to disk, includes the line above
 		else:
-			round_telemetry.call("record_round_state", round_manager.state_name(new_state))
+			round_telemetry.call("record_round_state", label)
 
 
 func reset_net_report() -> void:
