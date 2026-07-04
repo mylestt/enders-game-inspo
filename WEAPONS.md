@@ -191,7 +191,30 @@ The scene needs, somewhere in its tree:
   `+X`, so `(1,0,0)`; orient the root so that axis faces the camera's forward, e.g. copy the
   minigun root's basis `Transform3D(0,0,1, 0,1,0, -1,0,0, ...)`).
 
-Set `hitscan_tracer_scene = res://scenes/hitscan_tracer_effect.tscn` so it shows tracers.
+**Give the weapon its own tracer scene — don't point it at another gun's.** Duplicate
+`scenes/hitscan_tracer_effect.tscn` to `scenes/<weapon>_tracer_effect.tscn` and set
+`hitscan_tracer_scene` to your copy. Every export on `WeaponHitscanTracerEffect`
+(`scripts/weapons/weapon_hitscan_tracer_effect.gd`) — color, width, speed, glow, impact
+sparks — is then that weapon's alone to tune. `NetworkManager` looks up each
+weapon's own tracer scene by `weapon_id` when relaying the shot to other clients
+(`get_tracer_scene_for_weapon`), so a bystander sees the exact same tracer the shooter
+does — sharing one tracer scene across guns means every gun using it looks and sounds
+identical, including to everyone else in the match.
+
+**Give the weapon its own muzzle-flash scene — same pattern as the tracer.** Duplicate one
+of `scenes/<gun>_muzzle_flash.tscn` to `scenes/<weapon>_muzzle_flash.tscn` and set the gun's
+`muzzle_flash_scene` export (right under Hitscan in the inspector) to it. The flash scene's
+root is a `WeaponMuzzleFlash` (`scripts/weapons/weapon_muzzle_flash.gd`) with everything
+tunable in the inspector: `effect_scene` (pick any Binbun variant from
+`MuzzleFlashVFX/muzzle_flash/effects/…` — muzzle/short/wide/big × 6 looks each),
+`overall_scale`, `flash_length` (stretch down the barrel), `flash_width`, `muzzle_offset`,
+optional color/light overrides, `speed_scale` (snappier vs longer burn), and
+`cut_on_fire_stop` (sustained-fire guns only: kills the flash the instant the gun stops
+firing — the minigun uses it so the flash can't outlive the trigger into spin-down; leave
+it off on single-shot/burst guns or their final flash gets clipped). The weapon
+places it at the muzzle marker automatically (facing `aim_local_direction`) and re-triggers
+it once per fired round, so it follows the gun's fire rate and pattern (bursts, full-auto,
+singles) with zero extra wiring. Blank export = no flash (the plasma cannon has none).
 There is **no pivot auto-snap** — position the gun directly via the root node's transform
 (fine-tune in-editor like a viewmodel).
 
