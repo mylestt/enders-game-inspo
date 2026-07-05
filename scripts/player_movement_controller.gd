@@ -92,6 +92,33 @@ enum MovementMode {
 # from the current surface are ignored — sharp rims are a drop-off, steep walls a jam.
 @export var surface_walk_wrap_probe: bool = true
 @export var surface_walk_max_edge_angle_degrees: float = 70.0
+# Concave handover limit for the FEELER ray only (walking INTO a surface). Deliberately
+# larger than max_edge_angle: pushing into a 90° wall is intent to walk up it, and gating
+# the feeler at 70° used to deadlock the player pressed against steep seams — they can't
+# stand on the wall until they rotate, and (with the gate) never rotate until they stand
+# on it. The passive ground probes keep the stricter limit.
+@export var surface_walk_max_concave_angle_degrees: float = 120.0
+# The ground orientation target is BLENDED from several probes (down ray + four foot rays
+# + the crest sweeps), weighted by hit distance, instead of one winner-takes-all ray.
+# Crossing a seam the weight hands over gradually — no face-to-face flip-flopping — and on
+# curved colliders (SphereShape3D etc.) the target varies continuously. This is the spacing
+# of the foot probes around the body (metres).
+@export var surface_walk_probe_foot_offset: float = 0.28
+# Anchor hysteresis: standing exactly ON an edge, the nearest-hit ray alternates faces every
+# physics frame. The anchored face (snap plane / movement tangent / gate reference) only
+# SWITCHES once a different face has been the dominant support for this long — alternation
+# never persists, so the anchor can't flip-flop. Curved surfaces drift a fraction of
+# same_face_degrees per frame, so they track continuously and never engage the timer.
+@export var surface_walk_anchor_switch_time: float = 0.12
+@export var surface_walk_anchor_same_face_degrees: float = 15.0
+# Sticky blending: hits on faces OTHER than the anchored one contribute at most this weight
+# fraction, scaled further down toward 0 at standstill — standing on a corner the body hugs
+# the anchored face (no rocking, no averaged 45° lean), while at walk speed the new face
+# blends in for a smooth handover.
+@export var surface_walk_foreign_face_weight: float = 0.35
+# Low-pass on the orientation target (per-second rate): absorbs the residual per-frame ray
+# alternation right on an edge; the align tween below handles the rest.
+@export var surface_walk_target_smoothing: float = 22.0
 
 # Slope alignment: while ground-walking, ease the body's (and camera's) orientation onto the
 # surface under it. Full ease-in/ease-out tween: the turn rate ramps up (align_accel), is
@@ -149,6 +176,10 @@ var surface_walk_anchor_point: Vector3 = Vector3.ZERO
 # along the smoothed body normal launches the body when a seam swaps the anchor ~90 degrees.
 var surface_walk_anchor_normal: Vector3 = Vector3.UP
 var surface_walk_pitch: float = 0.0
+# Low-passed orientation target (see surface_walk_target_smoothing) and how long a face
+# OTHER than the anchored one has been the nearest support (drives the anchor switch).
+var surface_walk_smoothed_target: Vector3 = Vector3.UP
+var surface_walk_anchor_foreign_time: float = 0.0
 
 var surface_walk_transition_active: bool = false
 var surface_walk_transition_timer: float = 0.0
@@ -650,6 +681,8 @@ func enter_surface_walk_mode(hit_position: Vector3, surface_normal: Vector3, ins
 	surface_walk_normal = surface_normal.normalized()
 	surface_walk_anchor_point = hit_position
 	surface_walk_anchor_normal = surface_walk_normal
+	surface_walk_smoothed_target = surface_walk_normal
+	surface_walk_anchor_foreign_time = 0.0
 	surface_walk_no_surface_timer = 0.0
 	surface_walk_align_rate = 0.0
 
@@ -782,21 +815,42 @@ func update_surface_walk_edge_check(delta: float) -> bool:
 		return false
 
 	var raw_normal := (result["normal"] as Vector3).normalized()
+	var target_normal := (result.get("target_normal", raw_normal) as Vector3).normalized()
 
-	# Standing still ON an edge, the down ray alternates between the two faces and rocks the
-	# body forever. With no move intent, stick to the current surface — settle onto the
-	# anchor and let only movement change which face we align to.
-	if get_surface_walk_probe_move_direction() == Vector3.ZERO \
-			and rad_to_deg(raw_normal.angle_to(surface_walk_anchor_normal)) > 10.0:
-		align_surface_walk_normal_toward(surface_walk_anchor_normal, delta)
-		surface_walk_no_surface_timer = 0.0
-		return false
-
-	align_surface_walk_normal_toward(raw_normal, delta)
+	# Orientation eases toward the low-passed BLENDED normal: sticky weighting keeps it near
+	# the anchored face at low speed (no corner rocking), the blend is continuous across
+	# seams/curves, and the low-pass absorbs per-frame ray alternation right on an edge.
+	# nlerp, NOT slerp: slerp's internal rotation axis is the cross product of the two
+	# vectors, which degenerates into float noise when they're near-identical (the common
+	# case here) and spams "axis must be normalized". At these tiny per-frame steps
+	# lerp+normalize is equivalent.
+	var smooth_weight := clampf(1.0 - exp(-surface_walk_target_smoothing * delta), 0.0, 1.0)
+	var smoothed := surface_walk_smoothed_target.lerp(target_normal, smooth_weight)
+	surface_walk_smoothed_target = smoothed.normalized() if smoothed.length() > 0.01 else target_normal
+	align_surface_walk_normal_toward(surface_walk_smoothed_target, delta)
 
 	surface_walk_no_surface_timer = 0.0
-	surface_walk_anchor_point = result.get("position", surface_walk_anchor_point)
-	surface_walk_anchor_normal = raw_normal
+
+	# Anchor (snap plane / movement tangent / gate reference) with hysteresis: standing on an
+	# edge the nearest hit alternates faces every frame, so a DIFFERENT face only takes the
+	# anchor after persisting as the dominant support — meanwhile the anchor keeps tracking
+	# its own face through the same-face hit (curves drift a fraction of the same-face angle
+	# per frame, so they track continuously and never engage the timer). A feeler handover
+	# has no same-face hit and switches immediately (deliberate walk-in).
+	if rad_to_deg(raw_normal.angle_to(surface_walk_anchor_normal)) <= surface_walk_anchor_same_face_degrees:
+		surface_walk_anchor_foreign_time = 0.0
+		surface_walk_anchor_point = result["position"]
+		surface_walk_anchor_normal = raw_normal
+	else:
+		surface_walk_anchor_foreign_time += delta
+
+		if result.has("same_face_normal") and surface_walk_anchor_foreign_time < surface_walk_anchor_switch_time:
+			surface_walk_anchor_point = result["same_face_position"]
+			surface_walk_anchor_normal = (result["same_face_normal"] as Vector3).normalized()
+		else:
+			surface_walk_anchor_foreign_time = 0.0
+			surface_walk_anchor_point = result["position"]
+			surface_walk_anchor_normal = raw_normal
 
 	return false
 
@@ -840,11 +894,16 @@ func align_surface_walk_normal_toward(target_normal: Vector3, delta: float) -> v
 	surface_walk_forward = projected_forward.normalized()
 
 
-# Ground probe, all rays from the body centre. A feeler along the walk direction hands over
-# an approaching concave seam outright (no blending — competing normal sources stall in an
-# equilibrium and jam the player). Otherwise the ground is the NEAREST hit of the down ray
-# and two forward-down sweep rays (a convex crest's next face sits ahead-below; nearest wins
-# so a far face can't over-rotate the body). Returns {position, normal} or {}.
+# Ground probe. A feeler along the walk direction hands over an approaching concave seam
+# outright (no blending — competing normal sources stall in an equilibrium and jam the
+# player); the feeler uses the LARGER concave limit so a deliberate walk into a steep wall
+# always rotates the player onto it. Otherwise the ground is sampled by several rays — the
+# down ray, front/back foot rays straddling any seam, and two forward-down sweeps (a convex
+# crest's next face sits ahead-below). The NEAREST hit stays the physical anchor (snap plane
+# and edge gating), while "target_normal" is the distance-weighted BLEND of every hit: a
+# CONTINUOUS orientation target, so seams hand over gradually as the feet cross them and
+# curved colliders (analytic sphere/capsule shapes) bank the body smoothly — no
+# face-to-face flip-flopping. Returns {position, normal, target_normal} or {}.
 func get_surface_walk_ground_result() -> Dictionary:
 	if player == null:
 		return {}
@@ -854,12 +913,38 @@ func get_surface_walk_ground_result() -> Dictionary:
 	var move_dir := get_surface_walk_probe_move_direction()
 
 	if move_dir != Vector3.ZERO:
-		var feeler := probe_surface_walk_ray(origin, move_dir, probe_length)
+		var feeler := probe_surface_walk_ray(origin, move_dir, probe_length, surface_walk_max_concave_angle_degrees)
 
 		if not feeler.is_empty():
+			feeler["target_normal"] = feeler["normal"]
 			return feeler
 
-	var directions: Array[Vector3] = [-surface_walk_normal]
+	# Foot-probe axes: along the walk direction when moving (front foot picks the next face
+	# up early, back foot holds the old one), the body's own tangent axes when idle — so
+	# standing ON a seam the feet still straddle it and the blend stays well-defined.
+	var axis_a := move_dir
+	var axis_b := Vector3.ZERO
+
+	if axis_a == Vector3.ZERO:
+		axis_a = (-player.global_transform.basis.z).slide(surface_walk_normal)
+
+	if axis_a.length() > 0.01:
+		axis_a = axis_a.normalized()
+		axis_b = axis_a.cross(surface_walk_normal)
+
+		if axis_b.length() > 0.01:
+			axis_b = axis_b.normalized()
+
+	# Each probe: [cast origin, direction].
+	var lifted := origin + surface_walk_normal * 0.08
+	var probes: Array = [[lifted, -surface_walk_normal]]
+
+	for axis in [axis_a, axis_b]:
+		if axis == Vector3.ZERO:
+			continue
+
+		probes.append([lifted + axis * surface_walk_probe_foot_offset, -surface_walk_normal])
+		probes.append([lifted - axis * surface_walk_probe_foot_offset, -surface_walk_normal])
 
 	if surface_walk_wrap_probe and move_dir != Vector3.ZERO:
 		var wrap_right := move_dir.cross(surface_walk_normal)
@@ -868,30 +953,80 @@ func get_surface_walk_ground_result() -> Dictionary:
 			wrap_right = wrap_right.normalized()
 
 			for sweep_degrees: float in [30.0, 60.0]:
-				directions.append((-surface_walk_normal).rotated(wrap_right, deg_to_rad(sweep_degrees)))
+				probes.append([lifted, (-surface_walk_normal).rotated(wrap_right, deg_to_rad(sweep_degrees))])
+
+	# Sticky blending: faces other than the anchored one are down-weighted, and further so
+	# at low speed — standing still the body hugs the anchored face instead of averaging
+	# across a corner; at walk speed the next face blends in for the handover.
+	var speed_ratio := clampf(
+		player.linear_velocity.slide(surface_walk_anchor_normal).length() / maxf(surface_walk_speed, 0.01),
+		0.0,
+		1.0
+	)
+	var foreign_weight := surface_walk_foreign_face_weight * lerpf(0.1, 1.0, speed_ratio)
+	var same_face_cos := cos(deg_to_rad(surface_walk_anchor_same_face_degrees))
 
 	var best: Dictionary = {}
 	var best_distance := INF
+	var same_face_best: Dictionary = {}
+	var same_face_distance := INF
+	var blended_normal := Vector3.ZERO
 
-	for direction in directions:
-		var result := probe_surface_walk_ray(origin + surface_walk_normal * 0.08, direction, probe_length)
+	for probe in probes:
+		var result := probe_surface_walk_ray(probe[0], probe[1], probe_length)
 
 		if result.is_empty():
 			continue
 
-		var hit_distance := origin.distance_squared_to(result["position"])
+		var hit_normal := (result["normal"] as Vector3).normalized()
+		var hit_distance := origin.distance_to(result["position"])
+		var on_anchor_face := hit_normal.dot(surface_walk_anchor_normal) >= same_face_cos
+
+		# Quadratic falloff: near supports dominate; a far face contributes a nudge, never a
+		# takeover (the old nearest-wins intent, made continuous).
+		var weight := 1.0 - clampf(hit_distance / probe_length, 0.0, 1.0)
+		weight = weight * weight + 0.001
+
+		if not on_anchor_face:
+			weight *= foreign_weight
+
+		blended_normal += hit_normal * weight
 
 		if hit_distance < best_distance:
 			best_distance = hit_distance
 			best = result
 
+		if on_anchor_face and hit_distance < same_face_distance:
+			same_face_distance = hit_distance
+			same_face_best = result
+
+	if best.is_empty():
+		return {}
+
+	if blended_normal.length() > 0.01:
+		best["target_normal"] = blended_normal.normalized()
+	else:
+		best["target_normal"] = best["normal"]
+
+	# The nearest hit still ON the anchored face (if any) — the anchor keeps tracking its
+	# own face while the hysteresis timer decides whether the nearest FOREIGN face takes over.
+	if not same_face_best.is_empty():
+		best["same_face_position"] = same_face_best["position"]
+		best["same_face_normal"] = same_face_best["normal"]
+
 	return best
 
 
 # One validated probe ray: discards degenerate normals and surfaces angled further than
-# surface_walk_max_edge_angle_degrees from the surface we're ON (anchor normal — never the
-# eased display normal, which lags mid-tween and would reject legitimate bevel steps at speed).
-func probe_surface_walk_ray(origin: Vector3, direction: Vector3, length: float) -> Dictionary:
+# the edge limit from the surface we're ON (anchor normal — never the eased display normal,
+# which lags mid-tween and would reject legitimate bevel steps at speed). max_angle_degrees
+# overrides the default limit (the concave feeler passes its own, larger one).
+func probe_surface_walk_ray(
+	origin: Vector3,
+	direction: Vector3,
+	length: float,
+	max_angle_degrees: float = -1.0
+) -> Dictionary:
 	var result := raycast_from_player(origin, origin + direction * length)
 
 	if result.is_empty():
@@ -902,7 +1037,9 @@ func probe_surface_walk_ray(origin: Vector3, direction: Vector3, length: float) 
 	if hit_normal.length() < 0.01:
 		return {}
 
-	if rad_to_deg(surface_walk_anchor_normal.angle_to(hit_normal.normalized())) > surface_walk_max_edge_angle_degrees:
+	var limit := max_angle_degrees if max_angle_degrees > 0.0 else surface_walk_max_edge_angle_degrees
+
+	if rad_to_deg(surface_walk_anchor_normal.angle_to(hit_normal.normalized())) > limit:
 		return {}
 
 	return result
