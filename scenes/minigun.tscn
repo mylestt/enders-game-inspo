@@ -2,8 +2,8 @@
 
 [ext_resource type="PackedScene" uid="uid://1htclttf2g2r" path="res://Props/Minigun.glb" id="1_2sjy8"]
 [ext_resource type="Script" uid="uid://cbefnfc875w1l" path="res://scripts/weapons/minigun_weapon.gd" id="2_sjy8w"]
-[ext_resource type="PackedScene" path="res://scenes/minigun_tracer_effect.tscn" id="3_hitscan_tracer"]
-[ext_resource type="PackedScene" path="res://scenes/minigun_muzzle_flash.tscn" id="4_flash"]
+[ext_resource type="PackedScene" uid="uid://xff1yt7sjm3j" path="res://scenes/minigun_tracer_effect.tscn" id="3_hitscan_tracer"]
+[ext_resource type="PackedScene" uid="uid://rgaq4ehfsoxn" path="res://scenes/minigun_muzzle_flash.tscn" id="4_flash"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_02213"]
 albedo_color = Color(0.30692267, 0.3069227, 0.3069227, 1)
@@ -16,6 +16,7 @@ transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, -0.008401036, -0.6754142)
 script = ExtResource("2_sjy8w")
 barrel_node_path = NodePath("Barrel")
 box_node_path = NodePath("Box")
+max_spin_radians_per_second = 20.0
 barrel_local_spin_axis = Vector3(-1, 0, 0)
 rounds_per_second = 50.0
 max_rounds_per_frame = 8
