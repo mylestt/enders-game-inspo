@@ -1,6 +1,11 @@
 extends RigidBody3D
 
-@export var linear_damp_value: float = 0.0
+# THE air-resistance knobs, and they are exact: _ready puts both damps in REPLACE mode, so
+# these values fully override the project's hidden 0.1 world default (which, in the default
+# Combine mode, silently ADDED to whatever was set here — a "0" still decayed at 0.1/s).
+# linear = drift decay per second while flying (0 = coast forever; 0.1 = the old feel);
+# angular = how quickly spin dies off.
+@export var linear_damp_value: float = 0.1
 @export var angular_damp_value: float = 1.2
 
 # Uniform (isotropic) rotational inertia. The capsule's natural inertia is anisotropic, which
@@ -65,6 +70,8 @@ var last_body_slam_time_by_target_peer_id: Dictionary = {}
 func _ready() -> void:
 	add_to_group("players")
 	gravity_scale = 0.0
+	linear_damp_mode = RigidBody3D.DAMP_MODE_REPLACE
+	angular_damp_mode = RigidBody3D.DAMP_MODE_REPLACE
 	linear_damp = linear_damp_value
 	angular_damp = angular_damp_value
 	inertia = Vector3.ONE * rotational_inertia
