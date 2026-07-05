@@ -17,7 +17,7 @@ extends Node
 @export var impact_angular_velocity_multiplier: float = 0.25
 @export var max_contacts_reported: int = 8
 
-@export var debug_print_impacts: bool = true
+@export var debug_print_impacts: bool = false
 
 var player: RigidBody3D
 var camera: Camera3D

@@ -63,6 +63,9 @@ static func get_shared_material() -> ShaderMaterial:
 
 
 func _ready() -> void:
+	# The spark scale animates per render frame in _process — opt out of physics interpolation
+	# so the 60 Hz tick snapshots don't alias it on >60 Hz displays.
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	ensure_visual_nodes()
 	set_process(initialized)
 

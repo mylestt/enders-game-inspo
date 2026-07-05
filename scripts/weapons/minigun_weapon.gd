@@ -16,10 +16,16 @@ signal windup_changed(amount: float)
 @export var rounds_per_second: float = 18.0
 @export var max_rounds_per_frame: int = 4
 
+# Sustained fire heats the gun: recoil ramps toward heat_recoil_max_mult over heat_ramp_time,
+# cools back down when the trigger releases.
+@export var heat_ramp_time: float = 3.0
+@export var heat_recoil_max_mult: float = 2.5
+
 var barrel: Node3D
 var box: Node3D
 var windup_amount: float = 0.0
 var fire_cooldown: float = 0.0
+var heat: float = 0.0
 
 
 func _ready() -> void:
@@ -38,7 +44,12 @@ func _physics_process(delta: float) -> void:
 	advance(delta)
 	update_windup(delta)
 	update_firing_state()
+	update_heat(delta)
 	update_fire_cycle(delta)
+
+
+func update_heat(delta: float) -> void:
+	heat = move_toward(heat, 1.0 if is_firing() else 0.0, delta / maxf(heat_ramp_time, 0.001))
 
 
 func update_windup(delta: float) -> void:
@@ -101,7 +112,7 @@ func fire_round() -> void:
 
 	fire_hitscan()
 	consume_round()
-	apply_fire_recoil(windup_amount)
+	apply_fire_recoil(windup_amount * lerpf(1.0, heat_recoil_max_mult, heat))
 
 
 func set_trigger_held(value: bool) -> void:

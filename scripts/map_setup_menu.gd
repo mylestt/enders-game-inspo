@@ -25,6 +25,7 @@ var points_to_win_spin: SpinBox
 var round_time_spin: SpinBox
 var heal_on_kill_check: CheckBox
 var ammo_on_kill_check: CheckBox
+var drones_option: OptionButton
 
 # Mode-specific control groups: exactly one is visible at a time, driven by the mode
 # dropdown (_on_game_mode_selected), so each mode only shows its own settings.
@@ -144,6 +145,22 @@ func _build_ui() -> void:
 	round_time_spin = _add_spin(column, "Round Time / Time Limit", 0, 3600, 30, int(GameLaunch.round_time_limit))
 	heal_on_kill_check = _add_check(column, "Full Heal On Kill", GameLaunch.heal_on_kill)
 	ammo_on_kill_check = _add_check(column, "Ammo Refill On Kill", GameLaunch.ammo_on_kill)
+
+	if launch_mode == GameLaunch.Mode.TEST_ARENA:
+		var drones_row := HBoxContainer.new()
+		drones_row.add_theme_constant_override("separation", 12)
+		var drones_label := Label.new()
+		drones_label.text = "Drones"
+		drones_label.custom_minimum_size = Vector2(160.0, 0.0)
+		drones_row.add_child(drones_label)
+		drones_option = OptionButton.new()
+		drones_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		drones_option.add_item("No Drones", GameLaunch.DRONES_NONE)
+		drones_option.add_item("Peaceful Drones", GameLaunch.DRONES_PEACEFUL)
+		drones_option.add_item("Aggressive Drones", GameLaunch.DRONES_AGGRESSIVE)
+		drones_option.selected = GameLaunch.drone_mode
+		drones_row.add_child(drones_option)
+		column.add_child(drones_row)
 
 	_build_team_section(column)
 	_build_ffa_section(column)
@@ -344,6 +361,7 @@ func _on_launch_pressed() -> void:
 	GameLaunch.game_mode_id = _selected_game_mode()
 	GameLaunch.heal_on_kill = heal_on_kill_check.button_pressed
 	GameLaunch.ammo_on_kill = ammo_on_kill_check.button_pressed
+	GameLaunch.drone_mode = drones_option.selected if drones_option != null else GameLaunch.DRONES_NONE
 	GameLaunch.ffa_respawn_time = float(respawn_time_spin.value)
 	GameLaunch.ffa_booster_fuel = float(booster_fuel_spin.value)
 	GameLaunch.ffa_kill_limit = int(kill_limit_spin.value)

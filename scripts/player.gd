@@ -62,6 +62,7 @@ var last_body_slam_time_by_target_peer_id: Dictionary = {}
 
 
 func _ready() -> void:
+	add_to_group("players")
 	gravity_scale = 0.0
 	linear_damp = linear_damp_value
 	angular_damp = angular_damp_value
@@ -202,8 +203,8 @@ func show_hitmarker(is_kill: bool = false) -> void:
 		hud_controller.show_hitmarker(is_kill)
 
 
-# Weapon recoil kick to the aim (climb + side). Persistent — folded into the look so the player
-# pulls down to counter it.
+# Weapon recoil kick to the aim (climb + side). Smoothed in and auto-recentered by the
+# movement controller; the player's counter-pull is consumed 1:1.
 func apply_camera_recoil(vertical_degrees: float, horizontal_degrees: float) -> void:
 	if movement_controller != null:
 		movement_controller.apply_look_recoil(vertical_degrees, horizontal_degrees)
@@ -626,6 +627,12 @@ func submit_weapon_hit(
 	
 	if target.has_method("apply_weapon_damage"):
 		target.call("apply_weapon_damage", damage, peer_id)
+
+	# Local physics targets (test-arena drones, props) take a shove scaled by the round —
+	# off-centre hits spin them. Players are excluded (they have their own hit pipeline).
+	if target is RigidBody3D and not target.has_method("get_peer_id"):
+		var body := target as RigidBody3D
+		body.apply_impulse(shot_direction.normalized() * damage * 0.06, hit_position - body.global_position)
 
 
 func apply_weapon_damage(damage: float, attacker_peer_id: int = 0) -> void:

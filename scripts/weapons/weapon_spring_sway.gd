@@ -34,8 +34,8 @@ extends Node3D
 
 @export_group("Visual Recoil")
 # The dedicated recoil spring (snappier recovery than the sway spring).
-@export var visual_recoil_stiffness: float = 130.0
-@export var visual_recoil_damping: float = 22.0
+@export var visual_recoil_stiffness: float = 95.0
+@export var visual_recoil_damping: float = 24.0
 # How fast the viewmodel eases to/from the weapon's sustained_kickback hold while firing.
 @export var sustained_kickback_speed: float = 8.0
 
@@ -95,6 +95,9 @@ var _ads_target_dirty: bool = true
 
 func _ready() -> void:
 	process_priority = -50
+	# Animated per render frame in _process — opt out of physics interpolation, or the 60 Hz
+	# tick snapshots override the writes and the viewmodel judders on >60 Hz displays.
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	rest_position = position
 	rest_rotation = rotation
 	cache_parent_transform()

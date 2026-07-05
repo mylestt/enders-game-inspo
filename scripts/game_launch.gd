@@ -48,6 +48,14 @@ static var admin_key: String = ""
 static var map_configured: bool = false
 static var map_id: String = "diamond"
 
+# Test Arena only: AI drones (DroneSpawner in main.tscn reads this). Peaceful drones fly
+# and chase but never shoot. Only the Test Arena map-setup menu can set this; every other
+# launch path resets it to none.
+const DRONES_NONE := 0
+const DRONES_PEACEFUL := 1
+const DRONES_AGGRESSIVE := 2
+static var drone_mode: int = DRONES_NONE
+
 # Game mode. "team" = team elimination (the original mode), "ffa" = free-for-all
 # deathmatch (random edge spawns, per-player K/D, timed match, auto-respawn, random gun).
 # RoundManager owns the authoritative copy and syncs it to clients; UI reads this field.

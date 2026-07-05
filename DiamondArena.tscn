@@ -2,6 +2,7 @@
 
 [ext_resource type="PackedScene" uid="uid://bipyaais45ghg" path="res://Props/Diamond.glb" id="1_ug2fc"]
 [ext_resource type="Texture2D" uid="uid://cx6g2bygli807" path="res://textures/GreyGrid.png" id="2_mvqfr"]
+[ext_resource type="PackedScene" path="res://scenes/spawn_point.tscn" id="3_spawnpt"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_tkpfl"]
 albedo_texture = ExtResource("2_mvqfr")
@@ -41,37 +42,42 @@ shape = SubResource("ConcavePolygonShape3D_tkpfl")
 [node name="SpawnsA" type="Node3D" parent="." index="2" unique_id=684960642]
 transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, 0, 63.308178, 0.016366959)
 
-[node name="SpawnA0" type="Marker3D" parent="SpawnsA" index="0" unique_id=88038021 groups=["spawn_team_a"]]
+[node name="SpawnA0" parent="SpawnsA" index="0" unique_id=88038021 instance=ExtResource("3_spawnpt")]
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -4, 0, 0)
 
-[node name="SpawnA1" type="Marker3D" parent="SpawnsA" index="1" unique_id=240026548 groups=["spawn_team_a"]]
+[node name="SpawnA1" parent="SpawnsA" index="1" unique_id=240026548 instance=ExtResource("3_spawnpt")]
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 4, 0, 0)
 
-[node name="SpawnA2" type="Marker3D" parent="SpawnsA" index="2" unique_id=88038022 groups=["spawn_team_a"]]
+[node name="SpawnA2" parent="SpawnsA" index="2" unique_id=88038022 instance=ExtResource("3_spawnpt")]
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, 0)
 
-[node name="SpawnA3" type="Marker3D" parent="SpawnsA" index="3" unique_id=88038023 groups=["spawn_team_a"]]
+[node name="SpawnA3" parent="SpawnsA" index="3" unique_id=88038023 instance=ExtResource("3_spawnpt")]
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -8, 0, 0)
 
-[node name="SpawnA4" type="Marker3D" parent="SpawnsA" index="4" unique_id=88038024 groups=["spawn_team_a"]]
+[node name="SpawnA4" parent="SpawnsA" index="4" unique_id=88038024 instance=ExtResource("3_spawnpt")]
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 8, 0, 0)
 
 [node name="SpawnsB" type="Node3D" parent="." index="3" unique_id=2017350737]
 transform = Transform3D(-2.1855695e-07, 0, 1, 0, 1, 0, -1, 0, -2.1855695e-07, 0, -61.977356, -0.019432068)
 
-[node name="SpawnB0" type="Marker3D" parent="SpawnsB" index="0" unique_id=1273251726 groups=["spawn_team_b"]]
+[node name="SpawnB0" parent="SpawnsB" index="0" unique_id=1273251726 instance=ExtResource("3_spawnpt")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4, 0, 0)
+team = 1
 
-[node name="SpawnB1" type="Marker3D" parent="SpawnsB" index="1" unique_id=1657635047 groups=["spawn_team_b"]]
+[node name="SpawnB1" parent="SpawnsB" index="1" unique_id=1657635047 instance=ExtResource("3_spawnpt")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 0, 0)
+team = 1
 
-[node name="SpawnB2" type="Marker3D" parent="SpawnsB" index="2" unique_id=1273251727 groups=["spawn_team_b"]]
+[node name="SpawnB2" parent="SpawnsB" index="2" unique_id=1273251727 instance=ExtResource("3_spawnpt")]
+team = 1
 
-[node name="SpawnB3" type="Marker3D" parent="SpawnsB" index="3" unique_id=1273251728 groups=["spawn_team_b"]]
+[node name="SpawnB3" parent="SpawnsB" index="3" unique_id=1273251728 instance=ExtResource("3_spawnpt")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8, 0, 0)
+team = 1
 
-[node name="SpawnB4" type="Marker3D" parent="SpawnsB" index="4" unique_id=1273251729 groups=["spawn_team_b"]]
+[node name="SpawnB4" parent="SpawnsB" index="4" unique_id=1273251729 instance=ExtResource("3_spawnpt")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 0, 0)
+team = 1
 
 [node name="OmniLight3D" type="OmniLight3D" parent="." index="4" unique_id=1865770332]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -66.25936, 0)

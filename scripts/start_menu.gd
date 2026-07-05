@@ -350,4 +350,5 @@ func _on_quit_pressed() -> void:
 func _on_join_pressed() -> void:
 	GameLaunch.server_ip = _direct_server_ip()
 	GameLaunch.pending_mode = GameLaunch.Mode.MULTIPLAYER_BROWSE
+	GameLaunch.drone_mode = GameLaunch.DRONES_NONE
 	get_tree().change_scene_to_file.call_deferred("res://scenes/main.tscn")

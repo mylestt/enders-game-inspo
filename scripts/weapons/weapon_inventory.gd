@@ -61,7 +61,12 @@ func update(delta: float, input_enabled: bool) -> void:
 		aiming = can_act and _aim_pressed()
 		equipped_weapon.set_aiming(aiming)
 
-	ads_blend = WeaponFeel.decay(ads_blend, 1.0 if aiming else 0.0, ads_blend_speed, delta)
+	var blend_speed := ads_blend_speed
+
+	if aiming:
+		blend_speed *= equipped_weapon.ads_in_speed_mult
+
+	ads_blend = WeaponFeel.decay(ads_blend, 1.0 if aiming else 0.0, blend_speed, delta)
 
 	if weapon_spring_sway != null:
 		weapon_spring_sway.set_ads_blend(ads_blend)

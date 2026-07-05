@@ -18,9 +18,11 @@ signal ads_changed(aiming: bool)
 @export var recoil_position_offset: Vector3 = Vector3.ZERO
 @export var recoil_random_rotation_degrees: Vector3 = Vector3.ZERO
 @export var recoil_random_position_offset: Vector3 = Vector3.ZERO
-# Persistent camera recoil (you pull down to counter), degrees per shot. Applies in all states.
+# Camera recoil, degrees per shot: smoothed in over a few frames, auto-recenters after a short
+# pause (counter-pulling is honored 1:1 — no double compensation). Applies in all states.
 @export var recoil_kick_up: float = 0.0
 @export var recoil_kick_side: float = 0.0        # random +/- horizontal wander
+@export var recoil_kick_free_float_mult: float = 0.5   # aim-climb scale while free-floating (the body shove absorbs the rest)
 # Viewmodel offset held while firing (e.g. minigun kicks back and stays back). Eased in/out.
 @export var sustained_kickback: Vector3 = Vector3.ZERO
 
@@ -66,6 +68,8 @@ var muzzle_flash: Node3D
 @export_group("ADS")
 # 0 = no FOV zoom. >0 = camera FOV while aiming (the rig lerps to it).
 @export var ads_fov: float = 0.0
+# Scope-in speed multiplier on the coordinator's ads_blend_speed (scope-out is always 1x).
+@export var ads_in_speed_mult: float = 1.75
 @export var ads_spread_mult: float = 0.35
 @export var ads_recoil_mult: float = 0.5
 # Extra local offset the viewmodel takes while aiming, on top of sight centring.
@@ -84,6 +88,7 @@ var current_ammo: int = 0
 var current_reserve: int = 0
 var reloading: bool = false
 var reload_timer: float = 0.0
+var _recoil_side_phase: float = 0.0
 
 
 func equip(new_owner: Node) -> void:
@@ -241,9 +246,9 @@ func request_recoil(multiplier: float = 1.0) -> void:
 
 
 # A fired round's recoil, in three independent channels every gun shares: viewmodel spring kick
-# (cosmetic), a persistent camera climb you pull down against (all states), and — only while
-# free-floating — a body shove straight back along the barrel, so where you aim is where you're
-# pushed in 0g.
+# (cosmetic), a smoothed self-recovering camera climb (all states; softened while free-floating),
+# and — only while free-floating — a body shove straight back along the barrel, so where you aim
+# is where you're pushed in 0g.
 func apply_fire_recoil(multiplier: float = 1.0) -> void:
 	var m := maxf(multiplier, 0.0)
 	request_recoil(m)
@@ -253,14 +258,23 @@ func apply_fire_recoil(multiplier: float = 1.0) -> void:
 		apply_body_push(m)
 
 
-# Persistent aim climb (+ side wander), fed into the look so the player corrects it with the mouse.
+# Aim climb (+ side wander). Braced = stable platform = full kick; free-floating softens it,
+# since the body shove carries the reaction instead.
 func apply_camera_kick(multiplier: float) -> void:
 	if owner_player == null or not owner_player.has_method("apply_camera_recoil"):
 		return
 
 	var scale := multiplier * get_ads_recoil_mult()
-	var up := recoil_kick_up * scale
-	var side := randf_range(-recoil_kick_side, recoil_kick_side) * scale
+
+	if not is_owner_braced():
+		scale *= recoil_kick_free_float_mult
+
+	# Per-shot variance so long sprays never trace a learnable pattern.
+	var up := recoil_kick_up * scale * randf_range(0.85, 1.15)
+	# Bungie-style side wander: a smooth sine walk across consecutive shots (drifts left, then
+	# right) instead of pure per-shot jitter — plus a little jitter on top.
+	var side := (sin(_recoil_side_phase) + randf_range(-0.35, 0.35)) * recoil_kick_side * scale
+	_recoil_side_phase += 0.37
 
 	if up != 0.0 or side != 0.0:
 		owner_player.call("apply_camera_recoil", up, side)

@@ -85,12 +85,24 @@ tune each per weapon in the Inspector:
    sent via the `recoil_requested` signal to the animator's recoil spring.
    *`+Z` in `recoil_position_offset` = toward the player (a backward kick).*
 
-2. **Persistent camera climb** (the CS:GO "view goes up, pull down" feel). `recoil_kick_up`
-   (degrees of climb per shot) + `recoil_kick_side` (random ± horizontal). Routed
-   `weapon → player.apply_camera_recoil → MovementController.apply_look_recoil`, which folds it
-   into the actual look (`look_pitch` in zero-G, `surface_walk_pitch` when surface-walking). It
-   is **persistent** — it stays until the player pulls down; it does not auto-recover. Applies
-   in all states. `recoil_kick_up` is *per shot*, so a 50 rps minigun needs a tiny value.
+2. **Camera climb with recovery** (CS-style: the climb is mostly yours to pull down).
+   `recoil_kick_up` (degrees of climb per shot, ±15% per-shot variance) + `recoil_kick_side`
+   (± horizontal — a smooth sine walk across consecutive shots plus per-shot jitter, so sprays
+   never trace a learnable pattern).
+   Routed `weapon → player.apply_camera_recoil → MovementController.apply_look_recoil` into a
+   **camera-space offset separate from the mouse look**: kicks ease in over a few frames (no
+   one-frame snap), the offset is clamped at the pitch limit (shooting never tumbles the body),
+   and the player's counter-pull consumes the offset 1:1 first — pulling down mid-spray is the
+   skill, and recovery never yanks the view below where they were aiming. Auto-recovery is
+   **small and continuous**: only `recoil_recovery_fraction` (default 0.15) of each kick's
+   climb recenters, and it runs *during* fire (`recoil_fire_settle_fraction`, default 1.0 —
+   no waiting for the trigger release); the rest folds into the base look as permanent climb
+   the player must pull down themselves (side wander always fully recenters). Tune feel via
+   the MovementController exports `recoil_apply_speed` / `recoil_recovery_delay` /
+   `recoil_recovery_speed`. While **free-floating** the climb is scaled by
+   `recoil_kick_free_float_mult` (default 0.5) — braced (surface-walk/grab) shooters take the
+   full kick, floaters take the body shove instead. `recoil_kick_up` is *per shot*, so a 50 rps
+   minigun needs a tiny value.
 
 3. **Free-float body push** (0-G reaction). Only while free-floating (not braced on a
    surface/grip). `fire_knockback_force` = a central impulse straight back **opposite the
@@ -117,7 +129,8 @@ Select a weapon scene's **root node** in the Inspector to see all of these.
 
 **Recoil** — `recoil_enabled`, `recoil_rotation_degrees`, `recoil_position_offset`,
 `recoil_random_rotation_degrees`, `recoil_random_position_offset`, **`recoil_kick_up`**,
-**`recoil_kick_side`**, **`sustained_kickback`**.
+**`recoil_kick_side`**, `recoil_kick_free_float_mult` (camera-climb scale while unbraced),
+**`sustained_kickback`**.
 
 **Hitscan** — `hitscan_range`, `hitscan_damage`, `hitscan_collision_mask`,
 `hitscan_collide_with_bodies`, `hitscan_collide_with_areas`, `hitscan_spread_degrees`
@@ -128,8 +141,10 @@ Select a weapon scene's **root node** in the Inspector to see all of these.
 
 **Ammo** — `mag_size` (**0 = infinite, no reload**), `starting_reserve`, `reload_time`.
 
-**ADS** — `ads_fov` (**0 = no zoom**), `ads_spread_mult`, `ads_recoil_mult`, `ads_position_offset`
-(additive fine-tune on top of sight auto-centring).
+**ADS** — `ads_fov` (**0 = no zoom**), `ads_in_speed_mult` (scope-in speed multiplier, default
+1.75× — scope-out always runs at 1×; the minigun sets 1.0 so the heavy gun shoulders slowly),
+`ads_spread_mult`, `ads_recoil_mult`, `ads_position_offset` (additive fine-tune on top of sight
+auto-centring).
 
 ### `HitscanWeapon` (railgun, battle rifle, most guns)
 `rounds_per_second` (cadence between shots/bursts), `semi_auto` (one shot/burst per trigger
@@ -139,7 +154,9 @@ rounds inside a burst).
 ### `MinigunWeapon` (wind-up full-auto)
 `barrel_node_path`, `box_node_path` (spinning parts), `wind_up_time`, `wind_down_time`,
 `fire_spin_threshold` (windup fraction before it fires), `max_spin_radians_per_second`,
-`barrel_local_spin_axis`, `rounds_per_second`, `max_rounds_per_frame`.
+`barrel_local_spin_axis`, `rounds_per_second`, `max_rounds_per_frame`, plus heat:
+`heat_ramp_time` / `heat_recoil_max_mult` (all recoil channels ramp up over sustained fire,
+cool on release).
 
 ### `ProjectileWeapon` (plasma cannon)
 `projectile_scene`, `projectile_speed` (m/s), plus everything `HitscanWeapon` has
@@ -160,7 +177,8 @@ Spread reuses `hitscan_spread_degrees`; `hitscan_damage`/`hitscan_range`/tracer 
 
 Hold `aim` (RMB). The coordinator lerps `camera.fov` between `GameSettings.fov` and the gun's
 `ads_fov`, blends the viewmodel to align its sight to screen centre, and applies
-`ads_spread_mult` / `ads_recoil_mult`. The animator finds the sight by searching the weapon's
+`ads_spread_mult` / `ads_recoil_mult`. Scope-in runs faster than scope-out by the gun's
+`ads_in_speed_mult` (default 1.75×); scope-out always uses the base `ads_blend_speed`. The animator finds the sight by searching the weapon's
 children for a `Marker3D` named **`Sight`** first, then **`ADSmarker`**. If alignment is
 slightly off, nudge `ads_position_offset` on the weapon; with no sight marker it falls back to
 that offset alone.
@@ -256,11 +274,11 @@ triggers "rpc node checksum failed"). See `DEPLOY.md`.
 | Spread | (0.58, 1.75)° | 0 | (0.35, 0.35)° | 0 |
 | Mag / reserve / reload | 200 / 600 / 3.0s | 5 / 20 / 1.8s | 36 / 108 / 2.2s | 5 / 20 / 2.6s |
 | `ads_fov` | 62 | 42 (scope) | 55 | 55 |
-| `recoil_kick_up` | 0.06 (×50/s) | 4.0 | 0.5 | 5.0 |
-| `recoil_kick_side` | 0.1 | 0.35 | 0.5 | 0.4 |
+| `recoil_kick_up` | 0.48 (×50/s) | 32.0 | 4.0 | 10.0 |
+| `recoil_kick_side` | 0.2 | 0.7 | 1.0 | 0.8 |
 | `fire_knockback_force` | 0.12 | 13.33 | 0.6 | 9.0 |
 | `fire_torque_strength` | 0 | 0 | 0 | 0 |
-| Extra | `sustained_kickback (0,0.004,0.03)` | big backward `recoil_position_offset` | — | editable blast + airburst curves |
+| Extra | `sustained_kickback (0,0.004,0.03)`, heat ramp ×2.5 over 3s | big backward `recoil_position_offset` | — | editable blast + airburst curves |
 
 ---
 
@@ -269,6 +287,9 @@ triggers "rpc node checksum failed"). See `DEPLOY.md`.
 - **`recoil_kick_up` is per shot.** 50 rps guns need tiny values; single-shot guns want big ones.
 - **Leave `fire_torque_strength` at 0.** It's a fixed-direction body spin (always tumbles the
   same way regardless of aim) — it feels wrong. Use `fire_knockback_force` for the aim-following push.
+- **Keep `recoil_rotation_degrees.y` at 0.** Rays fire along the recoiled mount, so a constant
+  yaw kick deflects actual shots sideways (this was the minigun's shoots-left bug). Side feel
+  belongs in the symmetric `recoil_random_rotation_degrees.y`.
 - **`+Z` in viewmodel-space `recoil_position_offset`/`sustained_kickback` = toward the player.**
 - **No pivot snap.** Guns sit at their scene transform. `aim_origin_node_path` is the muzzle marker.
 - **Ammo display is client-side; enforcement is server-side.** The HUD mag/reserve is local,

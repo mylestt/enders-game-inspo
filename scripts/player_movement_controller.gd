@@ -11,6 +11,17 @@ enum MovementMode {
 @export var look_neck_limit_degrees: float = 70.0
 @export var body_follow_speed: float = 6.0
 
+# Weapon camera recoil: kicks ease in over a few frames (no one-frame snap), then auto-recenter
+# after a short pause — minus whatever the player already pulled back themselves. Between shots a
+# fraction of the recovery still runs, so sprays micro-bounce as they climb. Only
+# recoil_recovery_fraction of each kick's climb recenters; the rest is permanent aim climb the
+# player must pull down (side wander always fully recenters).
+@export var recoil_apply_speed: float = 26.0
+@export var recoil_recovery_delay: float = 0.22
+@export var recoil_recovery_speed: float = 5.5
+@export var recoil_fire_settle_fraction: float = 1.0
+@export var recoil_recovery_fraction: float = 0.15
+
 @export var roll_torque: float = 10.0
 @export var roll_start_torque: float = 1.5
 @export var roll_ramp_time: float = 1.2
@@ -24,6 +35,7 @@ enum MovementMode {
 @export var min_jump_force: float = 2.0
 @export var max_jump_force: float = 30.0
 @export var jump_force_scroll_step: float = 1.0
+@export var surface_walk_jump_momentum_carry: float = 1.35  # run speed kept (and boosted) on jump-off
 
 @export var max_grab_speed: float = 10.0
 
@@ -34,7 +46,7 @@ enum MovementMode {
 @export var allow_legacy_center_push_fallback: bool = true
 @export var show_limb_push_debug_ui: bool = true
 @export var show_limb_push_ui_when_no_limb_near: bool = true
-@export var debug_print_limb_pushes: bool = true
+@export var debug_print_limb_pushes: bool = false
 
 @export var grab_distance_base: float = 2.1
 @export var grab_distance_level_1: float = 2.75
@@ -74,12 +86,19 @@ enum MovementMode {
 @export var surface_walk_edge_grace_time: float = 0.06
 @export var surface_walk_surface_normal_min_dot: float = 0.65
 
-# Slope alignment: while ground-walking, ease the body's orientation onto the surface
-# under it (up or down) as long as the slope change stays under the threshold. Past the
-# threshold the slope is "too steep" and you drop off into zero-G.
-@export var surface_walk_slope_align_max_degrees: float = 45.0
+# Edge traversal: a surface ahead in the walk direction takes over as the walked surface once
+# it's within stand range (concave seam), and forward-down rays carry the body over a convex
+# crest. Only REASONABLE seams are walkable: candidates angled further than max_edge_angle
+# from the current surface are ignored — sharp rims are a drop-off, steep walls a jam.
+@export var surface_walk_wrap_probe: bool = true
+@export var surface_walk_max_edge_angle_degrees: float = 70.0
+
+# Slope alignment: while ground-walking, ease the body's (and camera's) orientation onto the
+# surface under it. Full ease-in/ease-out tween: the turn rate ramps up (align_accel), is
+# capped (max_turn_speed), and decays exponentially (align_speed) — never a linear snap.
 @export var surface_walk_slope_align_speed: float = 10.0
-@export var surface_walk_slope_align_max_turn_speed_degrees: float = 240.0
+@export var surface_walk_slope_align_max_turn_speed_degrees: float = 175.0
+@export var surface_walk_align_accel: float = 6.5
 @export var surface_walk_foot_check_distance: float = 0.4
 @export var surface_walk_required_foot_count: int = 2
 @export var surface_walk_foot_surface_normal_min_dot: float = 0.75
@@ -113,6 +132,12 @@ var roll_hold_time: float = 0.0
 var look_pitch: float = 0.0
 var view_initialized: bool = false
 
+# Camera-space weapon recoil (x = pitch, y = yaw, radians): pending eases into offset, offset
+# recenters. Lives outside look_pitch so body-follow never bleeds it into body orientation.
+var recoil_pending: Vector2 = Vector2.ZERO
+var recoil_offset: Vector2 = Vector2.ZERO
+var recoil_recovery_wait: float = 0.0
+
 var grabbing_wall: bool = false
 var grab_position: Vector3 = Vector3.ZERO
 var grab_distance_level: int = 0
@@ -120,6 +145,9 @@ var grab_distance_level: int = 0
 var surface_walk_normal: Vector3 = Vector3.UP
 var surface_walk_forward: Vector3 = Vector3.FORWARD
 var surface_walk_anchor_point: Vector3 = Vector3.ZERO
+# The anchor's own raw hit normal. The snap measures stand distance along THIS — measuring
+# along the smoothed body normal launches the body when a seam swaps the anchor ~90 degrees.
+var surface_walk_anchor_normal: Vector3 = Vector3.UP
 var surface_walk_pitch: float = 0.0
 
 var surface_walk_transition_active: bool = false
@@ -130,6 +158,7 @@ var surface_walk_transition_target_transform: Transform3D
 var camera_base_position: Vector3 = Vector3.ZERO
 var surface_walk_shake_timer: float = 0.0
 var surface_walk_no_surface_timer: float = 0.0
+var surface_walk_align_rate: float = 0.0   # rad/s, eased by surface_walk_align_accel
 var _pre_surface_walk_material: PhysicsMaterial = null
 
 # Ground-lock daze state: how much/long the camera is sluggish after a mistimed lock, plus
@@ -288,17 +317,21 @@ func physics_update(
 	
 	if input_locked:
 		handle_input_locked_state()
+		update_recoil(delta)
 		clear_mouse_motion()
 		clear_free_look_mouse_motion()
 		return
-	
+
+	consume_recoil_compensation()
+
 	match movement_mode:
 		MovementMode.ZERO_G:
 			physics_update_zero_g(delta, free_look_active)
-		
+
 		MovementMode.SURFACE_WALK:
 			physics_update_surface_walk(delta)
-	
+
+	update_recoil(delta)
 	clear_mouse_motion()
 	clear_free_look_mouse_motion()
 
@@ -501,26 +534,36 @@ func get_ground_lock_probe() -> Dictionary:
 	var origin := player.global_position
 	var direction := get_ground_lock_probe_direction()
 
-	if direction.length() < 0.01:
+	if direction.length() >= 0.01:
+		direction = direction.normalized()
+		var end := origin + direction * surface_walk_lock_max_distance
+		var result := raycast_from_player(origin, end)
+
+		if not result.is_empty():
+			var hit_normal: Vector3 = result.get("normal", Vector3.ZERO)
+
+			if hit_normal.length() >= 0.01:
+				var hit_position: Vector3 = result.get("position", end)
+				return {
+					"position": hit_position,
+					"normal": hit_normal.normalized(),
+					"distance": origin.distance_to(hit_position),
+				}
+
+	# 6DOF fallback: in zero-G the body can be in any orientation, so feet often point at
+	# nothing even with a wall right beside you. Lock the nearest surface around the body
+	# instead (same 6-axis probe the spawn uses); the feet ray above keeps priority so the
+	# aimed sweet-spot timing still rewards pointing your feet.
+	var nearest := find_spawn_surface(surface_walk_lock_max_distance)
+
+	if nearest.is_empty():
 		return {}
 
-	direction = direction.normalized()
-	var end := origin + direction * surface_walk_lock_max_distance
-	var result := raycast_from_player(origin, end)
-
-	if result.is_empty():
-		return {}
-
-	var hit_position: Vector3 = result.get("position", end)
-	var hit_normal: Vector3 = result.get("normal", Vector3.ZERO)
-
-	if hit_normal.length() < 0.01:
-		return {}
-
+	var nearest_position: Vector3 = nearest["position"]
 	return {
-		"position": hit_position,
-		"normal": hit_normal.normalized(),
-		"distance": origin.distance_to(hit_position),
+		"position": nearest_position,
+		"normal": nearest["normal"],
+		"distance": origin.distance_to(nearest_position),
 	}
 
 
@@ -606,8 +649,10 @@ func enter_surface_walk_mode(hit_position: Vector3, surface_normal: Vector3, ins
 
 	surface_walk_normal = surface_normal.normalized()
 	surface_walk_anchor_point = hit_position
+	surface_walk_anchor_normal = surface_walk_normal
 	surface_walk_no_surface_timer = 0.0
-	
+	surface_walk_align_rate = 0.0
+
 	var look_forward := (-player.global_transform.basis.z).normalized()
 	var projected_forward := look_forward.slide(surface_walk_normal)
 	
@@ -619,6 +664,8 @@ func enter_surface_walk_mode(hit_position: Vector3, surface_normal: Vector3, ins
 	
 	surface_walk_forward = projected_forward.normalized()
 	surface_walk_pitch = 0.0
+	recoil_pending = Vector2.ZERO
+	recoil_offset = Vector2.ZERO
 	
 	var target_position := hit_position + surface_walk_normal * surface_walk_body_offset
 	var target_basis := make_surface_walk_basis(surface_walk_forward, surface_walk_normal)
@@ -723,49 +770,41 @@ func update_surface_walk_entry_shake(delta: float) -> void:
 
 func update_surface_walk_edge_check(delta: float) -> bool:
 	var result := get_surface_walk_ground_result()
-	
+
 	if result.is_empty():
 		surface_walk_no_surface_timer += delta
-		
+
 		if surface_walk_no_surface_timer >= surface_walk_edge_grace_time:
-			print("Surface walk ended: walked off edge.")
+			print("Surface walk ended: walked off surface.")
 			exit_surface_walk_mode()
 			return true
-		
-		return false
-	
-	var hit_normal: Vector3 = result.get("normal", Vector3.ZERO)
-	
-	if hit_normal.length() < 0.01:
-		surface_walk_no_surface_timer += delta
-		
-		if surface_walk_no_surface_timer >= surface_walk_edge_grace_time:
-			print("Surface walk ended: invalid surface under player.")
-			exit_surface_walk_mode()
-			return true
-		
-		return false
-	
-	var target_normal := hit_normal.normalized()
-	var slope_change_degrees := rad_to_deg(surface_walk_normal.angle_to(target_normal))
 
-	if slope_change_degrees > surface_walk_slope_align_max_degrees:
-		print("Surface walk ended: slope too steep to align (", roundi(slope_change_degrees), " deg).")
-		exit_surface_walk_mode()
-		return true
+		return false
 
-	align_surface_walk_normal_toward(target_normal, delta)
+	var raw_normal := (result["normal"] as Vector3).normalized()
+
+	# Standing still ON an edge, the down ray alternates between the two faces and rocks the
+	# body forever. With no move intent, stick to the current surface — settle onto the
+	# anchor and let only movement change which face we align to.
+	if get_surface_walk_probe_move_direction() == Vector3.ZERO \
+			and rad_to_deg(raw_normal.angle_to(surface_walk_anchor_normal)) > 10.0:
+		align_surface_walk_normal_toward(surface_walk_anchor_normal, delta)
+		surface_walk_no_surface_timer = 0.0
+		return false
+
+	align_surface_walk_normal_toward(raw_normal, delta)
 
 	surface_walk_no_surface_timer = 0.0
 	surface_walk_anchor_point = result.get("position", surface_walk_anchor_point)
+	surface_walk_anchor_normal = raw_normal
 
 	return false
 
 
-# Eases the walked-surface normal toward the ground under the player, so stepping onto a
-# (shallow enough) ramp smoothly banks into its orientation instead of staying locked to
-# the old one. Capped per frame so a sharp crease can't whip the camera. Forward is
-# re-projected onto the new plane so facing stays consistent.
+# Eases the walked-surface normal toward the ground under the player, so seams and curves
+# smoothly bank the body into the new orientation. Capped per frame so a sharp crease can't
+# whip the camera. Forward is parallel-transported through the same rotation (not re-projected)
+# so heading stays stable across big normal swings — sphere loops, 90-degree seams.
 func align_surface_walk_normal_toward(target_normal: Vector3, delta: float) -> void:
 	if target_normal.length() < 0.01:
 		return
@@ -778,10 +817,20 @@ func align_surface_walk_normal_toward(target_normal: Vector3, delta: float) -> v
 
 	var exp_weight := 1.0 - exp(-surface_walk_slope_align_speed * delta)
 	var max_step := deg_to_rad(surface_walk_slope_align_max_turn_speed_degrees) * delta
-	var step_angle := minf(full_angle * exp_weight, max_step)
+	var desired_step := minf(full_angle * exp_weight, max_step)
+	# Ease the turn rate toward the desired rate: soft onset; the exponential tail above
+	# already softens the stop.
+	surface_walk_align_rate = lerpf(
+		surface_walk_align_rate,
+		desired_step / delta,
+		clampf(1.0 - exp(-surface_walk_align_accel * delta), 0.0, 1.0)
+	)
+	var step_angle := minf(desired_step, surface_walk_align_rate * delta)
 	var t := clampf(step_angle / full_angle, 0.0, 1.0)
 
-	surface_walk_normal = surface_walk_normal.slerp(target_normal, t).normalized()
+	var new_normal := surface_walk_normal.slerp(target_normal, t).normalized()
+	surface_walk_forward = Quaternion(surface_walk_normal, new_normal) * surface_walk_forward
+	surface_walk_normal = new_normal
 
 	var projected_forward := surface_walk_forward.slide(surface_walk_normal)
 
@@ -791,16 +840,96 @@ func align_surface_walk_normal_toward(target_normal: Vector3, delta: float) -> v
 	surface_walk_forward = projected_forward.normalized()
 
 
+# Ground probe, all rays from the body centre. A feeler along the walk direction hands over
+# an approaching concave seam outright (no blending — competing normal sources stall in an
+# equilibrium and jam the player). Otherwise the ground is the NEAREST hit of the down ray
+# and two forward-down sweep rays (a convex crest's next face sits ahead-below; nearest wins
+# so a far face can't over-rotate the body). Returns {position, normal} or {}.
 func get_surface_walk_ground_result() -> Dictionary:
 	if player == null:
 		return {}
-	
-	var start := player.global_position + surface_walk_normal * 0.08
-	var end := player.global_position - surface_walk_normal * (
-		surface_walk_body_offset + surface_walk_edge_check_extra_distance
-	)
-	
-	return raycast_from_player(start, end)
+
+	var origin := player.global_position
+	var probe_length := surface_walk_body_offset + surface_walk_edge_check_extra_distance + 0.08
+	var move_dir := get_surface_walk_probe_move_direction()
+
+	if move_dir != Vector3.ZERO:
+		var feeler := probe_surface_walk_ray(origin, move_dir, probe_length)
+
+		if not feeler.is_empty():
+			return feeler
+
+	var directions: Array[Vector3] = [-surface_walk_normal]
+
+	if surface_walk_wrap_probe and move_dir != Vector3.ZERO:
+		var wrap_right := move_dir.cross(surface_walk_normal)
+
+		if wrap_right.length() > 0.01:
+			wrap_right = wrap_right.normalized()
+
+			for sweep_degrees: float in [30.0, 60.0]:
+				directions.append((-surface_walk_normal).rotated(wrap_right, deg_to_rad(sweep_degrees)))
+
+	var best: Dictionary = {}
+	var best_distance := INF
+
+	for direction in directions:
+		var result := probe_surface_walk_ray(origin + surface_walk_normal * 0.08, direction, probe_length)
+
+		if result.is_empty():
+			continue
+
+		var hit_distance := origin.distance_squared_to(result["position"])
+
+		if hit_distance < best_distance:
+			best_distance = hit_distance
+			best = result
+
+	return best
+
+
+# One validated probe ray: discards degenerate normals and surfaces angled further than
+# surface_walk_max_edge_angle_degrees from the surface we're ON (anchor normal — never the
+# eased display normal, which lags mid-tween and would reject legitimate bevel steps at speed).
+func probe_surface_walk_ray(origin: Vector3, direction: Vector3, length: float) -> Dictionary:
+	var result := raycast_from_player(origin, origin + direction * length)
+
+	if result.is_empty():
+		return {}
+
+	var hit_normal: Vector3 = result.get("normal", Vector3.ZERO)
+
+	if hit_normal.length() < 0.01:
+		return {}
+
+	if rad_to_deg(surface_walk_anchor_normal.angle_to(hit_normal.normalized())) > surface_walk_max_edge_angle_degrees:
+		return {}
+
+	return result
+
+
+# Tangent direction the player is moving in — actual velocity first, falling back to the
+# held input direction (pressed against a wall, velocity dies but intent hasn't), or ZERO
+# when idle (no edge can be crossed standing still, so the extra rays are skipped).
+func get_surface_walk_probe_move_direction() -> Vector3:
+	var tangent := player.linear_velocity.slide(surface_walk_normal)
+
+	if tangent.length() > 0.1:
+		return tangent.normalized()
+
+	var input_vector := get_surface_walk_input_vector()
+
+	if input_vector.length() < 0.1:
+		return Vector3.ZERO
+
+	var forward := (-player.global_transform.basis.z).slide(surface_walk_normal).normalized()
+	var right := player.global_transform.basis.x.slide(surface_walk_normal).normalized()
+	var desired := right * input_vector.x + forward * input_vector.y
+
+	if desired.length() < 0.01:
+		return Vector3.ZERO
+
+	return desired.normalized()
 
 
 func exit_surface_walk_mode() -> void:
@@ -810,12 +939,17 @@ func exit_surface_walk_mode() -> void:
 	surface_walk_transition_active = false
 	surface_walk_shake_timer = 0.0
 	surface_walk_no_surface_timer = 0.0
+	surface_walk_align_rate = 0.0
 
 	surface_walk_daze_timer = 0.0
 	surface_walk_daze_duration = 0.0
 	surface_walk_daze_strength = 0.0
 	surface_walk_look_yaw_vel = 0.0
 	surface_walk_look_pitch_vel = 0.0
+	# The fold below keeps the current view (recoil included) as the new body basis; zero the
+	# offset so it isn't applied a second time on top.
+	recoil_pending = Vector2.ZERO
+	recoil_offset = Vector2.ZERO
 
 	if camera != null:
 		var camera_basis := get_control_look_basis()
@@ -903,14 +1037,17 @@ func handle_surface_walk_movement(delta: float) -> void:
 			forward * input_vector.y
 		).normalized() * target_speed
 	
-	var current_tangent_velocity := player.linear_velocity.slide(surface_walk_normal)
+	# Slide on the ANCHOR normal (the snap's axis) so last tick's snap component is removed
+	# before the fresh one is added — sliding on the smoothed normal lets snap velocity
+	# accumulate into walk speed when the two diverge at a seam (launches the player).
+	var current_tangent_velocity := player.linear_velocity.slide(surface_walk_anchor_normal)
 	var new_tangent_velocity := current_tangent_velocity.move_toward(
 		desired_tangent_velocity,
 		current_acceleration * delta
 	)
-	
+
 	var snap_velocity := get_surface_walk_snap_velocity()
-	
+
 	player.linear_velocity = new_tangent_velocity + snap_velocity
 	player.angular_velocity = Vector3.ZERO
 	player.sleeping = false
@@ -945,16 +1082,21 @@ func get_surface_walk_current_acceleration(sprinting: bool) -> float:
 
 
 func get_surface_walk_snap_velocity() -> Vector3:
-	var distance_from_plane := surface_walk_normal.dot(player.global_position - surface_walk_anchor_point)
+	var distance_from_plane := surface_walk_anchor_normal.dot(player.global_position - surface_walk_anchor_point)
 	var offset_error := surface_walk_body_offset - distance_from_plane
-	
+
 	var snap_speed := clampf(
 		offset_error * surface_walk_snap_strength,
 		-surface_walk_max_snap_speed,
 		surface_walk_max_snap_speed
 	)
-	
-	return surface_walk_normal * snap_speed
+
+	# Fade the snap in with alignment: a freshly acquired seam face (body not rotated onto it
+	# yet) must not shove the body sideways at full spring strength — momentum carries the
+	# turn, then the snap settles stand distance as the roll completes.
+	snap_speed *= clampf(surface_walk_normal.dot(surface_walk_anchor_normal), 0.0, 1.0)
+
+	return surface_walk_anchor_normal * snap_speed
 
 
 func is_surface_walk_sprinting() -> bool:
@@ -972,8 +1114,13 @@ func handle_surface_walk_jump() -> void:
 		return
 	
 	var launch_direction := surface_walk_normal.normalized()
+	# Carry the run into the jump: keep the tangential velocity (snap component stripped so
+	# jump height stays consistent), boosted a touch, with the launch added on top — never a
+	# separate straight-up pop.
+	var carried := player.linear_velocity.slide(launch_direction) * surface_walk_jump_momentum_carry
 	exit_surface_walk_mode()
-	
+
+	player.linear_velocity = carried
 	player.sleeping = false
 	player.apply_central_impulse(launch_direction * jump_force)
 
@@ -1095,42 +1242,84 @@ func update_body_follow(delta: float) -> void:
 	camera.rotation = Vector3(look_pitch, 0.0, 0.0)
 
 
-# Weapon recoil kick to the aim: climbs the view (+pitch = up) with a little side yaw. It feeds
-# the same look state the mouse drives, so it's persistent — the player pulls down to counter it,
-# it doesn't auto-recover. Handles both zero-G and surface-walk look.
+# Weapon recoil kick to the aim (+pitch = up): buffered here, eased into the view by
+# update_recoil. Camera-space only — shooting never tumbles or reorients the body.
 func apply_look_recoil(pitch_degrees: float, yaw_degrees: float) -> void:
-	var pitch := deg_to_rad(pitch_degrees)
-	var yaw := deg_to_rad(yaw_degrees)
+	recoil_pending += Vector2(deg_to_rad(pitch_degrees), deg_to_rad(yaw_degrees))
+	recoil_recovery_wait = recoil_recovery_delay
 
-	if is_surface_walk_active():
-		var limit := deg_to_rad(surface_walk_pitch_limit_degrees)
-		surface_walk_pitch = clampf(surface_walk_pitch + pitch, -limit, limit)
-		if yaw != 0.0:
-			surface_walk_forward = surface_walk_forward.rotated(surface_walk_normal, yaw).normalized()
+
+# The player's own counter-pull eats the recoil offset first (1:1) before moving the base look,
+# so the later recentering never yanks the view past where they were actually aiming.
+func consume_recoil_compensation() -> void:
+	if recoil_offset == Vector2.ZERO or mouse_motion == Vector2.ZERO:
 		return
 
-	var basis := player.global_transform.basis.orthonormalized()
+	var sens := surface_walk_mouse_sensitivity if is_surface_walk_active() else mouse_sensitivity
 
-	if yaw != 0.0:
-		basis = basis.rotated(basis.y, yaw).orthonormalized()
+	if sens <= 0.0:
+		return
 
-	# Pitch articulates the neck up to its limit; overflow tumbles the body (same as the mouse).
-	var neck := deg_to_rad(look_neck_limit_degrees)
-	var desired := look_pitch + pitch
+	# Look deltas in radians: pitch = -mouse.y * sens, yaw = -mouse.x * sens.
+	var eaten := Vector2(
+		eat_recoil_offset(recoil_offset.x, -mouse_motion.y * sens),
+		eat_recoil_offset(recoil_offset.y, -mouse_motion.x * sens)
+	)
+	recoil_offset += eaten
+	mouse_motion += Vector2(eaten.y, eaten.x) / sens
 
-	if desired > neck:
-		basis = basis.rotated(basis.x, desired - neck).orthonormalized()
-		look_pitch = neck
-	elif desired < -neck:
-		basis = basis.rotated(basis.x, desired + neck).orthonormalized()
-		look_pitch = -neck
-	else:
-		look_pitch = desired
 
-	player.global_transform.basis = basis
+# Signed portion of look_delta that cancels the offset (opposite signs only).
+static func eat_recoil_offset(offset_value: float, look_delta: float) -> float:
+	if offset_value == 0.0 or signf(look_delta) != -signf(offset_value):
+		return 0.0
+
+	return signf(look_delta) * minf(absf(look_delta), absf(offset_value))
+
+
+# Ease the pending kick into the camera-space offset, clamp it to the pitch head-room left (a
+# spray stops at the limit instead of flipping the body like the mouse does), recenter after the
+# delay, and render the offset on top of the base pitch the look handlers wrote this frame.
+func update_recoil(delta: float) -> void:
+	if recoil_pending == Vector2.ZERO and recoil_offset == Vector2.ZERO:
+		return
+
+	var walking := is_surface_walk_active()
+	var limit := deg_to_rad(surface_walk_pitch_limit_degrees if walking else look_neck_limit_degrees)
+
+	var step := recoil_pending * clampf(1.0 - exp(-recoil_apply_speed * delta), 0.0, 1.0)
+	recoil_pending -= step
+	recoil_offset += Vector2(step.x * recoil_recovery_fraction, step.y)
+
+	# The rest of the climb is permanent: folded into the base look (clamped, never tumbling
+	# the body), so sustained fire walks the aim up until the player pulls it down.
+	var permanent := step.x * (1.0 - recoil_recovery_fraction)
+
+	if permanent != 0.0:
+		if walking:
+			surface_walk_pitch = clampf(surface_walk_pitch + permanent, -limit, limit)
+		else:
+			look_pitch = clampf(look_pitch + permanent, -limit, limit)
+
+	if recoil_pending.length_squared() < 0.00000001:
+		recoil_pending = Vector2.ZERO
+
+	var base := surface_walk_pitch if walking else look_pitch
+	recoil_offset.x = clampf(recoil_offset.x, -limit - base, limit - base)
+
+	var recover_rate := recoil_recovery_speed
+
+	if recoil_recovery_wait > 0.0:
+		recoil_recovery_wait -= delta
+		recover_rate *= recoil_fire_settle_fraction   # recovery keeps running mid-spray
+
+	recoil_offset *= exp(-recover_rate * delta)
+
+	if recoil_offset.length_squared() < 0.00000001:
+		recoil_offset = Vector2.ZERO
 
 	if camera != null:
-		camera.rotation = Vector3(look_pitch, 0.0, 0.0)
+		camera.rotation = Vector3(base + recoil_offset.x, recoil_offset.y, 0.0)
 
 
 func handle_free_look_rotation() -> void:

@@ -8,26 +8,27 @@ class_name CameraRig
 
 @export var top_speed: float = 12.5
 
-# Headbob (figure-8: vertical bobs twice per horizontal sway)
+# Headbob (figure-8: vertical bobs twice per horizontal sway). Tuned heavy — slow, deep
+# steps like a weighted space suit.
 @export var bob_amp_walk: float = 0.05
 @export var bob_amp_sprint: float = 0.13
-@export var bob_freq_walk: float = 1.8
-@export var bob_freq_sprint: float = 2.6
-@export var bob_intensity: float = 1.95
+@export var bob_freq_walk: float = 1.6
+@export var bob_freq_sprint: float = 2.3
+@export var bob_intensity: float = 2.5
 @export var bob_smoothing: float = 8.0
 
 # Landing dip (damped spring) fired when you touch down on a surface
-@export var land_dip_per_mps: float = 0.008
-@export var land_dip_max: float = 0.18
+@export var land_dip_per_mps: float = 0.012
+@export var land_dip_max: float = 0.24
 @export var land_threshold: float = 2.0
 @export var land_spring: float = 220.0
 @export var land_damping: float = 22.0
 
 # Look-sway (view lags fast turns) + strafe lean
 @export var sway_amount: float = 0.02
-@export var sway_max_degrees: float = 0.7
+@export var sway_max_degrees: float = 0.9
 @export var sway_smoothing: float = 22.0
-@export var tilt_max_degrees: float = 1.3
+@export var tilt_max_degrees: float = 1.8
 @export var tilt_smoothing: float = 8.0
 
 var player: RigidBody3D

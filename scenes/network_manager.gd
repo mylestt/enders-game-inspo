@@ -1479,8 +1479,6 @@ func server_process_body_slam(
 	for peer_id in _lobby_client_peers_for(target_peer_id):
 		rpc_id(int(peer_id), "client_apply_body_slam_impulse", target_peer_id, clamped_impulse, contact_position)
 
-	print("Body slam: ", attacker_peer_id, " shoved ", target_peer_id, " impulse ", clamped_impulse)
-
 
 @rpc("authority", "call_local", "reliable")
 func client_apply_body_slam_impulse(
@@ -1945,15 +1943,6 @@ func server_process_weapon_hit(
 
 	if killed:
 		_handle_kill_rewards(attacker_peer_id, target_peer_id)
-
-	print(
-		"Weapon hit: ",
-		attacker_peer_id,
-		" -> ",
-		target_peer_id,
-		" damage ",
-		applied_damage
-	)
 
 
 func can_process_weapon_hit_pair(attacker_peer_id: int, target_peer_id: int) -> bool:

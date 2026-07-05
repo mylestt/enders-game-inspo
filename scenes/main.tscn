@@ -13,6 +13,7 @@
 [ext_resource type="Script" uid="uid://dg56k8ek316nr" path="res://scripts/round_hud.gd" id="11_roundhud"]
 [ext_resource type="Script" uid="uid://cwcakba58fk0q" path="res://scripts/scoreboard.gd" id="12_scoreboard"]
 [ext_resource type="Script" path="res://scripts/game_over_hud.gd" id="13_gameover"]
+[ext_resource type="Script" path="res://scripts/drone_spawner.gd" id="14_drones"]
 
 [node name="World Node3D" type="Node3D" unique_id=878825741]
 script = ExtResource("1_sugp2")
@@ -58,6 +59,9 @@ script = ExtResource("8_console")
 [node name="Players" type="Node3D" parent="." unique_id=1147699974]
 
 [node name="WeaponEffects" type="Node3D" parent="." unique_id=292710641]
+
+[node name="DroneSpawner" type="Node3D" parent="." unique_id=1147699975]
+script = ExtResource("14_drones")
 
 [node name="SpawnPointA" type="Marker3D" parent="." unique_id=301948085]
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, -37)
