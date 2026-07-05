@@ -794,7 +794,10 @@ func get_spawn_transform(spawn_index: int) -> Transform3D:
 		var marker := markers[slot % markers.size()] as Node3D
 
 		if marker != null:
-			return marker.global_transform
+			# orthonormalized(): a spawn marker scaled in the editor (easy to do to the
+			# SpawnPoint capsules) must never leak scale into the player's basis — a scaled
+			# player body breaks every unit-vector assumption downstream (camera, walk).
+			return marker.global_transform.orthonormalized()
 
 	# Fallback to the two primary markers if the map's spawn groups aren't present.
 	var spawn_node: Node3D
@@ -805,7 +808,7 @@ func get_spawn_transform(spawn_index: int) -> Transform3D:
 		spawn_node = get_node_or_null(spawn_b_path) as Node3D
 
 	if spawn_node != null:
-		return spawn_node.global_transform
+		return spawn_node.global_transform.orthonormalized()
 
 	var fallback_position := Vector3(float(spawn_index) * 6.0, 0.0, 0.0)
 	return Transform3D(Basis.IDENTITY, fallback_position)
@@ -926,14 +929,14 @@ func get_ffa_spawn_transform(avoid_positions: Array = []) -> Transform3D:
 	if not best.is_empty():
 		return _edge_spawn_transform(best, center)
 
-	# Fallback: random authored marker.
+	# Fallback: random authored marker (orthonormalized — see get_spawn_transform).
 	var markers := get_all_spawn_markers()
 
 	if markers.size() > 0:
 		var marker := markers[randi() % markers.size()] as Node3D
 
 		if marker != null:
-			return marker.global_transform
+			return marker.global_transform.orthonormalized()
 
 	return get_spawn_transform(0)
 
@@ -2313,6 +2316,51 @@ func client_play_projectile_shot(shooter_peer_id: int, origin: Vector3, velocity
 	# Exclude the shooter's own body so the bolt doesn't pop at their muzzle.
 	var shooter: Node = players_by_peer_id.get(shooter_peer_id)
 	bolt.launch(origin, velocity.normalized(), velocity.length(), shooter)
+
+
+# --- Grapple wire replication ---------------------------------------------------------
+# Purely cosmetic on other clients: the wire's physics runs only on the owning player's
+# machine (client-simulated movement, like everything else). These events keep every lobby
+# member's copy of the pivot chain in sync so they draw the same rope. Kinds are
+# GrappleController.EVENT_* (attach/bend/unwrap/release). Reliable — rare, and a dropped
+# attach would leave a phantom rope.
+
+func broadcast_grapple_event(peer_id: int, kind: int, point: Vector3) -> void:
+	if multiplayer.multiplayer_peer == null:
+		return
+
+	if multiplayer.is_server():
+		_relay_grapple_event(peer_id, kind, point)
+	else:
+		rpc_id(1, "server_relay_grapple_event", kind, point)
+
+
+@rpc("any_peer", "reliable")
+func server_relay_grapple_event(kind: int, point: Vector3) -> void:
+	if not multiplayer.is_server():
+		return
+
+	_relay_grapple_event(multiplayer.get_remote_sender_id(), kind, point)
+
+
+func _relay_grapple_event(peer_id: int, kind: int, point: Vector3) -> void:
+	if not players_by_peer_id.has(peer_id):
+		return
+
+	if not is_valid_vector(point):
+		return
+
+	for remote_peer_id in _lobby_client_peers_for(peer_id):
+		if int(remote_peer_id) != peer_id:
+			rpc_id(int(remote_peer_id), "client_play_grapple_event", peer_id, kind, point)
+
+
+@rpc("authority", "reliable")
+func client_play_grapple_event(peer_id: int, kind: int, point: Vector3) -> void:
+	var player = players_by_peer_id.get(peer_id)
+
+	if player != null and player.has_method("apply_grapple_event"):
+		player.call("apply_grapple_event", kind, point)
 
 
 # === Network diagnostics ============================================================

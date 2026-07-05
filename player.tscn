@@ -10,6 +10,7 @@
 [ext_resource type="Script" uid="uid://dat7xmhcpfn2o" path="res://scripts/camera_rig.gd" id="8_camrig"]
 [ext_resource type="Script" uid="uid://cxe5nvye4p0xy" path="res://scripts/weapons/weapon_spring_sway.gd" id="9_spring_sway"]
 [ext_resource type="Script" uid="uid://dh4s3fn0hi3ur" path="res://scripts/player_health.gd" id="10_health"]
+[ext_resource type="Script" uid="uid://cg7trh76w3qq3" path="res://scripts/grapple_controller.gd" id="11_grapple"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_g2els"]
 
@@ -30,6 +31,9 @@ surface_walk_lock_sweet_spot = 2.0
 
 [node name="SuitBoosters" type="Node" parent="." unique_id=2126445202]
 script = ExtResource("3_dw050")
+
+[node name="GrappleController" type="Node" parent="." unique_id=2126445204]
+script = ExtResource("11_grapple")
 
 [node name="PlayerHUD" type="Node" parent="." unique_id=1281244747]
 script = ExtResource("4_b26j0")

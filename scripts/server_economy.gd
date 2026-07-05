@@ -231,7 +231,7 @@ func is_weapon_group(group: String) -> bool:
 
 
 func is_single_purchase_group(group: String) -> bool:
-	return group == "suit_boosters" or is_weapon_group(group)
+	return group == "suit_boosters" or group == "grapple_wire" or is_weapon_group(group)
 
 
 # --- Weapon stats (from the same scenes the clients equip) -----------------------------

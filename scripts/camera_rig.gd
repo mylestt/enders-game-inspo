@@ -79,7 +79,15 @@ func _physics_process(delta: float) -> void:
 	if player == null:
 		return
 
+	# Normalize defensively: slide() requires a unit normal, and a body that briefly carries
+	# scale (e.g. a spawn transform authored with a scaled marker) would error every frame.
 	var up := player.global_transform.basis.y
+
+	if up.length_squared() < 0.0001:
+		up = Vector3.UP
+	else:
+		up = up.normalized()
+
 	var tangent_velocity := player.linear_velocity.slide(up)
 	var grounded := is_surface_walking()
 

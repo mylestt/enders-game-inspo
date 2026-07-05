@@ -59,6 +59,7 @@ var last_body_slam_time_by_target_peer_id: Dictionary = {}
 @onready var health: PlayerHealth = get_node_or_null("PlayerHealth") as PlayerHealth
 @onready var impact_controller: PlayerImpactController = get_node_or_null("ImpactController") as PlayerImpactController
 @onready var weapon_inventory: WeaponInventory = get_node_or_null("WeaponInventory") as WeaponInventory
+@onready var grapple_controller: GrappleController = get_node_or_null("GrappleController") as GrappleController
 
 
 func _ready() -> void:
@@ -110,6 +111,11 @@ func _ready() -> void:
 		push_warning("WeaponInventory node is missing; weapon purchases will be unavailable.")
 	else:
 		weapon_inventory.setup(self)
+
+	if grapple_controller == null:
+		push_warning("GrappleController node is missing; the grapple wire will be unavailable.")
+	else:
+		grapple_controller.setup(self)
 
 
 func set_multiplayer_player(new_peer_id: int, new_is_local_player: bool, new_network_manager: Node) -> void:
@@ -183,6 +189,26 @@ func report_projectile_shot(origin: Vector3, velocity: Vector3) -> void:
 		network_manager.call("broadcast_projectile_shot", peer_id, origin, velocity)
 
 
+# Replicates this player's grapple-wire state changes (attach/bend/unwrap/release) so
+# every lobby member draws the same rope. Kinds are GrappleController.EVENT_*.
+func report_grapple_event(kind: int, point: Vector3) -> void:
+	if not is_local_player or not has_active_network_session():
+		return
+
+	if network_manager != null and network_manager.has_method("broadcast_grapple_event"):
+		network_manager.call("broadcast_grapple_event", peer_id, kind, point)
+
+
+# Relayed grapple event for a REMOTE copy of this player (the local player's own rope is
+# authoritative and ignores these).
+func apply_grapple_event(kind: int, point: Vector3) -> void:
+	if is_local_player:
+		return
+
+	if grapple_controller != null:
+		grapple_controller.apply_remote_event(kind, point)
+
+
 # Mirrors a finished reload into the server's ammo ledger (ServerEconomy) so hit claims
 # keep validating after the mag is refilled.
 func report_weapon_reloaded(weapon_id: StringName) -> void:
@@ -249,6 +275,12 @@ func _input(event: InputEvent) -> void:
 			weapon_inventory.try_quick_swap(2)
 		elif event.is_action_pressed("weapon_slot_4"):
 			weapon_inventory.try_quick_swap(3)
+
+	if grapple_controller != null:
+		if event.is_action_pressed("grapple_fire"):
+			grapple_controller.try_fire()
+		elif event.is_action_pressed("grapple_release"):
+			grapple_controller.release()
 
 	if event.is_action_pressed("ui_cancel"):
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -339,16 +371,19 @@ func _physics_process(delta: float) -> void:
 	
 	if suit_boosters != null:
 		var boosters_allowed := not buy_menu_open and not input_locked and not is_surface_walk_mode_active()
-		
+
 		suit_boosters.physics_update(delta, boosters_allowed, grabbing)
-		
+
 		if hud_controller != null:
 			hud_controller.update_booster_ui(
 				suit_boosters.get_has_suit_boosters(),
 				suit_boosters.get_booster_fuel(),
 				suit_boosters.get_max_booster_fuel()
 			)
-	
+
+	if grapple_controller != null:
+		grapple_controller.physics_update(delta, not buy_menu_open and not input_locked)
+
 	update_network_send(delta)
 
 
@@ -510,6 +545,10 @@ func reset_for_round(spawn_transform: Transform3D, ground_mode: bool = true) -> 
 
 	if weapon_inventory != null:
 		weapon_inventory.reset_state()
+
+	# A wire attached across a round reset would yank the fresh spawn back to the old spot.
+	if grapple_controller != null:
+		grapple_controller.release()
 
 	# Drop the local player onto the nearest surface at the spawn (all game modes). Remote
 	# copies just take the transform; they replicate the walked orientation over the network.
@@ -729,6 +768,10 @@ func _on_died(attacker_peer_id: int) -> void:
 
 	if weapon_inventory != null:
 		weapon_inventory.release()
+
+	# The corpse must free-float, not dangle from the wire.
+	if grapple_controller != null:
+		grapple_controller.release()
 
 	# Runs on every peer's copy of this player, so the red "disabled" glow shows for everyone.
 	set_death_glow_active(true)
@@ -1094,8 +1137,20 @@ func purchase_suit_boosters() -> void:
 func get_has_suit_boosters() -> bool:
 	if suit_boosters == null:
 		return false
-	
+
 	return suit_boosters.get_has_suit_boosters()
+
+
+func purchase_grapple_wire() -> void:
+	if grapple_controller != null:
+		grapple_controller.purchase_grapple()
+
+
+func get_has_grapple_wire() -> bool:
+	if grapple_controller == null:
+		return false
+
+	return grapple_controller.get_has_grapple()
 
 
 # Shop pass-throughs. Weapon ids are WeaponInventory's SLOT_IDS ("minigun", "railgun",

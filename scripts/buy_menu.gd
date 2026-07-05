@@ -106,6 +106,15 @@ var shop_items: Array[Dictionary] = [
 		"title": "Suit Boosters",
 		"description": "Unlocks W/S propulsion with limited fuel.",
 		"price": 6000
+	},
+	{
+		"id": "grapple_wire",
+		"section": "SPECIAL SUIT SYSTEMS",
+		"group": "grapple_wire",
+		"level": 1,
+		"title": "Grapple Wire",
+		"description": "E fires a fixed-length wire that hooks surfaces. Swing at speed, wrap around cover, MMB reels in, Q releases.",
+		"price": 5000
 	}
 ]
 
@@ -571,7 +580,7 @@ func get_item_state(item: Dictionary) -> Dictionary:
 			"button_text": "MISSING"
 		}
 	
-	if group == "suit_boosters" or group in WEAPON_GROUPS:
+	if group == "suit_boosters" or group == "grapple_wire" or group in WEAPON_GROUPS:
 		if get_has_single_purchase_item(group):
 			return {
 				"can_buy": false,
@@ -627,6 +636,8 @@ func get_group_handler(group: String) -> Dictionary:
 			return {"obj": local_player, "apply": "apply_grab_distance_upgrade", "level": "get_grab_distance_level", "takes_level": true}
 		"suit_boosters":
 			return {"obj": local_player, "apply": "purchase_suit_boosters", "level": "", "takes_level": false}
+		"grapple_wire":
+			return {"obj": local_player, "apply": "purchase_grapple_wire", "level": "", "takes_level": false}
 
 	return {}
 
@@ -689,6 +700,12 @@ func get_has_single_purchase_item(group: String) -> bool:
 
 	if group == "suit_boosters":
 		return get_has_suit_boosters()
+
+	if group == "grapple_wire":
+		if local_player != null and local_player.has_method("get_has_grapple_wire"):
+			return bool(local_player.call("get_has_grapple_wire"))
+
+		return false
 
 	return false
 

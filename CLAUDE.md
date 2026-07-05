@@ -65,7 +65,9 @@ lobbies, deployed to a DigitalOcean VPS at **147.182.160.52:7000**.
   (`request_spawn_ground_mode` → 6-axis probe, feet first, instant snap; zero-G fallback
   past 8 m). Local player only; remotes replicate. Author spawns as **`SpawnPoint` capsules**
   (`scenes/spawn_point.tscn`: blue=A, orange=B, nub = -Z forward, auto-joins
-  `spawn_team_a/b`); bare `Marker3D`s still work. FFA pools all points.
+  `spawn_team_a/b`); bare `Marker3D`s still work. FFA pools all points. Spawn transforms
+  are ORTHONORMALIZED before use — an editor-scaled marker/capsule must never leak scale
+  into the player's basis (a scaled body errors camera/walk math everywhere).
 - **Maps** (`scripts/map_generator.gd` = scene loader, generator removed): hand-built
   `.tscn` registered (preloaded) in the `MAPS` const; each needs `spawn_team_a/b` groups
   (optional `gate_team_*`). Current: `diamond` (DiamondArena.tscn). New map = scene + one
@@ -74,14 +76,43 @@ lobbies, deployed to a DigitalOcean VPS at **147.182.160.52:7000**.
 - **Admin:** `server_admin.gd` (command-file poll + admin-key RPC), `admin_console.gd`
   (F10), `scoreboard.gd` (Tab K/D), `server_control.ps1` (VPS menu).
 - **Player:** `player.gd` + child controllers (movement, impact, boosters, camera_rig,
-  limb_pusher, weapons/*, health). **Surface-walk** traverses seams/curves up to
+  limb_pusher, weapons/*, health). **Surface-walk** traverses seams/curves: the ground
+  probes (down ray + front/back FOOT rays + crest sweeps) are gated at
   `surface_walk_max_edge_angle_degrees` (70°, measured vs the LAST-STOOD surface so beveled
-  crests work at speed); sharper rims drop off, steeper walls jam. Concave = forward
-  takeover feeler; convex = forward-down crest rays (nearest hit wins); exit = jump or all
-  probes missing past grace. Camera rolls with the body on an eased tween
+  crests work at speed), but the orientation target is the distance-weighted BLEND of every
+  probe hit (`target_normal`) — continuous across seams and curved colliders, so no
+  face-to-face stutter; the NEAREST hit stays the physical anchor (snap plane / movement
+  tangent / gating). Standing ON an edge is stabilised by anchor HYSTERESIS (a different
+  face must persist `surface_walk_anchor_switch_time` as dominant support before it takes
+  the anchor — per-frame ray alternation never persists) + STICKY blending (foreign-face
+  weight scales with walk speed via `surface_walk_foreign_face_weight`, so idling hugs the
+  anchored face) + a low-passed target (`surface_walk_target_smoothing`). Foot probes cast
+  in a cross pattern even when idle, so a seam under the player is always straddled. Concave = forward takeover feeler with its OWN larger limit
+  (`surface_walk_max_concave_angle_degrees`, 120° — walking INTO a 90° wall rotates you
+  onto it; gating the feeler at 70° used to deadlock players pressed against steep seams,
+  incl. the Diamond arena's ~70.5° interior seams). Curved surfaces: author them with
+  PRIMITIVE colliders (SphereShape3D etc. — analytic, smooth normals), not trimesh. Exit =
+  jump or all probes missing past grace. Camera rolls with the body on an eased tween
   (`surface_walk_align_*`), never a snap. Jump-off keeps the tangential run
   (×`surface_walk_jump_momentum_carry`, 1.35). Ground-lock (C): feet ray first, then
   nearest surface around the body (6DOF feet rarely aim at the target).
+- **Grapple wire:** purchasable (shop → SPECIAL SUIT SYSTEMS, `grapple_wire` group;
+  server-validated like boosters). `scripts/grapple_controller.gd` on the player
+  (`GrappleController` node): `grapple_fire` (E) casts along camera aim up to `max_range`;
+  on STATIC geometry (players/RigidBody props rejected) it attaches and the wire length
+  LOCKS to the attach distance — a fixed-length tether (`shoot_out_full_length` pays out
+  the whole max_range instead, leaving slack). Taut = outward radial velocity absorbed
+  over `taut_give` seconds (0 = rigid one-frame snap; higher = stretchier catch), tangent
+  kept → swings at speed; slack = free float. `grapple_reel` (MMB) spools
+  in (tows when floating, tightens/accelerates a swing); `grapple_release` (Q) detaches
+  keeping all velocity. The wire WRAPS: contact mid-swing chains a new pivot (bend points
+  STICK where they touch — deliberate no-slip) shrinking the active radius; it unwraps when
+  the rope geometrically straightens back past a bend with clear LOS to the previous pivot.
+  Tension yanks a surface-walking player off into zero-G. Local player simulates; other
+  lobby members mirror the pivot chain via NetworkManager's grapple-event relay
+  (attach/bend/unwrap/release, lobby-scoped, cosmetic-only) for the rope ribbon visual.
+  Released automatically on death and round reset. New input actions are auto-listed in the
+  settings keybinds.
 - **Muzzle flashes:** per-gun wrapper scenes (`scenes/<gun>_muzzle_flash.tscn`,
   `WeaponMuzzleFlash` root) set via the gun's `muzzle_flash_scene`. Inspector: Binbun
   `effect_scene` variant, scale/length/width/offset, color/light overrides, `speed_scale`,
