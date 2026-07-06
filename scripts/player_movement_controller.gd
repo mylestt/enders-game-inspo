@@ -92,12 +92,20 @@ enum MovementMode {
 # from the current surface are ignored — sharp rims are a drop-off, steep walls a jam.
 @export var surface_walk_wrap_probe: bool = true
 @export var surface_walk_max_edge_angle_degrees: float = 70.0
-# Concave handover limit for the FEELER ray only (walking INTO a surface). Deliberately
-# larger than max_edge_angle: pushing into a 90° wall is intent to walk up it, and gating
-# the feeler at 70° used to deadlock the player pressed against steep seams — they can't
-# stand on the wall until they rotate, and (with the gate) never rotate until they stand
-# on it. The passive ground probes keep the stricter limit.
-@export var surface_walk_max_concave_angle_degrees: float = 120.0
+# Concave handover limit for the FEELER ray only (walking INTO a surface). Kept a bit
+# above max_edge_angle so a deliberate walk-in still climbs steep-but-walkable seams (the
+# Diamond arena's ~70.5° interior seams must keep working at speed), but BELOW vertical:
+# a face ~90° off the one you stand on is a WALL — it blocks you like a wall instead of
+# rotating you onto it. Raise back toward 120 to restore walk-up-any-wall traversal;
+# lower toward max_edge_angle for stricter walls.
+@export var surface_walk_max_concave_angle_degrees: float = 80.0
+# What happens when you WALK INTO a face too steep to climb (steeper than the concave limit
+# above). OFF (default): you stop dead against it and slide along its base, staying grounded
+# — a wall behaves like a wall. ON: you detach into zero-G instead. Either way the wall is
+# never auto-aligned to. This exists because, without it, physics depenetration off a
+# rejected steep face randomly LIFTS you off some walls (inward-leaning/curved ones) but not
+# others, which reads as "sometimes I leave ground mode against a wall, sometimes I don't".
+@export var surface_walk_wall_forces_zero_g: bool = false
 # The ground orientation target is BLENDED from several probes (down ray + four foot rays
 # + the crest sweeps), weighted by hit distance, instead of one winner-takes-all ray.
 # Crossing a seam the weight hands over gradually — no face-to-face flip-flopping — and on
@@ -136,6 +144,10 @@ enum MovementMode {
 # locking exactly at `sweet_spot` metres is clean. Missing the sweet spot — too far (toward
 # max) OR too close (toward the surface) — temporarily "dazes" the first-person camera with
 # look-inertia that scales with how far off the timing was. Hit the sweet spot: no daze.
+# Entry ALIGNMENT gate: C only accepts a surface whose normal is within
+# `entry_max_angle_degrees` of the body's own up — your feet must genuinely face it. Spawn
+# grounding (round start / respawn) is exempt and still snaps to the nearest surface.
+@export var surface_walk_entry_max_angle_degrees: float = 15.0
 @export var surface_walk_lock_max_distance: float = 4.0          # metres: farthest you can lock from
 @export var surface_walk_lock_sweet_spot: float = 1.5            # metres: perfect-timing distance
 @export var surface_walk_lock_daze_max_strength: float = 0.85    # 0..1: worst-case look sluggishness
@@ -148,6 +160,7 @@ var player: RigidBody3D
 var camera: Camera3D
 var hud_controller: PlayerHUDController
 var limb_push_controller: LimbPushController
+var _ray_query: PhysicsRayQueryParameters3D
 
 var movement_mode: int = MovementMode.ZERO_G
 
@@ -217,7 +230,17 @@ func setup(owner_player: RigidBody3D, owner_hud_controller: PlayerHUDController)
 	player = owner_player
 	hud_controller = owner_hud_controller
 	camera = player.get_node_or_null("CameraRig/Camera3D") as Camera3D
-	
+
+	# One reused query object for every probe ray (surface cache, push probes, the whole
+	# surface-walk probe set — 10-20 casts per physics tick), instead of allocating a fresh
+	# PhysicsRayQueryParameters3D per cast. Same pattern as LimbPushController.
+	_ray_query = PhysicsRayQueryParameters3D.new()
+	_ray_query.collide_with_bodies = true
+	_ray_query.collide_with_areas = true
+
+	if player is CollisionObject3D:
+		_ray_query.exclude = [player.get_rid()]
+
 	if camera != null:
 		camera_base_position = camera.position
 
@@ -470,7 +493,10 @@ func try_enter_surface_walk_mode() -> void:
 	var result := get_ground_lock_probe()
 
 	if result.is_empty():
-		print("Ground lock failed: no surface within ", surface_walk_lock_max_distance, " m ahead.")
+		print(
+			"Ground lock failed: no surface within ", surface_walk_lock_max_distance,
+			" m aligned with your feet (within ", surface_walk_entry_max_angle_degrees, " degrees)."
+		)
 		return
 
 	var surface_normal: Vector3 = result.get("normal", Vector3.ZERO)
@@ -511,8 +537,11 @@ func enter_spawn_surface_walk() -> bool:
 
 
 # The nearest lockable surface around the player, probing the body's own axes (feet first, so
-# an upright spawn capsule resting on a floor wins). Returns {position, normal} or {}.
-func find_spawn_surface(max_distance: float) -> Dictionary:
+# an upright spawn capsule resting on a floor wins). `max_normal_angle_degrees` > 0 filters
+# out surfaces whose normal is further than that from the body's up (the manual ground-lock
+# alignment gate); the spawn path passes no limit and takes the nearest surface regardless.
+# Returns {position, normal} or {}.
+func find_spawn_surface(max_distance: float, max_normal_angle_degrees: float = -1.0) -> Dictionary:
 	if player == null:
 		return {}
 
@@ -541,6 +570,11 @@ func find_spawn_surface(max_distance: float) -> Dictionary:
 		if normal.length() < 0.01:
 			continue
 
+		normal = normal.normalized()
+
+		if max_normal_angle_degrees > 0.0 and rad_to_deg(basis.y.angle_to(normal)) > max_normal_angle_degrees:
+			continue
+
 		var hit_position: Vector3 = result.get("position", origin)
 		var distance := origin.distance_to(hit_position)
 
@@ -550,7 +584,7 @@ func find_spawn_surface(max_distance: float) -> Dictionary:
 
 		if distance < best_distance:
 			best_distance = distance
-			best = {"position": hit_position, "normal": normal.normalized()}
+			best = {"position": hit_position, "normal": normal}
 
 	return best
 
@@ -573,7 +607,12 @@ func get_ground_lock_probe() -> Dictionary:
 		if not result.is_empty():
 			var hit_normal: Vector3 = result.get("normal", Vector3.ZERO)
 
-			if hit_normal.length() >= 0.01:
+			# Alignment gate: the surface's normal must match the body's up within
+			# surface_walk_entry_max_angle_degrees — feet pointing AT a surface isn't
+			# enough if the body is tilted across it (e.g. feet ray clipping a wall edge).
+			if hit_normal.length() >= 0.01 and rad_to_deg(
+				player.global_transform.basis.y.angle_to(hit_normal.normalized())
+			) <= surface_walk_entry_max_angle_degrees:
 				var hit_position: Vector3 = result.get("position", end)
 				return {
 					"position": hit_position,
@@ -581,11 +620,10 @@ func get_ground_lock_probe() -> Dictionary:
 					"distance": origin.distance_to(hit_position),
 				}
 
-	# 6DOF fallback: in zero-G the body can be in any orientation, so feet often point at
-	# nothing even with a wall right beside you. Lock the nearest surface around the body
-	# instead (same 6-axis probe the spawn uses); the feet ray above keeps priority so the
-	# aimed sweet-spot timing still rewards pointing your feet.
-	var nearest := find_spawn_surface(surface_walk_lock_max_distance)
+	# 6DOF fallback: the feet ray can miss a surface the body is nonetheless hovering over
+	# (uneven ground, edges). Same alignment gate — only surfaces the body's up already
+	# agrees with within the entry angle qualify, so you can't lock onto a wall beside you.
+	var nearest := find_spawn_surface(surface_walk_lock_max_distance, surface_walk_entry_max_angle_degrees)
 
 	if nearest.is_empty():
 		return {}
@@ -1167,13 +1205,31 @@ func handle_surface_walk_movement(delta: float) -> void:
 		right = forward.cross(surface_walk_normal).normalized()
 	
 	var desired_tangent_velocity := Vector3.ZERO
-	
+
 	if input_vector.length() > 0.01:
 		desired_tangent_velocity = (
 			right * input_vector.x +
 			forward * input_vector.y
 		).normalized() * target_speed
-	
+
+	# A face directly ahead that's too steep to climb (steeper than the concave handover
+	# limit) is a WALL. Handle it deterministically here instead of leaving it to physics
+	# depenetration (which lifts you off some walls and not others). ON -> detach to zero-G;
+	# OFF -> strip the into-wall part of the walk so you stop against it and stay grounded.
+	var wall_normal := get_surface_walk_wall_block_normal()
+
+	if wall_normal != Vector3.ZERO:
+		if surface_walk_wall_forces_zero_g:
+			var carried := player.linear_velocity
+			exit_surface_walk_mode()
+			player.linear_velocity = carried
+			return
+
+		var wall_tangent := wall_normal.slide(surface_walk_anchor_normal)
+
+		if wall_tangent.length() > 0.001:
+			desired_tangent_velocity = strip_into_wall_component(desired_tangent_velocity, wall_tangent.normalized())
+
 	# Slide on the ANCHOR normal (the snap's axis) so last tick's snap component is removed
 	# before the fresh one is added — sliding on the smoothed normal lets snap velocity
 	# accumulate into walk speed when the two diverge at a seam (launches the player).
@@ -1183,11 +1239,62 @@ func handle_surface_walk_movement(delta: float) -> void:
 		current_acceleration * delta
 	)
 
+	# Also strip any pre-existing into-wall momentum so a fast run-up can't punch through the
+	# wall in one frame before move_toward finishes decelerating it.
+	if wall_normal != Vector3.ZERO and not surface_walk_wall_forces_zero_g:
+		var wall_tangent := wall_normal.slide(surface_walk_anchor_normal)
+
+		if wall_tangent.length() > 0.001:
+			new_tangent_velocity = strip_into_wall_component(new_tangent_velocity, wall_tangent.normalized())
+
 	var snap_velocity := get_surface_walk_snap_velocity()
 
 	player.linear_velocity = new_tangent_velocity + snap_velocity
 	player.angular_velocity = Vector3.ZERO
 	player.sleeping = false
+
+
+# Removes the part of `velocity` heading INTO a wall, leaving motion parallel to it (a slide).
+# `wall_tangent` is the wall's outward normal projected onto the stand plane (points away from
+# the wall toward the player), so "into the wall" is the component with a NEGATIVE dot.
+static func strip_into_wall_component(velocity: Vector3, wall_tangent: Vector3) -> Vector3:
+	var into := velocity.dot(wall_tangent)
+
+	if into < 0.0:
+		return velocity - wall_tangent * into
+
+	return velocity
+
+
+# A face directly ahead in the walk direction that is too steep to walk up (steeper than the
+# concave handover limit, measured against the surface you're standing on) is a wall — return
+# its normal. Walkable seams (<= the concave limit) return ZERO: the ground probe's feeler
+# already hands those over. ZERO when idle (no walk direction) or nothing ahead.
+func get_surface_walk_wall_block_normal() -> Vector3:
+	var move_dir := get_surface_walk_probe_move_direction()
+
+	if move_dir == Vector3.ZERO:
+		return Vector3.ZERO
+
+	var origin := player.global_position + surface_walk_normal * 0.08
+	var probe_length := surface_walk_body_offset + surface_walk_edge_check_extra_distance + 0.08
+	var result := raycast_from_player(origin, origin + move_dir * probe_length)
+
+	if result.is_empty():
+		return Vector3.ZERO
+
+	var hit_normal: Vector3 = result.get("normal", Vector3.ZERO)
+
+	if hit_normal.length() < 0.01:
+		return Vector3.ZERO
+
+	hit_normal = hit_normal.normalized()
+
+	# <= concave limit is a walkable seam the feeler hands you over to; only STEEPER blocks.
+	if rad_to_deg(surface_walk_anchor_normal.angle_to(hit_normal)) <= surface_walk_max_concave_angle_degrees:
+		return Vector3.ZERO
+
+	return hit_normal
 
 
 func get_surface_walk_target_speed(sprinting: bool) -> float:
@@ -1815,14 +1922,9 @@ func get_ctrl_push_result() -> Dictionary:
 
 
 func raycast_from_player(origin: Vector3, end: Vector3) -> Dictionary:
-	var query := PhysicsRayQueryParameters3D.create(origin, end)
-	query.collide_with_bodies = true
-	query.collide_with_areas = true
-	
-	if player is CollisionObject3D:
-		query.exclude = [player.get_rid()]
-	
-	return player.get_world_3d().direct_space_state.intersect_ray(query)
+	_ray_query.from = origin
+	_ray_query.to = end
+	return player.get_world_3d().direct_space_state.intersect_ray(_ray_query)
 
 
 func is_surface_in_interaction_range() -> bool:

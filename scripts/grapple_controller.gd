@@ -26,6 +26,22 @@ const EVENT_BEND := 1
 const EVENT_UNWRAP := 2
 const EVENT_RELEASE := 3
 
+# Hard bounds independent of the tunable wrap_min_pivot_separation (which may be set to 0
+# for maximally tight wraps): a floor that still rejects true duplicate bend points, and a
+# chain cap. Both bound the pivots array AND the reliable bend-event RPC traffic — sliding
+# along curved geometry with no separation floor could otherwise add a pivot every frame,
+# forever.
+#
+# MAX_PIVOTS is the ceiling on the pivot chain. It has to be generous: a full wrap around a
+# body plants one bend every few degrees (denser the closer wrap_surface_offset hugs the
+# surface — a small offset roughly doubles the count), so a low cap silently stops the wrap
+# mid-orbit and the live segment then chords STRAIGHT THROUGH the body ("can't wrap more
+# than once"). 512 covers many full loops even with tight, surface-hugging tuning; it still
+# bounds memory (~a few KB) and a forged-event flood. If you routinely loop huge objects and
+# still hit it, raise wrap_surface_offset (fewer, wider-spaced bends) rather than lowering it.
+const WRAP_PIVOT_EPSILON := 0.005
+const MAX_PIVOTS := 512
+
 @export var max_range: float = 30.0
 # OFF: the wire's length locks to the attach distance — taut almost immediately, snappy.
 # ON: the full max_range pays out on attach, leaving slack until you drift out to it.
@@ -35,12 +51,19 @@ const EVENT_RELEASE := 3
 # The wire never reels shorter than this (keeps the pivot math sane at point-blank).
 @export var min_length: float = 1.2
 # How softly the wire catches when it snaps taut: the seconds over which the outward
-# velocity is absorbed instead of being killed in one frame. 0 = rigid steel-cable snap;
-# higher = stretchier, gentler catch (the swing still fully forms, just eased in).
-@export var taut_give: float = 0.12
-# Taut correction: inward velocity per metre of overshoot past the radius, and its cap.
+# velocity is absorbed. This does NOT change how HARD the catch is — the velocity removed is
+# always your full outward-radial speed (∝ how badly you entered, which is the skill signal).
+# It only sets over how many frames that removal renders. ~0.01 kills it in one 60 Hz tick,
+# which reads as a teleport-stutter rather than a slam; ~0.03 spreads a deserved hard catch
+# over 3-4 frames so it reads as weight you can learn from. 0 = one-frame rigid snap.
+@export var taut_give: float = 0.03
+# Positional leash back onto the radius (inward m/s per metre of overshoot, and its cap).
+# This is a STABILISER, not the catch — the outward-velocity absorption above is what stops
+# you. Kept gentle so that when a wrap plants a new pivot and the radius steps down, you're
+# eased back onto it instead of yanked (a hard yank there punishes a CLEAN wrap, the opposite
+# of a skill signal). Raise the cap for a stiffer, more steel-cable leash.
 @export var taut_snap_strength: float = 14.0
-@export var taut_max_snap_speed: float = 30.0
+@export var taut_max_snap_speed: float = 12.0
 # Bend points sit this far off the surface they touch (prevents the wrap ray re-hitting
 # the same face forever).
 @export var wrap_surface_offset: float = 0.07
@@ -68,9 +91,21 @@ var rope_visual: MeshInstance3D
 var rope_mesh: ImmediateMesh
 var rope_material: StandardMaterial3D
 
+# Reused for every wrap/unwrap/attach ray (several per physics tick while attached), same
+# pattern as LimbPushController's cached query.
+var _ray_query: PhysicsRayQueryParameters3D
+
 
 func setup(owner_player: RigidBody3D) -> void:
 	player = owner_player
+
+	_ray_query = PhysicsRayQueryParameters3D.new()
+	_ray_query.collide_with_bodies = true
+	_ray_query.collide_with_areas = false
+
+	if player is CollisionObject3D:
+		_ray_query.exclude = [player.get_rid()]
+
 	_create_rope_visual()
 
 
@@ -164,12 +199,17 @@ func physics_update(delta: float, input_enabled: bool) -> void:
 # becomes a new pivot (stuck where it touched — no slip). Loops a few times for tight
 # corners crossed in one tick.
 func _update_wrap() -> void:
+	var min_separation := maxf(wrap_min_pivot_separation, WRAP_PIVOT_EPSILON)
+
 	for i in range(3):
+		if pivots.size() >= MAX_PIVOTS:
+			return   # chain is saturated; the tether still works on the newest pivot
+
 		var active: Vector3 = pivots[pivots.size() - 1]
 		var to_pivot := active - player.global_position
 		var pivot_distance := to_pivot.length()
 
-		if pivot_distance < wrap_min_pivot_separation:
+		if pivot_distance < min_separation:
 			return
 
 		var hit := _raycast(player.global_position, active)
@@ -191,7 +231,7 @@ func _update_wrap() -> void:
 
 		var bend := hit_position + normal.normalized() * wrap_surface_offset
 
-		if bend.distance_to(active) < wrap_min_pivot_separation:
+		if bend.distance_to(active) < min_separation:
 			return
 
 		# Wrap orientation at creation — flipping past zero later = straightened = unwrap.
@@ -283,7 +323,9 @@ func apply_remote_event(kind: int, point: Vector3) -> void:
 			pivots = [point]
 			bend_axes = []
 		EVENT_BEND:
-			if attached:
+			# Same cap as the local simulation: a hacked sender spamming bend events must
+			# not grow every lobby member's mirror of this chain without bound.
+			if attached and pivots.size() < MAX_PIVOTS:
 				pivots.append(point)
 		EVENT_UNWRAP:
 			if attached and pivots.size() > 1:
@@ -305,6 +347,7 @@ func _report_event(kind: int, point: Vector3) -> void:
 
 func _create_rope_visual() -> void:
 	if DisplayServer.get_name() == "headless":
+		set_process(false)   # _process only draws the rope; nothing renders headless
 		return
 
 	rope_mesh = ImmediateMesh.new()
@@ -383,14 +426,9 @@ func _draw_rope() -> void:
 # --- Helpers ----------------------------------------------------------------------------
 
 func _raycast(from: Vector3, to: Vector3) -> Dictionary:
-	var query := PhysicsRayQueryParameters3D.create(from, to)
-	query.collide_with_bodies = true
-	query.collide_with_areas = false
-
-	if player is CollisionObject3D:
-		query.exclude = [player.get_rid()]
-
-	return player.get_world_3d().direct_space_state.intersect_ray(query)
+	_ray_query.from = from
+	_ray_query.to = to
+	return player.get_world_3d().direct_space_state.intersect_ray(_ray_query)
 
 
 func _belongs_to_player(collider: Object) -> bool:
