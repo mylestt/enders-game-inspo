@@ -110,6 +110,16 @@ func _build_ui() -> void:
 	map_row.add_child(map_option)
 	column.add_child(map_row)
 
+	# Online lobbies all share the server's one loaded map (spawn markers are global scene
+	# groups), so a host's pick can't be honored per-lobby yet — say so instead of silently
+	# overriding the choice at join.
+	if show_lobby_fields:
+		var map_note := Label.new()
+		map_note.text = "Online lobbies currently play the server's active map."
+		map_note.add_theme_font_size_override("font_size", 12)
+		map_note.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.45))
+		column.add_child(map_note)
+
 	# Game mode picker. Team = the original elimination mode; FFA reveals the extra
 	# free-for-all settings below.
 	var mode_row := HBoxContainer.new()

@@ -35,11 +35,15 @@ var _facing: MeshInstance3D
 
 
 func _ready() -> void:
-	_ensure_visual()
-	_refresh()
-
 	if not Engine.is_editor_hint():
 		add_to_group(group_name())
+
+		# A dedicated server never renders spawn helpers — skip building their meshes.
+		if DisplayServer.get_name() == "headless":
+			return
+
+	_ensure_visual()
+	_refresh()
 
 
 func group_name() -> String:

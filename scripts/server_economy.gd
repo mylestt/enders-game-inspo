@@ -301,16 +301,30 @@ func server_grant_weapon_ammo(peer_id: int, weapon_id: String) -> void:
 
 
 # FFA loadout grant: records ownership and refills the ammo ledger for a gun the server
-# handed the player for free (no purchase / cash deduction). Mirrors what the client does
-# when it equips the random weapon, so hit-claim validation passes.
+# handed the player for free (no purchase / cash deduction). Mirrors the client's
+# set_exclusive_weapon: the random gun is the ONLY weapon this life, so prior FFA grants
+# (ownership AND leftover ammo ledgers) are revoked — otherwise a hacked client could keep
+# claiming hits with every gun it ever rolled. Non-weapon groups (boosters, upgrades) stay.
 func server_grant_ffa_weapon(peer_id: int, weapon_id: String) -> void:
 	if not is_server() or not owned_by_peer_id.has(peer_id):
 		return
 
 	var owned: Dictionary = owned_by_peer_id[peer_id]
+
+	for group in owned.keys():
+		if is_weapon_group(String(group)) and String(group) != weapon_id:
+			owned.erase(group)
+
 	owned[weapon_id] = 1
 	owned_by_peer_id[peer_id] = owned
 
+	var ammo: Dictionary = ammo_by_peer_id.get(peer_id, {})
+
+	for id in ammo.keys():
+		if String(id) != weapon_id:
+			ammo.erase(id)
+
+	ammo_by_peer_id[peer_id] = ammo
 	server_grant_weapon_ammo(peer_id, weapon_id)
 
 
@@ -323,6 +337,7 @@ func _fresh_ammo_entry(stats: Dictionary) -> Dictionary:
 		"last_token_time": now_seconds(),
 		"last_blast_time": -1000.0,
 		"last_blast_position": Vector3.ZERO,
+		"blast_targets": {},
 	}
 
 
@@ -408,12 +423,16 @@ func server_validate_hitscan_hit(attacker_peer_id: int, weapon_id: String, claim
 
 
 # Plasma blasts submit one claim per player hit; only the first claim of a blast consumes a
-# round and a fire token, identified by explosion position/time proximity.
+# round and a fire token, identified by explosion position/time proximity. Each target can
+# be damaged ONCE per blast — an honest client sends exactly one claim per player the blast
+# touched, so a repeat claim for the same target inside the merge window is a replay (the
+# merge consumes no ammo, so without this check one round could deal unbounded damage).
 func server_validate_plasma_hit(
 	attacker_peer_id: int,
 	weapon_id: String,
 	claimed_damage: float,
-	blast_position: Vector3
+	blast_position: Vector3,
+	target_peer_id: int = 0
 ) -> float:
 	var stats := get_weapon_stats(weapon_id)
 	var entry := _get_ammo_entry(attacker_peer_id, weapon_id)
@@ -432,6 +451,15 @@ func server_validate_plasma_hit(
 
 		entry["last_blast_time"] = now_seconds()
 		entry["last_blast_position"] = blast_position
+		entry["blast_targets"] = {}
+
+	var blast_targets: Dictionary = entry.get("blast_targets", {})
+
+	if blast_targets.has(target_peer_id):
+		return -1.0   # this blast already damaged this target
+
+	blast_targets[target_peer_id] = true
+	entry["blast_targets"] = blast_targets
 
 	return minf(claimed_damage, float(stats["damage"]))
 

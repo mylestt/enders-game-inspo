@@ -507,13 +507,11 @@ func apply_network_body_slam_impulse(impulse: Vector3, contact_position: Vector3
 		movement_controller.exit_surface_walk_mode()
 	
 	var local_contact_position := contact_position - global_position
-	
+
 	if local_contact_position.length() > 4.0:
 		apply_central_impulse(impulse)
 	else:
 		apply_impulse(impulse, local_contact_position)
-	
-	print("Applied body slam impulse: ", impulse)
 
 
 # Called by RoundManager (via RPC) at the start of each round: snap back to spawn,
@@ -681,27 +679,16 @@ func submit_weapon_hit(
 		body.apply_impulse(shot_direction.normalized() * damage * 0.06, hit_position - body.global_position)
 
 
+# HOT PATH on every machine including the dedicated server (runs per confirmed hit, up to
+# 50/s under minigun fire) — no print() here; tmux's synchronous stdout stalls the VPS.
 func apply_weapon_damage(damage: float, attacker_peer_id: int = 0) -> void:
 	if health == null:
 		return
-	
+
 	if health.apply_damage(damage, attacker_peer_id):
 		if is_local_player and health.current_health > 0.0 and hud_controller != null and hud_controller.has_method("show_hurt_effect"):
 			var damage_ratio := damage / maxf(health.max_health, 1.0)
 			hud_controller.show_hurt_effect(damage_ratio)
-
-		print(
-			"Player ",
-			peer_id,
-			" took ",
-			damage,
-			" damage from ",
-			attacker_peer_id,
-			". Health: ",
-			health.current_health,
-			"/",
-			health.max_health
-		)
 
 
 func apply_network_plasma_impulse(impulse: Vector3) -> void:
@@ -948,7 +935,10 @@ func receive_network_state(
 		return   # out-of-order packet; a newer state has already been applied
 
 	network_last_received_seq = state_seq
-	network_target_transform = new_transform
+	# Orthonormalize on receipt: float drift over the wire (or a hostile sender) must never
+	# put scale/skew into the replica's basis — the headless server applies this transform
+	# RAW to its authoritative copy, and a scaled RigidBody3D is an error state under Jolt.
+	network_target_transform = Transform3D(new_transform.basis.orthonormalized(), new_transform.origin)
 	network_target_linear_velocity = new_linear_velocity
 	network_target_angular_velocity = new_angular_velocity
 	has_network_target = true

@@ -618,6 +618,13 @@ func client_reset_player(peer_id: int, spawn_transform: Transform3D) -> void:
 func hook_player_death_signals() -> void:
 	var players := get_players()
 
+	# Drop entries whose player is gone (disconnect/removal): the signal died with the freed
+	# node, and keeping the key would block re-hooking a respawned node for a reused peer id
+	# while growing the dictionary forever on a long-running server.
+	for peer_id in death_handler_by_peer_id.keys():
+		if not players.has(peer_id):
+			death_handler_by_peer_id.erase(peer_id)
+
 	for peer_id in players.keys():
 		if death_handler_by_peer_id.has(peer_id):
 			continue

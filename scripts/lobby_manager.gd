@@ -108,26 +108,96 @@ func _server_handle_create_lobby(peer_id: int, settings: Dictionary) -> void:
 	_join_peer_to_lobby(peer_id, int(lobby["id"]))
 
 
+# --- Client-supplied settings sanitation ----------------------------------------------
+# `settings` arrives raw off an any_peer RPC. Every field must be TYPE-checked before use:
+# GDScript's int()/float() on a Dictionary, or `as Array` + .duplicate() on a non-Array,
+# raises a runtime error that would abort the create handler mid-way on the SERVER.
+
+static func _safe_string(value: Variant, fallback: String, max_length: int) -> String:
+	if typeof(value) != TYPE_STRING and typeof(value) != TYPE_STRING_NAME:
+		return fallback
+
+	var text := String(value).strip_edges()
+
+	if text == "":
+		return fallback
+
+	return text.substr(0, max_length)
+
+
+static func _safe_int(value: Variant, fallback: int) -> int:
+	match typeof(value):
+		TYPE_INT:
+			return int(value)
+		TYPE_FLOAT:
+			return int(value) if is_finite(float(value)) else fallback
+
+	return fallback
+
+
+static func _safe_float(value: Variant, fallback: float) -> float:
+	match typeof(value):
+		TYPE_FLOAT, TYPE_INT:
+			var number := float(value)
+			return number if is_finite(number) else fallback
+
+	return fallback
+
+
+static func _safe_bool(value: Variant, fallback: bool) -> bool:
+	return bool(value) if typeof(value) == TYPE_BOOL else fallback
+
+
+# Only known weapon ids survive, deduplicated, so a hostile list can't smuggle megabytes of
+# junk into the lobby dict (it replicates in FFA loadouts).
+static func _safe_weapon_list(value: Variant, fallback: Array) -> Array:
+	if typeof(value) != TYPE_ARRAY:
+		return fallback.duplicate()
+
+	var out: Array = []
+
+	for entry in (value as Array):
+		if typeof(entry) != TYPE_STRING and typeof(entry) != TYPE_STRING_NAME:
+			continue
+
+		var id := String(entry).strip_edges().to_lower()
+
+		if WeaponInventory.get_weapon_scene(StringName(id)) != null and not out.has(id):
+			out.append(id)
+
+	return out
+
+
+# The lobby can never admit more players than the ENet host allocates slots for; a larger
+# advertised capacity would let joins "succeed" in the lobby UI and fail at the transport.
+func _server_player_capacity() -> int:
+	if network_manager != null and "max_players" in network_manager:
+		return maxi(int(network_manager.max_players), 2)
+
+	return 10
+
+
 func _create_lobby(settings: Dictionary) -> Dictionary:
 	var lobby_id := next_lobby_id
 	next_lobby_id += 1
 
+	var capacity := _server_player_capacity()
 	var lobby := {
 		"id": lobby_id,
-		"name": String(settings.get("name", "Lobby " + str(lobby_id))),
-		"password": String(settings.get("password", "")),
-		"max_players": clampi(int(settings.get("max_players", GameLaunch.max_players)), 2, 64),
-		"min_players": clampi(int(settings.get("min_players", GameLaunch.min_players_to_start)), 1, 64),
-		"starting_cash": maxi(int(settings.get("starting_cash", GameLaunch.starting_cash)), 0),
-		"points_to_win": maxi(int(settings.get("points_to_win", GameLaunch.points_to_win)), 1),
-		"round_time": maxf(float(settings.get("round_time", GameLaunch.round_time_limit)), 0.0),
-		"game_mode": GameLaunch.normalize_game_mode(String(settings.get("game_mode", GameLaunch.game_mode_id))),
-		"respawn_time": maxf(float(settings.get("respawn_time", GameLaunch.ffa_respawn_time)), 0.5),
-		"booster_fuel": maxf(float(settings.get("booster_fuel", GameLaunch.ffa_booster_fuel)), 0.0),
-		"ffa_weapons": (settings.get("ffa_weapons", GameLaunch.ffa_weapons) as Array).duplicate(),
-		"kill_limit": maxi(int(settings.get("kill_limit", GameLaunch.ffa_kill_limit)), 0),
-		"heal_on_kill": bool(settings.get("heal_on_kill", GameLaunch.heal_on_kill)),
-		"ammo_on_kill": bool(settings.get("ammo_on_kill", GameLaunch.ammo_on_kill)),
+		"name": _safe_string(settings.get("name"), "Lobby " + str(lobby_id), 40),
+		"password": _safe_string(settings.get("password"), "", 64),
+		"max_players": clampi(_safe_int(settings.get("max_players"), GameLaunch.max_players), 2, capacity),
+		"min_players": clampi(_safe_int(settings.get("min_players"), GameLaunch.min_players_to_start), 1, capacity),
+		"starting_cash": maxi(_safe_int(settings.get("starting_cash"), GameLaunch.starting_cash), 0),
+		"points_to_win": maxi(_safe_int(settings.get("points_to_win"), GameLaunch.points_to_win), 1),
+		"round_time": maxf(_safe_float(settings.get("round_time"), GameLaunch.round_time_limit), 0.0),
+		"game_mode": GameLaunch.normalize_game_mode(_safe_string(settings.get("game_mode"), GameLaunch.game_mode_id, 24)),
+		"respawn_time": maxf(_safe_float(settings.get("respawn_time"), GameLaunch.ffa_respawn_time), 0.5),
+		"booster_fuel": maxf(_safe_float(settings.get("booster_fuel"), GameLaunch.ffa_booster_fuel), 0.0),
+		"ffa_weapons": _safe_weapon_list(settings.get("ffa_weapons"), GameLaunch.ffa_weapons),
+		"kill_limit": maxi(_safe_int(settings.get("kill_limit"), GameLaunch.ffa_kill_limit), 0),
+		"heal_on_kill": _safe_bool(settings.get("heal_on_kill"), GameLaunch.heal_on_kill),
+		"ammo_on_kill": _safe_bool(settings.get("ammo_on_kill"), GameLaunch.ammo_on_kill),
 		# Forced to the server's active map — see the header note.
 		"map": {"id": GameLaunch.map_id},
 		"members": [],

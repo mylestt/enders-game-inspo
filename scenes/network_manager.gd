@@ -490,7 +490,9 @@ func _on_peer_connected(peer_id: int) -> void:
 			get_player_name(int(existing_peer_id))
 		)
 
-	var spawn_index := spawn_index_by_peer_id.size()
+	# Lowest unused slot, not the dictionary size: after a disconnect, size() would hand a
+	# newcomer a slot an existing player still occupies (same team + same spawn point).
+	var spawn_index := _lowest_free_spawn_slot()
 	spawn_index_by_peer_id[peer_id] = spawn_index
 
 	if server_economy != null:
@@ -575,16 +577,33 @@ func server_spawn_in_lobby(peer_id: int, members: Array, lobby: Dictionary = {})
 	server_broadcast_scoreboard()
 
 
+# The lowest spawn slot no current player occupies (fills disconnect gaps first, keeping
+# team parity balanced as players churn).
+func _lowest_free_spawn_slot() -> int:
+	var used_slots: Dictionary = {}
+
+	for slot in spawn_index_by_peer_id.values():
+		used_slots[int(slot)] = true
+
+	var spawn_index := 0
+
+	while used_slots.has(spawn_index):
+		spawn_index += 1
+
+	return spawn_index
+
+
 func _on_peer_disconnected(peer_id: int) -> void:
 	if not multiplayer.is_server():
 		return
-	
+
 	spawn_index_by_peer_id.erase(peer_id)
 	player_names_by_peer_id.erase(peer_id)
 	player_stats_by_peer_id.erase(peer_id)
 	player_state_history.erase(peer_id)
 	server_death_time_by_peer_id.erase(peer_id)
 	clear_body_slam_pairs_for_peer(peer_id)
+	clear_net_diag_for_peer(peer_id)
 
 	if server_economy != null:
 		server_economy.server_remove_peer(peer_id)
@@ -1291,12 +1310,19 @@ func is_valid_vector(v: Vector3) -> bool:
 
 
 func is_valid_transform(t: Transform3D) -> bool:
-	return (
+	if not (
 		t.origin.is_finite()
 		and t.basis.x.is_finite()
 		and t.basis.y.is_finite()
 		and t.basis.z.is_finite()
-	)
+	):
+		return false
+
+	# An honest client's basis is orthonormal (determinant ~1). A scaled, mirrored, or
+	# degenerate basis would scale the replica's collision shape (Jolt error spam on the
+	# server) and break the unit-vector math everywhere the transform is consumed; the
+	# receiver additionally orthonormalizes, which a zero/degenerate basis would turn to NaN.
+	return absf(t.basis.determinant() - 1.0) < 0.35
 
 
 # `state_seq` is a per-sender monotonic counter; unreliable packets can arrive out of
@@ -1627,7 +1653,8 @@ func server_process_plasma_explosion_hit(
 			attacker_peer_id,
 			weapon_id,
 			applied_damage,
-			explosion_position
+			explosion_position,
+			target_peer_id
 		)
 
 		if applied_damage < 0.0:
@@ -2199,6 +2226,21 @@ func server_relay_weapon_shot(
 	_relay_weapon_shot(multiplayer.get_remote_sender_id(), origin, shot_end, did_hit, normal, weapon_id)
 
 
+# True when the server machine itself should also PLAY a relayed cosmetic effect: a listen
+# host is a player with a screen, so it must see other players' tracers/bolts/ropes like any
+# client. Dedicated servers (headless, or windowed with no local player) skip the work.
+func _server_views_relayed_effects(shooter_peer_id: int) -> bool:
+	if DisplayServer.get_name() == "headless":
+		return false
+
+	var local_id := get_local_peer_id()
+
+	if shooter_peer_id == local_id or not players_by_peer_id.has(local_id):
+		return false
+
+	return _same_lobby(shooter_peer_id, local_id)
+
+
 func _relay_weapon_shot(
 	shooter_peer_id: int,
 	origin: Vector3,
@@ -2217,6 +2259,9 @@ func _relay_weapon_shot(
 
 	if round_telemetry != null:
 		round_telemetry.call("record_weapon_fired", shooter_peer_id, origin, did_hit)
+
+	if _server_views_relayed_effects(shooter_peer_id):
+		client_play_weapon_shot(origin, shot_end, did_hit, normal, weapon_id)
 
 	for peer_id in _lobby_client_peers_for(shooter_peer_id):
 		if int(peer_id) != shooter_peer_id:
@@ -2290,6 +2335,9 @@ func _relay_projectile_shot(shooter_peer_id: int, origin: Vector3, velocity: Vec
 	if round_telemetry != null:
 		round_telemetry.call("record_weapon_fired", shooter_peer_id, origin, false)
 
+	if _server_views_relayed_effects(shooter_peer_id):
+		client_play_projectile_shot(shooter_peer_id, origin, velocity)
+
 	for peer_id in _lobby_client_peers_for(shooter_peer_id):
 		if int(peer_id) != shooter_peer_id:
 			rpc_id(int(peer_id), "client_play_projectile_shot", shooter_peer_id, origin, velocity)
@@ -2350,6 +2398,9 @@ func _relay_grapple_event(peer_id: int, kind: int, point: Vector3) -> void:
 	if not is_valid_vector(point):
 		return
 
+	if _server_views_relayed_effects(peer_id):
+		client_play_grapple_event(peer_id, kind, point)
+
 	for remote_peer_id in _lobby_client_peers_for(peer_id):
 		if int(remote_peer_id) != peer_id:
 			rpc_id(int(remote_peer_id), "client_play_grapple_event", peer_id, kind, point)
@@ -2408,6 +2459,15 @@ func server_receive_client_perf(fps: float) -> void:
 		return
 
 	round_telemetry.call("record_client_fps", multiplayer.get_remote_sender_id(), fps)
+
+
+# Arrival-timing entries would otherwise linger until the next round-start clear; on a
+# long-running lobby server with player churn that's an unbounded dictionary.
+func clear_net_diag_for_peer(peer_id: int) -> void:
+	net_diag_last_recv_by_peer.erase(peer_id)
+	net_diag_rate_by_peer.erase(peer_id)
+	net_diag_last_gap_by_peer.erase(peer_id)
+	net_diag_round_max_gap_by_peer.erase(peer_id)
 
 
 # Records how regularly state packets for a remote player arrive at this machine.

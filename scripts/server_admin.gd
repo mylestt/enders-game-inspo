@@ -16,6 +16,11 @@ var _poll_elapsed: float = 0.0
 var _command_file_ready: bool = false
 var _command_file_position: int = 0
 
+# Failed admin-key attempts are rate-limited per peer so the key can't be brute-forced at
+# RPC speed. peer_id -> time (seconds) of the last rejected attempt.
+const FAILED_KEY_COOLDOWN := 2.0
+var _last_failed_key_time_by_peer: Dictionary = {}
+
 
 func _ready() -> void:
 	GameLaunch.apply_cmdline_overrides()
@@ -117,8 +122,18 @@ func server_receive_admin_command(command: String, key: String) -> void:
 		return
 
 	if key != admin_key:
+		var now := Time.get_ticks_msec() / 1000.0
+		var last_failed := float(_last_failed_key_time_by_peer.get(sender_id, -INF))
+		_last_failed_key_time_by_peer[sender_id] = now
+
+		# Inside the cooldown window: swallow the attempt silently (no oracle to hammer).
+		if now - last_failed < FAILED_KEY_COOLDOWN:
+			return
+
 		rpc_id(sender_id, "client_receive_admin_response", "Admin key rejected.")
 		return
+
+	_last_failed_key_time_by_peer.erase(sender_id)
 
 	var response := execute_command(command, sender_id)
 	print("ADMIN RPC ", sender_id, "> ", command)
