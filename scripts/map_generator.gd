@@ -18,10 +18,12 @@ class_name MapGenerator
 # Scenes are preloaded so the exporter packs them (a bare load("res://…") string is not
 # tracked as a dependency and silently ships missing on a dedicated-server export).
 const MAP_DIAMOND := preload("res://DiamondArena.tscn")
+const MAP_SPHERE := preload("res://scenes/sphere.tscn")
 
 # The available maps. Add an entry here to register a new arena scene.
 const MAPS := [
 	{"id": "diamond", "name": "Diamond Arena", "scene": MAP_DIAMOND},
+	{"id": "sphere", "name": "Sphere Arena", "scene": MAP_SPHERE},
 ]
 
 const DEFAULT_MAP_ID := "diamond"
@@ -135,6 +137,8 @@ static func normalize_map_id(value: String) -> String:
 	match key:
 		"diamond", "diamond_arena", "arena_diamond":
 			return "diamond"
+		"sphere", "sphere_arena", "arena_sphere", "ball":
+			return "sphere"
 
 	# Already a known id? Pass it through. Otherwise return as-is (build_map warns).
 	if has_map(key):
