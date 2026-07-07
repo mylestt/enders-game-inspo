@@ -1,8 +1,8 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://d3k8i1q31qxjn"]
 
 [ext_resource type="Script" uid="uid://dytr63lws3rdh" path="res://scripts/weapons/weapon_hitscan_tracer_effect.gd" id="1_tracer_effect"]
 
-[node name="RifleTracerEffect" type="Node3D"]
+[node name="RifleTracerEffect" type="Node3D" unique_id=1526776050]
 script = ExtResource("1_tracer_effect")
 visual_speed = 950.0
 min_travel_time = 0.02
@@ -10,15 +10,13 @@ max_travel_time = 0.05
 tracer_width = 0.09
 jagged_radius = 0.14
 segment_count = 8
-strand_count = 2
 tail_width_multiplier = 0.16
-tracer_color = Color(1.0, 0.55, 0.15, 0.92)
+tracer_color = Color(1, 0.55, 0.15, 0.92)
 tracer_emission_energy = 9.0
 head_glow_length = 1.2
 head_glow_boost = 2.0
-impact_spark_time = 0.09
 impact_spark_count = 9
 impact_spark_length = 0.48
 impact_spark_width = 0.02
-impact_spark_color = Color(1.0, 0.45, 0.12, 0.82)
+impact_spark_color = Color(1, 0.45, 0.12, 0.82)
 impact_spark_emission_energy = 7.0

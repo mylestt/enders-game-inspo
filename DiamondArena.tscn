@@ -53,9 +53,8 @@ blend_shape_mode = 0
 shadow_mesh = SubResource("ArrayMesh_w1h0c")
 
 [node name="Diamond" unique_id=1718768935 instance=ExtResource("1_ug2fc")]
-transform = Transform3D(2.45, 0, 0, 0, 2.45, 0, 0, 0, 2.45, 0, 0, 0)
 
-[node name="Arena" parent="." index="0" unique_id=1760314481]
+[node name="Arena" parent="." index="0" unique_id=343428539]
 transform = Transform3D(-2, 3.019916e-07, 0, -3.019916e-07, -2, 0, 0, 0, 2, 0, 0, 0)
 surface_material_override/0 = SubResource("StandardMaterial3D_tkpfl")
 
@@ -64,8 +63,8 @@ surface_material_override/0 = SubResource("StandardMaterial3D_tkpfl")
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Arena/StaticBody3D" index="0" unique_id=710252333]
 shape = SubResource("ConcavePolygonShape3D_mvqfr")
 
-[node name="Icosphere" parent="." index="1" unique_id=465685197]
-transform = Transform3D(9.552, 0, 0, 0, 9.552, 0, 0, 0, 9.552, 0, 0, 0)
+[node name="Icosphere" parent="." index="1" unique_id=654737993]
+transform = Transform3D(14.082, 0, 0, 0, 14.082, 0, 0, 0, 14.082, 0, 0, 0)
 surface_material_override/0 = SubResource("StandardMaterial3D_smytg")
 
 [node name="StaticBody3D" type="StaticBody3D" parent="Icosphere" index="0" unique_id=1438703272]
@@ -151,7 +150,95 @@ surface_material_override/0 = SubResource("StandardMaterial3D_smytg")
 transform = Transform3D(1.94, 0, 0, 0, 1.94, 0, 0, 0, 1.94, 0, 0, 0)
 shape = SubResource("SphereShape3D_tkpfl")
 
-[node name="Icosphere9" type="MeshInstance3D" parent="." index="9" unique_id=2072896788]
+[node name="Icosphere11" type="MeshInstance3D" parent="." index="9" unique_id=786493568]
+transform = Transform3D(0.99978673, -0.020663217, 0, 0.020663217, 0.99978673, 0, 0, 0, 1, 17.93377, 12.841432, -0.120105356)
+mesh = SubResource("ArrayMesh_icdr8")
+surface_material_override/0 = SubResource("StandardMaterial3D_smytg")
+
+[node name="StaticBody3D" type="StaticBody3D" parent="Icosphere11" index="0" unique_id=1357229661]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Icosphere11/StaticBody3D" index="0" unique_id=1188836122]
+transform = Transform3D(1.94, 0, 0, 0, 1.94, 0, 0, 0, 1.94, 0, 0, 0)
+shape = SubResource("SphereShape3D_tkpfl")
+
+[node name="Icosphere12" type="MeshInstance3D" parent="." index="10" unique_id=442418498]
+transform = Transform3D(0.99978673, -0.020663217, 0, 0.020663217, 0.99978673, 0, 0, 0, 1, 17.93377, -35.46557, -0.120105356)
+mesh = SubResource("ArrayMesh_icdr8")
+surface_material_override/0 = SubResource("StandardMaterial3D_smytg")
+
+[node name="StaticBody3D" type="StaticBody3D" parent="Icosphere12" index="0" unique_id=1070422940]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Icosphere12/StaticBody3D" index="0" unique_id=466382461]
+transform = Transform3D(1.94, 0, 0, 0, 1.94, 0, 0, 0, 1.94, 0, 0, 0)
+shape = SubResource("SphereShape3D_tkpfl")
+
+[node name="Icosphere13" type="MeshInstance3D" parent="." index="11" unique_id=946439648]
+transform = Transform3D(-0.9603718, 0.27872306, 0, -0.27872306, -0.9603718, 0, 0, 0, 1, 17.93377, -35.46557, -0.120105356)
+mesh = SubResource("ArrayMesh_icdr8")
+surface_material_override/0 = SubResource("StandardMaterial3D_smytg")
+
+[node name="StaticBody3D" type="StaticBody3D" parent="Icosphere13" index="0" unique_id=858447799]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Icosphere13/StaticBody3D" index="0" unique_id=1206991820]
+transform = Transform3D(1.94, 0, 0, 0, 1.94, 0, 0, 0, 1.94, 0, 0, 0)
+shape = SubResource("SphereShape3D_tkpfl")
+
+[node name="Icosphere14" type="MeshInstance3D" parent="." index="12" unique_id=368924169]
+transform = Transform3D(-0.9603718, 0.27872306, 0, -0.27872306, -0.9603718, 0, 0, 0, 1, -2.0131602, -35.46557, -22.025616)
+mesh = SubResource("ArrayMesh_icdr8")
+surface_material_override/0 = SubResource("StandardMaterial3D_smytg")
+
+[node name="StaticBody3D" type="StaticBody3D" parent="Icosphere14" index="0" unique_id=142692581]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Icosphere14/StaticBody3D" index="0" unique_id=358286379]
+transform = Transform3D(1.94, 0, 0, 0, 1.94, 0, 0, 0, 1.94, 0, 0, 0)
+shape = SubResource("SphereShape3D_tkpfl")
+
+[node name="Icosphere15" type="MeshInstance3D" parent="." index="13" unique_id=1023705827]
+transform = Transform3D(-0.9593571, 0.27842855, -0.04595578, -0.27872303, -0.9603718, 0, -0.044134635, 0.012808935, 0.99894345, -20.997225, -3.4353049, 28.785196)
+mesh = SubResource("ArrayMesh_icdr8")
+surface_material_override/0 = SubResource("StandardMaterial3D_smytg")
+
+[node name="StaticBody3D" type="StaticBody3D" parent="Icosphere15" index="0" unique_id=178360471]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Icosphere15/StaticBody3D" index="0" unique_id=1616282996]
+transform = Transform3D(1.94, 0, 0, 0, 1.94, 0, 0, 0, 1.94, 0, 0, 0)
+shape = SubResource("SphereShape3D_tkpfl")
+
+[node name="Icosphere16" type="MeshInstance3D" parent="." index="14" unique_id=1976080831]
+transform = Transform3D(-0.9593572, 0.27842855, -0.045955785, -0.278723, -0.9603718, 1.369589e-09, -0.044134635, 0.012808935, 0.99894357, -20.997225, 2.5114574, -22.94881)
+mesh = SubResource("ArrayMesh_icdr8")
+surface_material_override/0 = SubResource("StandardMaterial3D_smytg")
+
+[node name="StaticBody3D" type="StaticBody3D" parent="Icosphere16" index="0" unique_id=916966122]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Icosphere16/StaticBody3D" index="0" unique_id=235259082]
+transform = Transform3D(1.94, 0, 0, 0, 1.94, 0, 0, 0, 1.94, 0, 0, 0)
+shape = SubResource("SphereShape3D_tkpfl")
+
+[node name="Icosphere17" type="MeshInstance3D" parent="." index="15" unique_id=581676461]
+transform = Transform3D(-0.9593572, 0.27842855, -0.045955785, -0.278723, -0.9603718, 1.369589e-09, -0.044134635, 0.012808935, 0.99894357, 18.190924, 2.5114574, -22.94881)
+mesh = SubResource("ArrayMesh_icdr8")
+surface_material_override/0 = SubResource("StandardMaterial3D_smytg")
+
+[node name="StaticBody3D" type="StaticBody3D" parent="Icosphere17" index="0" unique_id=277554437]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Icosphere17/StaticBody3D" index="0" unique_id=516226631]
+transform = Transform3D(1.94, 0, 0, 0, 1.94, 0, 0, 0, 1.94, 0, 0, 0)
+shape = SubResource("SphereShape3D_tkpfl")
+
+[node name="Icosphere18" type="MeshInstance3D" parent="." index="16" unique_id=740939339]
+transform = Transform3D(-0.9593572, 0.27842855, -0.045955785, -0.278723, -0.9603718, 1.8088393e-09, -0.04413463, 0.012808934, 0.9989437, 18.190924, -1.6199112, 18.790462)
+mesh = SubResource("ArrayMesh_icdr8")
+surface_material_override/0 = SubResource("StandardMaterial3D_smytg")
+
+[node name="StaticBody3D" type="StaticBody3D" parent="Icosphere18" index="0" unique_id=2114483392]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Icosphere18/StaticBody3D" index="0" unique_id=1566928488]
+transform = Transform3D(1.94, 0, 0, 0, 1.94, 0, 0, 0, 1.94, 0, 0, 0)
+shape = SubResource("SphereShape3D_tkpfl")
+
+[node name="Icosphere9" type="MeshInstance3D" parent="." index="17" unique_id=2072896788]
 transform = Transform3D(0.99978673, -0.020663217, 0, 0.020663217, 0.99978673, 0, 0, 0, 1, -0.01577572, 32.11546, -0.120105356)
 mesh = SubResource("ArrayMesh_icdr8")
 surface_material_override/0 = SubResource("StandardMaterial3D_smytg")
@@ -162,7 +249,7 @@ surface_material_override/0 = SubResource("StandardMaterial3D_smytg")
 transform = Transform3D(1.94, 0, 0, 0, 1.94, 0, 0, 0, 1.94, 0, 0, 0)
 shape = SubResource("SphereShape3D_tkpfl")
 
-[node name="Icosphere10" type="MeshInstance3D" parent="." index="10" unique_id=1910143007]
+[node name="Icosphere10" type="MeshInstance3D" parent="." index="18" unique_id=1910143007]
 transform = Transform3D(0.99978673, -0.020663217, 0, 0.020663217, 0.99978673, 0, 0, 0, 1, -0.01577572, -35.605778, -0.120105356)
 mesh = SubResource("ArrayMesh_icdr8")
 surface_material_override/0 = SubResource("StandardMaterial3D_smytg")
@@ -173,7 +260,7 @@ surface_material_override/0 = SubResource("StandardMaterial3D_smytg")
 transform = Transform3D(1.94, 0, 0, 0, 1.94, 0, 0, 0, 1.94, 0, 0, 0)
 shape = SubResource("SphereShape3D_tkpfl")
 
-[node name="SpawnsA" type="Node3D" parent="." index="11" unique_id=684960642]
+[node name="SpawnsA" type="Node3D" parent="." index="19" unique_id=684960642]
 transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, 0, 63.308178, 0.016366959)
 
 [node name="SpawnA0" parent="SpawnsA" index="0" unique_id=88038021 instance=ExtResource("3_spawnpt")]
@@ -191,7 +278,7 @@ transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -8, 0, 0)
 [node name="SpawnA4" parent="SpawnsA" index="4" unique_id=88038024 instance=ExtResource("3_spawnpt")]
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 8, 0, 0)
 
-[node name="SpawnsB" type="Node3D" parent="." index="12" unique_id=2017350737]
+[node name="SpawnsB" type="Node3D" parent="." index="20" unique_id=2017350737]
 transform = Transform3D(-2.1855695e-07, 0, 1, 0, 1, 0, -1, 0, -2.1855695e-07, 0, -61.977356, -0.019432068)
 
 [node name="SpawnB0" parent="SpawnsB" index="0" unique_id=1273251726 instance=ExtResource("3_spawnpt")]
@@ -213,61 +300,61 @@ team = 1
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 0, 0)
 team = 1
 
-[node name="OmniLight3D" type="OmniLight3D" parent="." index="13" unique_id=1865770332]
+[node name="OmniLight3D" type="OmniLight3D" parent="." index="21" unique_id=1865770332]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -66.25936, 0)
 light_energy = 13.0
 shadow_bias = 1.09
 omni_range = 131.9982
 
-[node name="OmniLight3D2" type="OmniLight3D" parent="." index="14" unique_id=1503193079]
+[node name="OmniLight3D2" type="OmniLight3D" parent="." index="22" unique_id=1503193079]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 66.89135, 0)
 light_energy = 13.0
 shadow_bias = 1.09
 omni_range = 131.9982
 
-[node name="OmniLight3D3" type="OmniLight3D" parent="." index="15" unique_id=2050767620]
+[node name="OmniLight3D3" type="OmniLight3D" parent="." index="23" unique_id=2050767620]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 17.634174, 18.460318, 18.16402)
 light_energy = 13.0
 shadow_bias = 1.09
 omni_range = 131.9982
 
-[node name="OmniLight3D4" type="OmniLight3D" parent="." index="16" unique_id=1804241973]
+[node name="OmniLight3D4" type="OmniLight3D" parent="." index="24" unique_id=1804241973]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 17.634174, 18.460318, -19.416023)
 light_energy = 13.0
 shadow_bias = 1.09
 omni_range = 131.9982
 
-[node name="OmniLight3D5" type="OmniLight3D" parent="." index="17" unique_id=1995788971]
+[node name="OmniLight3D5" type="OmniLight3D" parent="." index="25" unique_id=1995788971]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 17.634174, -18.668825, -19.416023)
 light_energy = 13.0
 shadow_bias = 1.09
 omni_range = 131.9982
 
-[node name="OmniLight3D6" type="OmniLight3D" parent="." index="18" unique_id=1492750369]
+[node name="OmniLight3D6" type="OmniLight3D" parent="." index="26" unique_id=1492750369]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 17.375595, -18.668825, 18.759254)
 light_energy = 13.0
 shadow_bias = 1.09
 omni_range = 131.9982
 
-[node name="OmniLight3D7" type="OmniLight3D" parent="." index="19" unique_id=1092324906]
+[node name="OmniLight3D7" type="OmniLight3D" parent="." index="27" unique_id=1092324906]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -18.569359, -18.668825, 17.233528)
 light_energy = 13.0
 shadow_bias = 1.09
 omni_range = 131.9982
 
-[node name="OmniLight3D8" type="OmniLight3D" parent="." index="20" unique_id=2127208770]
+[node name="OmniLight3D8" type="OmniLight3D" parent="." index="28" unique_id=2127208770]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -18.654255, -18.668825, -18.38201)
 light_energy = 13.0
 shadow_bias = 1.09
 omni_range = 131.9982
 
-[node name="OmniLight3D9" type="OmniLight3D" parent="." index="21" unique_id=511843410]
+[node name="OmniLight3D9" type="OmniLight3D" parent="." index="29" unique_id=511843410]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -18.654255, 18.803465, -18.38201)
 light_energy = 13.0
 shadow_bias = 1.09
 omni_range = 131.9982
 
-[node name="OmniLight3D10" type="OmniLight3D" parent="." index="22" unique_id=1392912243]
+[node name="OmniLight3D10" type="OmniLight3D" parent="." index="30" unique_id=1392912243]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -18.654255, 18.803465, 17.523308)
 light_energy = 13.0
 shadow_bias = 1.09

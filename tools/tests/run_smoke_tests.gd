@@ -35,10 +35,11 @@ func _run_all() -> void:
 	await test_grapple_multiwrap()
 
 	# Runtime (in-tree, physics-active) checks per registered arena. `grounded` asserts
-	# every spawn stands on a surface within the 8 m ground-mode probe; Diamond authors
-	# most spawns >8 m from any wall (deliberate zero-G floating starts), Sphere stands
-	# everyone on its pentagon faces.
-	var map_expectations := {"diamond": false, "sphere": true}
+	# every spawn stands on a surface within the 8 m ground-mode probe. Both current arenas
+	# ground all spawns (Diamond on its pole faces, Sphere on its pentagon faces). This
+	# guards the Diamond spawns against an arena-wide rescale silently floating them again
+	# (a 2.45x root scale once pushed the pole spawns past the probe — see git history).
+	var map_expectations := {"diamond": true, "sphere": true}
 
 	for entry in MapGenerator.MAPS:
 		var id := String(entry["id"])

@@ -27,7 +27,7 @@ script = ExtResource("2_1jxqw")
 surface_walk_sprint_multiplier = 2.0
 surface_walk_slope_align_speed = 9.0
 surface_walk_foot_check_distance = 1.8
-surface_walk_lock_max_distance = 3.0
+surface_walk_entry_max_angle_degrees = 40.0
 surface_walk_lock_sweet_spot = 2.0
 
 [node name="SuitBoosters" type="Node" parent="." unique_id=2126445202]
@@ -36,7 +36,6 @@ script = ExtResource("3_dw050")
 [node name="GrappleController" type="Node" parent="." unique_id=2126445204]
 script = ExtResource("11_grapple")
 max_range = 60.0
-taut_give = 0.03
 wrap_surface_offset = 0.005
 wrap_min_pivot_separation = 0.0
 rope_width = 0.02

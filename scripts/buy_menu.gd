@@ -106,16 +106,9 @@ var shop_items: Array[Dictionary] = [
 		"title": "Suit Boosters",
 		"description": "Unlocks W/S propulsion with limited fuel.",
 		"price": 6000
-	},
-	{
-		"id": "grapple_wire",
-		"section": "SPECIAL SUIT SYSTEMS",
-		"group": "grapple_wire",
-		"level": 1,
-		"title": "Grapple Wire",
-		"description": "E fires a fixed-length wire that hooks surfaces. Swing at speed, wrap around cover, MMB reels in, Q releases.",
-		"price": 5000
 	}
+	# NOTE: the grapple wire is now standard-issue (GrappleController.has_grapple defaults on),
+	# so it's no longer a shop item. Re-add an entry here to gate it behind a purchase again.
 ]
 
 

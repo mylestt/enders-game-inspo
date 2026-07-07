@@ -7,9 +7,11 @@ class_name LobbyManager
 # NetworkManager. Clients connect to the server only to BROWSE; they spawn into the world
 # only when they JOIN a lobby. A lobby closes when its last member leaves.
 #
-# All lobbies currently share the server's single loaded map: spawn markers are read from
-# scene-tree groups, which can only hold one map at a time, so a created lobby's map is
-# forced to the server's active map. Per-lobby maps need per-instance marker lookup.
+# All lobbies share the server's single loaded map: spawn markers are read from scene-tree
+# groups, which can only hold one map at a time. The FIRST lobby on an otherwise-empty server
+# adopts the host's chosen map (the server rebuilds its GeneratedMap to match); once any lobby
+# exists, additional lobbies share whatever map is already loaded. Per-lobby maps would need
+# per-instance marker lookup.
 
 signal lobby_list_received(lobbies: Array)
 signal lobby_result(success: bool, message: String)
@@ -181,6 +183,10 @@ func _create_lobby(settings: Dictionary) -> Dictionary:
 	var lobby_id := next_lobby_id
 	next_lobby_id += 1
 
+	# Honor the host's map pick when this is the first lobby (see the header note); otherwise
+	# it resolves to whatever map the server already has loaded.
+	var active_map_id := _resolve_lobby_map_id(settings)
+
 	var capacity := _server_player_capacity()
 	var lobby := {
 		"id": lobby_id,
@@ -198,8 +204,8 @@ func _create_lobby(settings: Dictionary) -> Dictionary:
 		"kill_limit": maxi(_safe_int(settings.get("kill_limit"), GameLaunch.ffa_kill_limit), 0),
 		"heal_on_kill": _safe_bool(settings.get("heal_on_kill"), GameLaunch.heal_on_kill),
 		"ammo_on_kill": _safe_bool(settings.get("ammo_on_kill"), GameLaunch.ammo_on_kill),
-		# Forced to the server's active map — see the header note.
-		"map": {"id": GameLaunch.map_id},
+		# The active shared map (the host's pick on the first lobby, else the loaded map).
+		"map": {"id": active_map_id},
 		"members": [],
 	}
 
@@ -309,6 +315,35 @@ func get_lobby_for_peer(peer_id: int) -> Dictionary:
 
 
 # --- Map sync ------------------------------------------------------------------------
+
+# Resolves the map a new lobby will use from the host's requested `map_id`. An otherwise-empty
+# server adopts the pick and rebuilds its shared map; once a lobby exists the pick is ignored
+# and the loaded map is reused (all lobbies share one map — see the header note). Returns the
+# id that ends up active.
+func _resolve_lobby_map_id(settings: Dictionary) -> String:
+	var requested := MapGenerator.normalize_map_id(
+		_safe_string(settings.get("map_id"), GameLaunch.map_id, 32)
+	)
+
+	if not MapGenerator.has_map(requested):
+		requested = GameLaunch.map_id
+
+	# `lobbies` does not yet include the lobby being created, so empty == first lobby.
+	if lobbies.is_empty() and requested != GameLaunch.map_id:
+		_server_switch_active_map(requested)
+
+	return GameLaunch.map_id
+
+
+# Repoints the server's single shared map and rebuilds its GeneratedMap so the new spawn
+# markers populate the scene-tree groups NetworkManager reads. Safe only with no players in
+# world (enforced by the first-lobby gate in _resolve_lobby_map_id).
+func _server_switch_active_map(new_map_id: String) -> void:
+	GameLaunch.map_configured = true
+	GameLaunch.map_id = new_map_id
+	_rebuild_local_map()
+	print("LobbyManager: server active map switched to '", new_map_id, "'.")
+
 
 func _apply_map_config_to_launch(map_cfg: Dictionary) -> void:
 	GameLaunch.map_configured = true

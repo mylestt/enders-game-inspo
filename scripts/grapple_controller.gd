@@ -74,7 +74,9 @@ const MAX_PIVOTS := 512
 @export var rope_color: Color = Color(0.82, 0.88, 1.0)
 
 var player: RigidBody3D
-var has_grapple: bool = false
+# Standard-issue kit: every player has the grapple by default (no purchase needed). Flip to
+# false to gate it behind the shop again (see buy_menu.gd's SPECIAL SUIT SYSTEMS catalog).
+var has_grapple: bool = true
 var attached: bool = false
 
 # The pivot chain: [anchor, bend, bend, ...] — the LAST entry is the active swing pivot.

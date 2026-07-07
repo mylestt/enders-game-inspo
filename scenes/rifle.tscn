@@ -2,8 +2,8 @@
 
 [ext_resource type="Script" uid="uid://b42le5ln2dntt" path="res://scripts/weapons/hitscan_weapon.gd" id="1_rifle"]
 [ext_resource type="PackedScene" uid="uid://cj02kh80khvwc" path="res://rifle_1_test.tscn" id="2_rifle"]
-[ext_resource type="PackedScene" path="res://scenes/rifle_tracer_effect.tscn" id="3_rifle"]
-[ext_resource type="PackedScene" path="res://scenes/rifle_muzzle_flash.tscn" id="4_flash"]
+[ext_resource type="PackedScene" uid="uid://d3k8i1q31qxjn" path="res://scenes/rifle_tracer_effect.tscn" id="3_rifle"]
+[ext_resource type="PackedScene" uid="uid://d13inluxpw2ta" path="res://scenes/rifle_muzzle_flash.tscn" id="4_flash"]
 
 [node name="Rifle" type="Node3D" unique_id=349186536]
 transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0.12, -0.16, -0.15)
@@ -17,8 +17,9 @@ recoil_rotation_degrees = Vector3(0.9, 0, -0.05)
 recoil_position_offset = Vector3(0, 0.006, 0.09)
 recoil_random_rotation_degrees = Vector3(0.15, 1.6, 0.3)
 recoil_random_position_offset = Vector3(0.0006, 0.001, 0.0016)
-recoil_kick_up = 4.0
+recoil_kick_up = 2.0
 recoil_kick_side = 1.0
+hitscan_damage = 17.0
 hitscan_spread_degrees = Vector2(0.35, 0.35)
 hitscan_tracer_scene = ExtResource("3_rifle")
 muzzle_flash_scene = ExtResource("4_flash")

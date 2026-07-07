@@ -58,8 +58,11 @@ lobbies, deployed to a DigitalOcean VPS at **147.182.160.52:7000**.
   joiners get a full session sync. Client-supplied lobby settings are TYPE-CHECKED and
   clamped server-side (`_safe_*` helpers — a hostile dict must not abort the handler);
   lobby capacity clamps to the ENet host's real slots (`NetworkManager.max_players`).
-  CONSTRAINT: all lobbies share the one loaded map (spawn markers are global groups; the
-  host menu says so). Non-lobby servers use one implicit session.
+  CONSTRAINT: all lobbies share the one loaded map (spawn markers are global groups). The
+  FIRST lobby on an empty server adopts the host's map pick — the server rebuilds its
+  GeneratedMap to match (`LobbyManager._resolve_lobby_map_id` / `_server_switch_active_map`);
+  once any lobby exists the shared map is fixed and later lobbies inherit it (host menu says
+  so). Non-lobby servers use one implicit session.
 - **Game modes** (per lobby): `"team"` elimination | `"ffa"` deathmatch. FFA: procedural
   arena-edge spawns (raycast from centre, farthest from others; falls back to markers),
   kill-ranked scoreboard, no buy menu, random gun from lobby pool + booster fuel each life,
@@ -119,8 +122,9 @@ lobbies, deployed to a DigitalOcean VPS at **147.182.160.52:7000**.
   nearest surface around the body — but ONLY surfaces whose normal matches the body's up
   within `surface_walk_entry_max_angle_degrees` (15°): you must actually orient your feet
   at a surface to lock it. Spawn grounding is exempt (snaps to the nearest surface).
-- **Grapple wire:** purchasable (shop → SPECIAL SUIT SYSTEMS, `grapple_wire` group;
-  server-validated like boosters). `scripts/grapple_controller.gd` on the player
+- **Grapple wire:** standard-issue for every player by default (`GrappleController.has_grapple`
+  defaults ON; no shop entry — re-add one + flip the default to gate it behind a purchase
+  again). `scripts/grapple_controller.gd` on the player
   (`GrappleController` node): `grapple_fire` (E) casts along camera aim up to `max_range`;
   on STATIC geometry (players/RigidBody props rejected) it attaches and the wire length
   LOCKS to the attach distance — a fixed-length tether (`shoot_out_full_length` pays out

@@ -111,11 +111,11 @@ func _build_ui() -> void:
 	column.add_child(map_row)
 
 	# Online lobbies all share the server's one loaded map (spawn markers are global scene
-	# groups), so a host's pick can't be honored per-lobby yet — say so instead of silently
-	# overriding the choice at join.
+	# groups). The first lobby on an empty server sets that map; later lobbies inherit it.
+	# (the host pick below is honored server-side by LobbyManager._resolve_lobby_map_id).
 	if show_lobby_fields:
 		var map_note := Label.new()
-		map_note.text = "Online lobbies currently play the server's active map."
+		map_note.text = "The first lobby sets the map; later lobbies share it."
 		map_note.add_theme_font_size_override("font_size", 12)
 		map_note.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.45))
 		column.add_child(map_note)
