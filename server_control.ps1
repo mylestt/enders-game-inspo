@@ -44,7 +44,7 @@ function Prompt-Rules {
     $roundTime = Read-Host "Round time seconds, 0 means no limit [0]"
     if ([string]::IsNullOrWhiteSpace($roundTime)) { $roundTime = "0" }
 
-    # Map ids come from MapGenerator.MAPS (hand-built scenes; procedural maps are gone).
+    # Map ids come from map_registry.tres (hand-built scenes; procedural maps are gone).
     $map = Read-Host "Map id [diamond]"
     if ([string]::IsNullOrWhiteSpace($map)) { $map = "diamond" }
 

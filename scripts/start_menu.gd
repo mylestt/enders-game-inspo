@@ -7,12 +7,18 @@ extends Control
 var main_view: VBoxContainer
 var multiplayer_view: VBoxContainer
 var username_view: VBoxContainer
+var map_creator_view: VBoxContainer
 var username_field: LineEdit
 var username_status_label: Label
 var server_ip_field: LineEdit
 var joke_popup: PanelContainer
 var status_label: Label
 var multiplayer_status_label: Label
+var map_list: ItemList
+var new_map_name_field: LineEdit
+var map_creator_status_label: Label
+var delete_map_dialog: ConfirmationDialog
+var _delete_map_slug: String = ""
 
 
 func _ready() -> void:
@@ -33,6 +39,14 @@ func _ready() -> void:
 		GameLaunch.join_ip = resolve_join_ip()
 		GameLaunch.pending_mode = GameLaunch.Mode.MULTIPLAYER
 		get_tree().change_scene_to_file.call_deferred("res://scenes/main.tscn")
+		return
+
+	# Coming back from a map-creator playtest: reopen the editor on the same map.
+	var reopen_slug := MapCreatorEditor.consume_return_slug()
+
+	if reopen_slug != "" and MapDocument.map_exists(reopen_slug):
+		MapCreatorEditor.open_slug = reopen_slug
+		get_tree().change_scene_to_file.call_deferred("res://scenes/map_creator.tscn")
 		return
 
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -74,6 +88,10 @@ func build_ui() -> void:
 	multiplayer_view = build_multiplayer_view()
 	multiplayer_view.visible = false
 	center.add_child(multiplayer_view)
+
+	map_creator_view = build_map_creator_view()
+	map_creator_view.visible = false
+	center.add_child(map_creator_view)
 
 	if GameLaunch.username_configured:
 		show_view(main_view)
@@ -122,6 +140,7 @@ func build_main_view() -> VBoxContainer:
 
 	add_menu_button(column, "Test Arena", _on_test_arena_pressed)
 	add_menu_button(column, "Multiplayer", _on_multiplayer_pressed)
+	add_menu_button(column, "Map Creator", _on_map_creator_pressed)
 	add_menu_button(column, "Settings", _on_settings_pressed)
 	add_menu_button(column, "Quit", _on_quit_pressed)
 
@@ -158,6 +177,166 @@ func build_multiplayer_view() -> VBoxContainer:
 	column.add_child(multiplayer_status_label)
 
 	return column
+
+
+# Custom-map browser: saved maps from user://custom_maps plus create/edit/manage actions.
+# The editor itself is a separate scene (scenes/map_creator.tscn).
+func build_map_creator_view() -> VBoxContainer:
+	var column := make_column()
+	column.custom_minimum_size = Vector2(460.0, 0.0)
+
+	column.add_child(make_title("MAP CREATOR"))
+	column.add_child(make_spacer(6.0))
+
+	map_list = ItemList.new()
+	map_list.custom_minimum_size = Vector2(0.0, 220.0)
+	map_list.add_theme_font_size_override("font_size", 16)
+	map_list.item_activated.connect(_on_map_list_activated)
+	column.add_child(map_list)
+
+	var actions := HBoxContainer.new()
+	actions.add_theme_constant_override("separation", 8)
+	column.add_child(actions)
+
+	for action in [["Edit", _on_edit_map_pressed], ["Duplicate", _on_duplicate_map_pressed], ["Delete", _on_delete_map_pressed]]:
+		var button := Button.new()
+		button.text = String(action[0])
+		button.custom_minimum_size = Vector2(0.0, 40.0)
+		button.focus_mode = Control.FOCUS_NONE
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.add_theme_font_size_override("font_size", 16)
+		button.pressed.connect(action[1])
+		actions.add_child(button)
+
+	column.add_child(make_spacer(4.0))
+
+	var new_row := HBoxContainer.new()
+	new_row.add_theme_constant_override("separation", 8)
+	column.add_child(new_row)
+
+	new_map_name_field = LineEdit.new()
+	new_map_name_field.placeholder_text = "New map name"
+	new_map_name_field.custom_minimum_size = Vector2(0.0, 44.0)
+	new_map_name_field.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	new_map_name_field.add_theme_font_size_override("font_size", 16)
+	new_map_name_field.text_submitted.connect(func(_text: String) -> void: _on_new_map_pressed())
+	new_row.add_child(new_map_name_field)
+
+	var create_button := Button.new()
+	create_button.text = "Create"
+	create_button.custom_minimum_size = Vector2(110.0, 44.0)
+	create_button.focus_mode = Control.FOCUS_NONE
+	create_button.add_theme_font_size_override("font_size", 16)
+	create_button.pressed.connect(_on_new_map_pressed)
+	new_row.add_child(create_button)
+
+	add_menu_button(column, "Back", _on_back_pressed)
+
+	map_creator_status_label = make_status_label("Build arenas from shapes and imported models, then playtest them solo in the Test Arena.")
+	column.add_child(map_creator_status_label)
+
+	return column
+
+
+func refresh_map_list() -> void:
+	map_list.clear()
+
+	for info in MapDocument.list_maps():
+		var index := map_list.add_item(String(info["name"]))
+		map_list.set_item_metadata(index, String(info["slug"]))
+
+	if map_list.item_count == 0:
+		var index := map_list.add_item("No custom maps yet — create one below.")
+		map_list.set_item_disabled(index, true)
+
+
+func _selected_map_slug() -> String:
+	var selected := map_list.get_selected_items()
+
+	if selected.is_empty():
+		return ""
+
+	var meta: Variant = map_list.get_item_metadata(selected[0])
+	return String(meta) if meta != null else ""
+
+
+func _open_map_editor(slug: String) -> void:
+	MapCreatorEditor.open_slug = slug
+	get_tree().change_scene_to_file.call_deferred("res://scenes/map_creator.tscn")
+
+
+func _on_map_creator_pressed() -> void:
+	refresh_map_list()
+	show_view(map_creator_view)
+
+
+func _on_map_list_activated(_index: int) -> void:
+	_on_edit_map_pressed()
+
+
+func _on_edit_map_pressed() -> void:
+	var slug := _selected_map_slug()
+
+	if slug == "":
+		map_creator_status_label.text = "Select a map first (double-click also opens it)."
+		return
+
+	_open_map_editor(slug)
+
+
+func _on_new_map_pressed() -> void:
+	var doc := MapDocument.create_new(new_map_name_field.text)
+
+	if doc.save() != OK:
+		map_creator_status_label.text = "Could not create the map (disk error)."
+		return
+
+	_open_map_editor(doc.slug)
+
+
+func _on_duplicate_map_pressed() -> void:
+	var slug := _selected_map_slug()
+
+	if slug == "":
+		map_creator_status_label.text = "Select a map to duplicate."
+		return
+
+	var new_slug := MapDocument.duplicate_map(slug, MapGenerator.get_map_name(MapGenerator.CUSTOM_MAP_PREFIX + slug) + " Copy")
+
+	if new_slug == "":
+		map_creator_status_label.text = "Duplicate failed."
+		return
+
+	refresh_map_list()
+	map_creator_status_label.text = "Duplicated."
+
+
+func _on_delete_map_pressed() -> void:
+	var slug := _selected_map_slug()
+
+	if slug == "":
+		map_creator_status_label.text = "Select a map to delete."
+		return
+
+	_delete_map_slug = slug
+
+	if delete_map_dialog == null:
+		delete_map_dialog = ConfirmationDialog.new()
+		delete_map_dialog.title = "Delete map"
+		delete_map_dialog.ok_button_text = "Delete"
+		delete_map_dialog.confirmed.connect(_on_delete_map_confirmed)
+		add_child(delete_map_dialog)
+
+	delete_map_dialog.dialog_text = "Delete '%s' and its imported assets? This cannot be undone." % MapGenerator.get_map_name(MapGenerator.CUSTOM_MAP_PREFIX + slug)
+	delete_map_dialog.popup_centered()
+
+
+func _on_delete_map_confirmed() -> void:
+	if _delete_map_slug != "":
+		MapDocument.delete_map(_delete_map_slug)
+		_delete_map_slug = ""
+		refresh_map_list()
+		map_creator_status_label.text = "Map deleted."
 
 
 func make_column() -> VBoxContainer:
@@ -213,6 +392,9 @@ func show_view(view: Control) -> void:
 
 	if multiplayer_view != null:
 		multiplayer_view.visible = view == multiplayer_view
+
+	if map_creator_view != null:
+		map_creator_view.visible = view == map_creator_view
 
 
 func _focus_username_field() -> void:

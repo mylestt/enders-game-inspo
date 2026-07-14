@@ -99,9 +99,19 @@ func _build_ui() -> void:
 
 	var map_ids := MapGenerator.get_map_ids()
 
+	# Custom (map-creator) maps are local files, so they're only offered for the offline
+	# Test Arena — an online lobby's server has no way to load them (yet).
+	if launch_mode == GameLaunch.Mode.TEST_ARENA:
+		map_ids = map_ids + MapGenerator.get_custom_map_ids()
+
 	for i in range(map_ids.size()):
 		var id := String(map_ids[i])
-		map_option.add_item(MapGenerator.get_map_name(id), i)
+		var label := MapGenerator.get_map_name(id)
+
+		if MapGenerator.is_custom_map_id(id):
+			label = "Custom: " + label
+
+		map_option.add_item(label, i)
 		map_option.set_item_metadata(i, id)
 
 		if id == GameLaunch.map_id:

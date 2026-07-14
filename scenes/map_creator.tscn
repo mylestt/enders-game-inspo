@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/map_creator/map_creator_editor.gd" id="1_mapcreator"]
+
+[node name="MapCreatorEditor" type="Node3D"]
+script = ExtResource("1_mapcreator")

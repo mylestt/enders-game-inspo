@@ -9,6 +9,12 @@ extends SceneTree
 #   - server-economy hit validation (fire-rate tokens, damage clamp, plasma per-target dedup)
 #   - lobby-settings sanitation against hostile client dictionaries
 #   - network state hygiene (basis orthonormalization, transform validation, spawn slots)
+#   - map creator: document round-trip + hostile-JSON sanitation, bevel mesh generation
+#     (winding checked against engine convention), OBJ/STL runtime parsers, and built-map
+#     runtime guarantees (spawn groups, analytic-vs-trimesh colliders, solid geometry)
+#   - cylindrical force field: ring weight profile, local-axis push + height gating,
+#     generated collider/gizmo children, Diamond arena placement
+#   - spinning skybox rig: fullbright shader loads, spin accumulation/orthonormality
 #
 # Scenes are instantiated WITHOUT entering the tree (no _ready side effects), which still
 # proves the resource graph loads and the script attaches. Gameplay behavior beyond that
@@ -26,6 +32,7 @@ func _run_all() -> void:
 	print("=== Zero-G smoke tests ===")
 
 	test_scene_instantiation()
+	test_rpc_protocol_fingerprint()
 	test_economy_hitscan_validation()
 	test_economy_plasma_target_dedup()
 	test_economy_ffa_exclusive_grant()
@@ -33,6 +40,13 @@ func _run_all() -> void:
 	test_network_state_hygiene()
 	test_surface_walk_wall_slide()
 	await test_grapple_multiwrap()
+	await test_cylindrical_force_field()
+	test_spinning_skybox()
+	test_map_creator_document_roundtrip()
+	test_bevel_mesh_generators()
+	test_model_importer_parsers()
+	await test_map_creator_builder()
+	test_map_creator_gizmos()
 
 	# Runtime (in-tree, physics-active) checks per registered arena. `grounded` asserts
 	# every spawn stands on a surface within the 8 m ground-mode probe. Both current arenas
@@ -41,7 +55,7 @@ func _run_all() -> void:
 	# (a 2.45x root scale once pushed the pole spawns past the probe — see git history).
 	var map_expectations := {"diamond": true, "sphere": true}
 
-	for entry in MapGenerator.MAPS:
+	for entry in MapGenerator.get_map_entries():
 		var id := String(entry["id"])
 		await test_map_runtime(id, entry["scene"] as PackedScene, bool(map_expectations.get(id, false)))
 
@@ -72,8 +86,10 @@ const SCENE_PATHS := [
 	"res://scenes/main.tscn",
 	"res://scenes/start_menu.tscn",
 	"res://scenes/test_map.tscn",
+	"res://scenes/map_creator.tscn",
 	"res://DiamondArena.tscn",
 	"res://scenes/sphere.tscn",
+	"res://spin_space_ball.tscn",
 	"res://scenes/spawn_point.tscn",
 	"res://testingdrone.tscn",
 	"res://scenes/minigun.tscn",
@@ -115,6 +131,81 @@ func test_scene_instantiation() -> void:
 
 		if weapon != null:
 			weapon.free()
+
+
+# --- RPC protocol fingerprint --------------------------------------------------------------
+# Godot sends RPCs as an index into each node's alphabetically-sorted @rpc method table, so
+# ANY change to the project's @rpc surface breaks wire compatibility with older builds (calls
+# decode as the wrong methods). The connect-time handshake rejects mismatched builds — but
+# only if NET_PROTOCOL_VERSION was actually bumped. This check recomputes a fingerprint of
+# every @rpc declaration and fails when it drifts from the recorded one, printing the new
+# hash to paste into network_manager.gd alongside the version bump.
+
+func test_rpc_protocol_fingerprint() -> void:
+	print("- rpc protocol fingerprint")
+
+	var declarations: Array = []
+	_collect_rpc_declarations("res://", declarations)
+	declarations.sort()
+
+	var fingerprint := String("\n".join(declarations)).md5_text()
+	var network_manager_script := preload("res://scenes/network_manager.gd")
+	var recorded := String(network_manager_script.NET_RPC_FINGERPRINT)
+
+	check(declarations.size() > 0, "project declares @rpc methods (%d found)" % declarations.size())
+	check(
+		fingerprint == recorded,
+		"@rpc surface matches NET_RPC_FINGERPRINT — on change, bump NET_PROTOCOL_VERSION and set fingerprint to \"%s\"" % fingerprint
+	)
+
+
+func _collect_rpc_declarations(dir_path: String, out: Array) -> void:
+	var dir := DirAccess.open(dir_path)
+
+	if dir == null:
+		return
+
+	dir.list_dir_begin()
+	var entry := dir.get_next()
+
+	while entry != "":
+		var path := dir_path.path_join(entry)
+
+		if dir.current_is_dir():
+			# Skip hidden dirs (.godot, .git) and export output; everything else may hold
+			# networked scripts.
+			if not entry.begins_with(".") and entry != "build":
+				_collect_rpc_declarations(path, out)
+		elif entry.ends_with(".gd"):
+			_scan_script_for_rpc_declarations(path, out)
+
+		entry = dir.get_next()
+
+
+func _scan_script_for_rpc_declarations(path: String, out: Array) -> void:
+	var file := FileAccess.open(path, FileAccess.READ)
+
+	if file == null:
+		return
+
+	var lines := file.get_as_text().split("\n")
+	var pending_annotation := ""
+
+	for line in lines:
+		var stripped := String(line).strip_edges()
+
+		if stripped.begins_with("@rpc"):
+			pending_annotation = stripped
+		elif pending_annotation != "" and stripped.begins_with("func "):
+			# Only the method NAME matters on the wire (table order is sorted names); the
+			# annotation matters for mode/channel. Argument names/types are free to change.
+			var name_end := stripped.find("(")
+			var func_name := stripped.substr(5, name_end - 5).strip_edges() if name_end > 5 else stripped
+			out.append(path + " | " + pending_annotation + " | " + func_name)
+			pending_annotation = ""
+		elif pending_annotation != "" and stripped != "" and not stripped.begins_with("#") and not stripped.begins_with("@"):
+			# Something other than the func landed after @rpc — don't mis-attribute it.
+			pending_annotation = ""
 
 
 # --- Server economy ----------------------------------------------------------------------
@@ -368,6 +459,167 @@ func test_grapple_multiwrap() -> void:
 	await physics_frame
 
 
+# --- Cylindrical force field --------------------------------------------------------------
+# Profile checks for the lateral repulsor volume (CylindricalForceField): the three rings
+# gate the radial weight curve (zero inside start, peak at full, zero at end), the falloff
+# exponents shape the ramps, the push is radially outward off the LOCAL axis (rotation
+# respected) and gated by the height band, and the generated collider/gizmo children track
+# the exported sizes without ever being owned (so the editor never saves them). Also
+# asserts the Diamond arena actually ships one with sanely ordered rings.
+
+func test_cylindrical_force_field() -> void:
+	print("- cylindrical force field")
+
+	var field := CylindricalForceField.new()
+	field.height = 10.0
+	field.start_radius = 2.0
+	field.full_radius = 4.0
+	field.end_radius = 8.0
+	field.force_strength = 10.0
+	field.blend_in_falloff = 1.0
+	field.blend_out_falloff = 1.0
+	root.add_child(field)
+
+	check(field.get_force_weight(1.0) == 0.0, "no force inside the start (green) ring")
+	check(field.get_force_weight(2.0) == 0.0, "start ring is the zero edge of the blend-in")
+	check(absf(field.get_force_weight(3.0) - 0.5) < 0.0001, "linear blend-in midpoint at half strength")
+	check(absf(field.get_force_weight(4.0) - 1.0) < 0.0001, "full force at the full (yellow) ring")
+	check(absf(field.get_force_weight(6.0) - 0.5) < 0.0001, "linear blend-out midpoint at half strength")
+	check(field.get_force_weight(8.0) == 0.0, "force ends at the end (red) ring")
+	check(field.get_force_weight(9.0) == 0.0, "no force outside the volume")
+
+	field.blend_in_falloff = 2.0
+	field.blend_out_falloff = 3.0
+	check(absf(field.get_force_weight(3.0) - 0.25) < 0.0001, "blend-in falloff exponent shapes the ramp")
+	check(absf(field.get_force_weight(6.0) - 0.125) < 0.0001, "blend-out falloff exponent shapes the ramp")
+	field.blend_in_falloff = 1.0
+	field.blend_out_falloff = 1.0
+
+	var push := field.get_force_for_global_position(Vector3(4.0, 0.0, 0.0))
+	check(push.is_equal_approx(Vector3(10.0, 0.0, 0.0)), "push points radially outward at force_strength")
+	check(field.get_force_for_global_position(Vector3(4.0, 5.1, 0.0)) == Vector3.ZERO, "no force outside the height band")
+	check(field.get_force_for_global_position(Vector3.ZERO) == Vector3.ZERO, "a body on the axis is not pushed")
+
+	# The cylinder axis is LOCAL Y: rotate the field 90° about X (axis now world +Z) and a
+	# point that sits on that axis gets nothing, while radial points still push outward.
+	field.rotation_degrees = Vector3(90.0, 0.0, 0.0)
+	check(field.get_force_for_global_position(Vector3(0.0, 0.0, 4.0)) == Vector3.ZERO, "rotated field: on-axis point gets no push")
+	var rotated_push := field.get_force_for_global_position(Vector3(4.0, 0.0, 0.0))
+	check(rotated_push.is_equal_approx(Vector3(10.0, 0.0, 0.0)), "rotated field pushes radially off its local axis")
+	field.rotation_degrees = Vector3.ZERO
+
+	var collider: CollisionShape3D = null
+	var gizmo: MeshInstance3D = null
+
+	for child in field.get_children(true):
+		if child is CollisionShape3D:
+			collider = child
+		elif child is MeshInstance3D:
+			gizmo = child
+
+	check(collider != null and collider.shape is CylinderShape3D, "field builds its own cylinder collider")
+	check(gizmo != null and gizmo.mesh != null and gizmo.mesh.get_surface_count() == 1, "field builds the three-ring wireframe gizmo")
+	check(collider != null and gizmo != null and collider.owner == null and gizmo.owner == null, "generated children are never scene-owned")
+
+	if gizmo != null and gizmo.mesh != null and gizmo.mesh.get_surface_count() == 1:
+		var arrays: Array = gizmo.mesh.surface_get_arrays(0)
+		var vert_count: int = arrays[Mesh.ARRAY_VERTEX].size()
+		check(vert_count > 0 and vert_count % 2 == 0 and arrays[Mesh.ARRAY_COLOR].size() == vert_count, "gizmo line list is well-formed (paired verts, per-vertex colors)")
+	else:
+		check(false, "gizmo line list is well-formed (paired verts, per-vertex colors)")
+
+	field.end_radius = 12.0
+	check(collider != null and (collider.shape as CylinderShape3D).radius == 12.0, "collider tracks end_radius edits")
+	check(collider != null and (collider.shape as CylinderShape3D).height == 10.0, "collider height matches the exported height")
+
+	# End-to-end with live physics: a default-layer unfrozen body inside the band must be
+	# detected by the overlap volume and accelerate radially outward; a frozen body (what
+	# remote player replicas are) must be left untouched.
+	var pushed := RigidBody3D.new()
+	pushed.gravity_scale = 0.0
+	var pushed_shape := CollisionShape3D.new()
+	pushed_shape.shape = SphereShape3D.new()
+	pushed.add_child(pushed_shape)
+	root.add_child(pushed)
+	pushed.global_position = Vector3(4.0, 0.0, 0.0)
+
+	var frozen := RigidBody3D.new()
+	frozen.gravity_scale = 0.0
+	frozen.freeze = true
+	var frozen_shape := CollisionShape3D.new()
+	frozen_shape.shape = SphereShape3D.new()
+	frozen.add_child(frozen_shape)
+	root.add_child(frozen)
+	frozen.global_position = Vector3(-4.0, 0.0, 0.0)
+
+	for _i in 12:
+		await physics_frame
+
+	var v := pushed.linear_velocity
+	check(v.x > 0.2 and absf(v.y) < 0.01 and absf(v.z) < 0.01, "live rigid body accelerates radially outward (v=%s)" % v)
+	check(frozen.linear_velocity.is_equal_approx(Vector3.ZERO) and frozen.global_position.is_equal_approx(Vector3(-4.0, 0.0, 0.0)), "frozen body (remote replica) is never pushed")
+
+	pushed.free()
+	frozen.free()
+
+	# The Diamond arena ships one as its midline hazard (instantiated out of tree — the
+	# setters must tolerate running before _ready builds the children).
+	var diamond = (MapGenerator.get_map_entry("diamond")["scene"] as PackedScene).instantiate()
+	var shipped := _find_force_field(diamond)
+	check(shipped != null, "Diamond arena ships a CylindricalForceField")
+	check(shipped != null and shipped.start_radius < shipped.full_radius and shipped.full_radius < shipped.end_radius, "Diamond field rings are ordered start < full < end")
+	diamond.free()
+
+	field.free()
+
+
+func _find_force_field(node: Node) -> CylindricalForceField:
+	if node is CylindricalForceField:
+		return node
+
+	for child in node.get_children():
+		var found := _find_force_field(child)
+
+		if found != null:
+			return found
+
+	return null
+
+
+# --- Spinning skybox rig ------------------------------------------------------------------
+# The rig (SpinningSkybox) pins a sky sphere to the camera and spins it independently. The
+# spin math is a pure static function so it's checked directly: it advances by
+# deg_per_sec * delta about the axis, accumulates across frames, no-ops on zero speed/axis,
+# and stays orthonormal (so per-frame multiplication never drifts into skew/scale). Also
+# confirms the fullbright shader resource loads as a spatial shader.
+
+func test_spinning_skybox() -> void:
+	print("- spinning skybox rig")
+
+	var shader = load("res://shaders/skybox_fullbright.gdshader")
+	check(shader is Shader, "skybox shader resource loads")
+	check(shader is Shader and shader.get_mode() == Shader.MODE_SPATIAL, "skybox shader is a spatial shader")
+
+	var material := ShaderMaterial.new()
+	material.shader = shader
+	check(material.shader == shader, "skybox shader assigns to a ShaderMaterial")
+
+	var one_second := SpinningSkybox.advance_spin(Basis.IDENTITY, Vector3.UP, 90.0, 1.0)
+	check(one_second.is_equal_approx(Basis(Vector3.UP, deg_to_rad(90.0))), "advance_spin turns by deg/sec * delta about the axis")
+	check(one_second.orthonormalized().is_equal_approx(one_second), "spun basis stays orthonormal")
+
+	var half := SpinningSkybox.advance_spin(Basis.IDENTITY, Vector3.UP, 90.0, 0.5)
+	var accumulated := SpinningSkybox.advance_spin(half, Vector3.UP, 90.0, 0.5)
+	check(accumulated.is_equal_approx(Basis(Vector3.UP, deg_to_rad(90.0))), "spin accumulates across frames")
+
+	check(SpinningSkybox.advance_spin(Basis.IDENTITY, Vector3.UP, 0.0, 1.0).is_equal_approx(Basis.IDENTITY), "zero speed leaves orientation unchanged")
+	check(SpinningSkybox.advance_spin(Basis.IDENTITY, Vector3.ZERO, 90.0, 1.0).is_equal_approx(Basis.IDENTITY), "zero axis leaves orientation unchanged")
+
+	# Non-up axis is normalized before use (an unnormalized axis must not scale the basis).
+	var tilted := SpinningSkybox.advance_spin(Basis.IDENTITY, Vector3(0.0, 3.0, 0.0), 90.0, 1.0)
+	check(tilted.is_equal_approx(Basis(Vector3.UP, deg_to_rad(90.0))), "spin axis is normalized regardless of length")
+
+
 # --- Per-map runtime checks -------------------------------------------------------------
 # The map enters the tree with live physics: spawn groups must populate (5 per team),
 # every spawn transform must survive the runtime's orthonormalization (uniform authored
@@ -458,3 +710,438 @@ func test_map_runtime(map_id: String, scene: PackedScene, expect_grounded: bool)
 
 	map.free()
 	await physics_frame
+
+
+# --- Map creator: document persistence ------------------------------------------------------
+# Custom maps are data-only JSON under user://custom_maps. Round-trip must preserve every
+# entry, and a hostile/hand-mangled file must degrade to defaults instead of crashing.
+
+const SMOKE_MAP_SLUG := "zz_smoke_suite"
+
+
+func test_map_creator_document_roundtrip() -> void:
+	print("- map creator document roundtrip")
+
+	MapDocument.delete_map(SMOKE_MAP_SLUG)
+
+	var doc := MapDocument.create_new("Smoke Suite Map")
+	doc.slug = SMOKE_MAP_SLUG
+
+	var box := doc.make_primitive_entry("box")
+	box["position"] = [1.0, 2.0, 3.0]
+	box["bevel_radius"] = 0.25
+	box["bevel_segments"] = 2
+	box["material"]["color"] = [0.9, 0.2, 0.1]
+	doc.objects.append(box)
+
+	var spot := doc.make_light_entry("spot")
+	spot["energy"] = 7.5
+	doc.objects.append(spot)
+
+	var model := doc.make_model_entry("assets/thing.glb", "Thing")
+	model["scale"] = [2.0, 2.0, 2.0]
+	doc.objects.append(model)
+
+	check(doc.save() == OK, "document saves to user://custom_maps")
+	check(MapDocument.map_exists(SMOKE_MAP_SLUG), "saved map is listed as existing")
+
+	var loaded := MapDocument.load_map(SMOKE_MAP_SLUG)
+	check(loaded != null, "saved map loads back")
+
+	if loaded != null:
+		check(loaded.map_name == "Smoke Suite Map", "map name survives the round trip")
+		check(loaded.objects.size() == doc.objects.size(), "all %d entries survive (got %d)" % [doc.objects.size(), loaded.objects.size()])
+
+		var loaded_box := loaded.get_entry(int(box["id"]))
+		check(not loaded_box.is_empty(), "box entry found by id after reload")
+		check(MapDocument.vec3_from(loaded_box.get("position")).is_equal_approx(Vector3(1, 2, 3)), "box position survives")
+		check(absf(MapDocument._safe_float(loaded_box.get("bevel_radius"), 0.0) - 0.25) < 0.001, "bevel radius survives")
+
+		var loaded_model := loaded.get_entry(int(model["id"]))
+		check(String(loaded_model.get("source", "")) == "assets/thing.glb", "model source path survives")
+
+	# Custom map ids resolve through MapGenerator while the file exists.
+	check(MapGenerator.is_custom_map_id("custom:" + SMOKE_MAP_SLUG), "custom: prefix detected")
+	check(MapGenerator.has_map("custom:" + SMOKE_MAP_SLUG), "has_map true for an existing custom map")
+	check(MapGenerator.get_map_name("custom:" + SMOKE_MAP_SLUG) == "Smoke Suite Map", "custom map display name resolves")
+	check(MapGenerator.normalize_map_id("CUSTOM:Zz Smoke Suite") == "custom:zz_smoke_suite", "custom id normalization slugs the tail")
+	check(not MapGenerator.has_map("custom:definitely_missing_zz"), "has_map false for a missing custom map")
+
+	var copy_slug := MapDocument.duplicate_map(SMOKE_MAP_SLUG, "Smoke Suite Copy")
+	check(copy_slug != "" and MapDocument.map_exists(copy_slug), "duplicate_map creates a new save")
+	MapDocument.delete_map(copy_slug)
+
+	# Hostile input: junk types, path traversal in a model source, unknown kinds. Must not
+	# crash, must drop what cannot be trusted (same ethos as the lobby-settings guards).
+	var hostile := MapDocument.new()
+	hostile.load_from_dict({
+		"name": 42,
+		"next_object_id": "lots",
+		"environment": "nope",
+		"objects": [
+			"not a dict",
+			{"kind": "warp_core"},
+			{"kind": "model", "source": "../../outside.glb"},
+			{"kind": "model", "source": "C:/windows/system32/evil.glb"},
+			{"kind": "primitive", "shape": "box", "position": [1, "a", 3], "size": "huge"},
+			{"kind": "light", "type": "spot", "energy": 99999.0, "color": [9, 9, 9]},
+		],
+	})
+	check(hostile.map_name == "Untitled Map", "hostile name degrades to default")
+	check(hostile.objects.size() == 2, "hostile entries: only sanitizable ones survive (got %d)" % hostile.objects.size())
+
+	for entry in hostile.objects:
+		if String(entry.get("kind", "")) == "light":
+			check(MapDocument._safe_float(entry.get("energy"), 0.0) <= 64.0, "hostile light energy is clamped")
+
+	MapDocument.delete_map(SMOKE_MAP_SLUG)
+	check(not MapDocument.map_exists(SMOKE_MAP_SLUG), "delete_map removes the save")
+
+
+# --- Map creator: bevel mesh generation ------------------------------------------------------
+# The generators must produce watertight-looking geometry at the requested size with unit
+# normals, and their winding must MATCH the engine's own convention — checked empirically
+# against a BoxMesh so an inside-out regression cannot slip in.
+
+func test_bevel_mesh_generators() -> void:
+	print("- bevel mesh generators")
+
+	var reference_sign := _mesh_winding_sign((BoxMesh.new() as Mesh).get_mesh_arrays())
+
+	var rounded := BevelMesh.build_rounded_box(Vector3(2.0, 1.0, 3.0), 0.2, 3)
+	check(rounded.get_surface_count() == 1, "rounded box commits one surface")
+
+	var arrays := rounded.surface_get_arrays(0)
+	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	check(vertices.size() > 24, "rounded box is denser than a plain box (%d verts)" % vertices.size())
+
+	var aabb := rounded.get_aabb()
+	check(
+		aabb.size.is_equal_approx(Vector3(2.0, 1.0, 3.0)),
+		"rounded box AABB matches requested size (got %s)" % str(aabb.size)
+	)
+
+	var normals_ok := true
+
+	for normal in normals:
+		if absf(normal.length() - 1.0) > 0.01:
+			normals_ok = false
+			break
+
+	check(normals_ok, "rounded box normals are unit length")
+	check(_mesh_winding_sign(arrays) == reference_sign, "rounded box winding matches engine convention")
+
+	# Full round-over (radius = half the smallest dimension) must stay sane.
+	var pill := BevelMesh.build_rounded_box(Vector3(1.0, 1.0, 1.0), 0.5, 4)
+	check(pill.get_aabb().size.is_equal_approx(Vector3.ONE), "fully-rounded box (sphere case) keeps its size")
+
+	var flat := BevelMesh.build_rounded_box(Vector3(2.0, 2.0, 2.0), 0.0, 3)
+	check(flat.get_aabb().size.is_equal_approx(Vector3(2, 2, 2)), "zero bevel falls back to a plain box")
+
+	var cylinder := BevelMesh.build_beveled_cylinder(1.0, 3.0, 0.3, 3, 24)
+	var cylinder_aabb := cylinder.get_aabb()
+	check(
+		absf(cylinder_aabb.size.y - 3.0) < 0.01 and absf(cylinder_aabb.size.x - 2.0) < 0.01,
+		"beveled cylinder AABB matches radius/height (got %s)" % str(cylinder_aabb.size)
+	)
+	check(_mesh_winding_sign(cylinder.surface_get_arrays(0)) == reference_sign, "beveled cylinder winding matches engine convention")
+
+
+# Sign of (edge cross) · normal for the first indexed triangle — a stable fingerprint of
+# front-face winding that both generated meshes must share with built-in meshes.
+func _mesh_winding_sign(arrays: Array) -> float:
+	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+
+	for triangle in range(indices.size() / 3):
+		var a := vertices[indices[triangle * 3]]
+		var b := vertices[indices[triangle * 3 + 1]]
+		var c := vertices[indices[triangle * 3 + 2]]
+		var cross := (b - a).cross(c - a)
+
+		if cross.length_squared() < 0.000001:
+			continue
+
+		var normal := (
+			normals[indices[triangle * 3]]
+			+ normals[indices[triangle * 3 + 1]]
+			+ normals[indices[triangle * 3 + 2]]
+		)
+
+		if normal.length_squared() < 0.000001:
+			continue
+
+		return signf(cross.dot(normal))
+
+	return 0.0
+
+
+# --- Map creator: runtime model parsers -------------------------------------------------------
+
+func test_model_importer_parsers() -> void:
+	print("- model importer parsers")
+
+	check(ClassDB.class_exists("GLTFDocument"), "GLTFDocument available for runtime .glb/.gltf loading")
+	check(ClassDB.class_exists("FBXDocument"), "FBXDocument available for runtime .fbx loading")
+	check(MapModelImporter.is_supported("user://thing.BLEND"), "extension check is case-insensitive")
+	check(not MapModelImporter.is_supported("user://thing.txt"), "unsupported extensions are rejected")
+
+	# OBJ: a unit quad with explicit normals -> one surface, two indexed triangles.
+	var obj_path := "user://zz_smoke_model.obj"
+	var obj_file := FileAccess.open(obj_path, FileAccess.WRITE)
+	obj_file.store_string(
+		"# smoke quad\n"
+		+ "v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\n"
+		+ "vn 0 0 1\n"
+		+ "f 1//1 2//1 3//1 4//1\n"
+	)
+	obj_file.close()
+
+	var obj_scene := MapModelImporter.load_model_scene(obj_path)
+	check(obj_scene != null, "OBJ parses into a scene")
+
+	if obj_scene != null:
+		var mesh_instance := obj_scene.get_node_or_null("Mesh") as MeshInstance3D
+		check(mesh_instance != null and mesh_instance.mesh != null, "OBJ scene contains a mesh")
+
+		if mesh_instance != null and mesh_instance.mesh != null:
+			var arrays := mesh_instance.mesh.surface_get_arrays(0)
+			var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+			check(indices.size() == 6, "OBJ quad fan-triangulates into 2 triangles (got %d indices)" % indices.size())
+			check(_mesh_winding_sign(arrays) == _mesh_winding_sign((BoxMesh.new() as Mesh).get_mesh_arrays()), "OBJ winding converted to engine convention")
+
+		obj_scene.free()
+
+	DirAccess.remove_absolute(obj_path)
+
+	# ASCII STL: one facet -> one triangle.
+	var stl_path := "user://zz_smoke_model.stl"
+	var stl_file := FileAccess.open(stl_path, FileAccess.WRITE)
+	stl_file.store_string(
+		"solid smoke\n"
+		+ " facet normal 0 0 1\n  outer loop\n"
+		+ "   vertex 0 0 0\n   vertex 1 0 0\n   vertex 0 1 0\n"
+		+ "  endloop\n endfacet\nendsolid smoke\n"
+	)
+	stl_file.close()
+
+	var stl_scene := MapModelImporter.load_model_scene(stl_path)
+	check(stl_scene != null, "ASCII STL parses into a scene")
+
+	if stl_scene != null:
+		var mesh_instance := stl_scene.get_node_or_null("Mesh") as MeshInstance3D
+		var vertex_count := 0
+
+		if mesh_instance != null and mesh_instance.mesh != null:
+			var arrays := mesh_instance.mesh.surface_get_arrays(0)
+			vertex_count = (arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
+
+		check(vertex_count == 3, "ASCII STL facet becomes one triangle (got %d verts)" % vertex_count)
+		stl_scene.free()
+
+	DirAccess.remove_absolute(stl_path)
+
+	# Binary STL: exact-size detection (84 + 50 * count bytes).
+	var bin_path := "user://zz_smoke_model_bin.stl"
+	var bin_file := FileAccess.open(bin_path, FileAccess.WRITE)
+	bin_file.store_buffer(PackedByteArray("solid-looking header".to_utf8_buffer()))
+	bin_file.store_buffer(PackedByteArray())
+
+	var padding := PackedByteArray()
+	padding.resize(80 - 20)
+	bin_file.store_buffer(padding)
+	bin_file.store_32(1)
+
+	for value in [0.0, 0.0, 1.0,  0.0, 0.0, 0.0,  1.0, 0.0, 0.0,  0.0, 1.0, 0.0]:
+		bin_file.store_float(value)
+
+	bin_file.store_16(0)
+	bin_file.close()
+
+	var bin_scene := MapModelImporter.load_model_scene(bin_path)
+	check(bin_scene != null, "binary STL parses into a scene")
+
+	if bin_scene != null:
+		bin_scene.free()
+
+	DirAccess.remove_absolute(bin_path)
+
+	# import_file refuses what it cannot read.
+	var bogus := MapModelImporter.import_file("user://does_not_exist.glb", SMOKE_MAP_SLUG)
+	check(not bool(bogus.get("ok", true)), "import_file fails cleanly on a missing file")
+	MapDocument.delete_map(SMOKE_MAP_SLUG)
+
+
+# --- Map creator: built map runtime behavior ---------------------------------------------------
+# A built custom map must carry the same guarantees hand-built arenas do: spawn markers in
+# the right groups, analytic colliders for exact primitives, trimesh for curved/bevel
+# geometry, physics-solid floors, and lights/environment present. Edit mode must NOT join
+# spawn groups (the editor runs in a live scene tree).
+
+func test_map_creator_builder() -> void:
+	print("- map creator built-map runtime")
+
+	var doc := MapDocument.create_new("Builder Check")
+	doc.slug = "zz_smoke_builder"
+
+	# create_new already includes a (beveled) floor box + one spawn per team.
+	var plain_box := doc.make_primitive_entry("box")
+	plain_box["position"] = [8.0, 6.0, 0.0]
+	plain_box["bevel_radius"] = 0.0
+	doc.objects.append(plain_box)
+
+	var beveled := doc.make_primitive_entry("box")
+	beveled["position"] = [8.0, 2.0, 0.0]
+	beveled["bevel_radius"] = 0.3
+	beveled["bevel_segments"] = 2
+	doc.objects.append(beveled)
+
+	var sphere := doc.make_primitive_entry("sphere")
+	sphere["position"] = [-8.0, 2.0, 0.0]
+	doc.objects.append(sphere)
+
+	var cylinder := doc.make_primitive_entry("cylinder")
+	cylinder["position"] = [0.0, 2.0, 8.0]
+	doc.objects.append(cylinder)
+
+	var ramp := doc.make_primitive_entry("ramp")
+	ramp["position"] = [0.0, 2.0, -8.0]
+	doc.objects.append(ramp)
+
+	var omni := doc.make_light_entry("omni")
+	omni["position"] = [0.0, 6.0, 0.0]
+	doc.objects.append(omni)
+
+	var map := CustomMapBuilder.build_map_node(doc, false)
+	root.add_child(map)
+
+	await physics_frame
+	await physics_frame
+
+	check(map.get_node_or_null("MapEnvironment") is WorldEnvironment, "built map has a WorldEnvironment")
+	check(map.get_node_or_null("Sun") is DirectionalLight3D, "built map has its sun")
+
+	var spawns_a := get_nodes_in_group("spawn_team_a")
+	var spawns_b := get_nodes_in_group("spawn_team_b")
+	check(spawns_a.size() == 1, "custom spawn joins spawn_team_a (got %d)" % spawns_a.size())
+	check(spawns_b.size() == 1, "custom spawn joins spawn_team_b (got %d)" % spawns_b.size())
+
+	var objects := map.get_node("Objects")
+	check(_entry_collider_shape(objects, int(plain_box["id"])) is BoxShape3D, "plain box gets an analytic BoxShape3D")
+	check(_entry_collider_shape(objects, 1) is ConcavePolygonShape3D, "beveled starter floor gets a trimesh collider")
+	check(_entry_collider_shape(objects, int(beveled["id"])) is ConcavePolygonShape3D, "beveled box gets a trimesh collider")
+	check(_entry_collider_shape(objects, int(sphere["id"])) is SphereShape3D, "sphere gets an analytic SphereShape3D")
+	check(_entry_collider_shape(objects, int(cylinder["id"])) is CylinderShape3D, "cylinder gets an analytic CylinderShape3D")
+	check(_entry_collider_shape(objects, int(ramp["id"])) is ConcavePolygonShape3D, "ramp gets a trimesh collider")
+
+	var light_found := false
+
+	for node in objects.get_children():
+		if int(node.get_meta("map_object_id", -1)) == int(omni["id"]):
+			light_found = node.get_node_or_null("Light") is OmniLight3D
+
+	check(light_found, "omni light entry builds an OmniLight3D")
+
+	# The floor must actually be solid: a downward ray from above it has to hit.
+	var space := (map as Node3D).get_world_3d().direct_space_state
+	var floor_query := PhysicsRayQueryParameters3D.create(Vector3(0, 4, 0), Vector3(0, -4, 0))
+	check(not space.intersect_ray(floor_query).is_empty(), "built floor is physics-solid")
+
+	map.free()
+	await physics_frame
+	await physics_frame
+
+	# Edit mode: proxies instead of SpawnPoints — spawn groups must stay EMPTY.
+	var edit_map := CustomMapBuilder.build_map_node(doc, true)
+	root.add_child(edit_map)
+
+	await physics_frame
+
+	check(get_nodes_in_group("spawn_team_a").is_empty(), "edit-mode build never joins spawn groups")
+
+	var pick_bodies := 0
+
+	for node in edit_map.get_node("Objects").get_children():
+		if node.get_node_or_null("PickBody") != null:
+			pick_bodies += 1
+
+	check(pick_bodies == 3, "edit-mode spawns/lights carry pick colliders (got %d)" % pick_bodies)
+
+	edit_map.free()
+	await physics_frame
+
+
+func _entry_collider_shape(objects: Node, id: int) -> Shape3D:
+	for node in objects.get_children():
+		if int(node.get_meta("map_object_id", -1)) != id:
+			continue
+
+		var mesh := node.get_node_or_null("Mesh")
+
+		if mesh == null:
+			return null
+
+		var body := mesh.get_node_or_null("StaticBody3D")
+
+		if body == null:
+			return null
+
+		var collision := body.get_node_or_null("CollisionShape3D") as CollisionShape3D
+		return collision.shape if collision != null else null
+
+	return null
+
+
+# --- Map creator: transform gizmo integrity ----------------------------------------------------
+# The gizmo handles are physics bodies on a dedicated layer (object picking masks them
+# out). Handle records, metadata, and layer isolation must line up or clicks go to the
+# wrong subsystem. Built without entering the tree — construction has no _ready deps.
+
+func test_map_creator_gizmos() -> void:
+	print("- map creator transform gizmo")
+
+	var editor = (load("res://scenes/map_creator.tscn") as PackedScene).instantiate()
+	editor._build_gizmos()
+
+	# 3 axis handles + 1 centre handle per tool (move / rotate / scale).
+	check(editor.gizmo_handles.size() == 12, "gizmo builds 12 handles (got %d)" % editor.gizmo_handles.size())
+
+	var per_tool := {}
+	var layers_ok := true
+	var metas_ok := true
+	var axes_ok := true
+
+	for i in range(editor.gizmo_handles.size()):
+		var handle: Dictionary = editor.gizmo_handles[i]
+		var tool := int(handle["tool"])
+		per_tool[tool] = int(per_tool.get(tool, 0)) + 1
+
+		var body := handle["body"] as StaticBody3D
+
+		if body == null or body.collision_mask != 0:
+			layers_ok = false
+
+		if body == null or int(body.get_meta("gizmo_index", -1)) != i:
+			metas_ok = false
+
+		var axis := int(handle["axis"])
+
+		if axis < -1 or axis > 2:
+			axes_ok = false
+
+	check(
+		int(per_tool.get(editor.Tool.MOVE, 0)) == 4
+		and int(per_tool.get(editor.Tool.ROTATE, 0)) == 4
+		and int(per_tool.get(editor.Tool.SCALE, 0)) == 4,
+		"each tool owns 3 axis handles + 1 centre handle"
+	)
+	check(layers_ok, "handle bodies never collide with anything themselves (mask 0)")
+	check(metas_ok, "every handle body carries its gizmo_index metadata")
+	check(axes_ok, "handle axes are -1 (free) or 0..2")
+
+	# Object picking must not see the gizmo layer, and vice versa.
+	check((editor.OBJECT_PICK_MASK & editor.GIZMO_LAYER) == 0, "object-pick mask excludes the gizmo layer")
+
+	editor.free()

@@ -13,7 +13,7 @@ MIN_PLAYERS="${MIN_PLAYERS:-2}"
 STARTING_CASH="${STARTING_CASH:-200000}"
 POINTS_TO_WIN="${POINTS_TO_WIN:-8}"
 ROUND_TIME="${ROUND_TIME:-0}"
-MAP="${MAP:-diamond}"   # map id from MapGenerator.MAPS (e.g. diamond, 2v2)
+MAP="${MAP:-diamond}"   # map id from map_registry.tres (e.g. diamond, sphere)
 
 if [ ! -f "$BINARY" ]; then
   echo "Binary not found: $BINARY"

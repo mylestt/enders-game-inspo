@@ -5,6 +5,18 @@ signal scoreboard_changed(entries: Array)
 # "couldn't reach the server" instead of leaving the player on a silent grey screen.
 signal connection_attempt_finished(success: bool, message: String)
 
+# Godot sends RPCs as an INDEX into each node's alphabetically-sorted @rpc method table,
+# so two builds with different @rpc sets silently decode each other's calls as the WRONG
+# methods (symptom: endless "RPC 'x' is not allowed on node ... from <peer>" spam, frozen
+# remote players, dropped state). The connect-time auth handshake compares this version and
+# rejects a mismatched peer cleanly instead. BUMP IT whenever any @rpc method is added,
+# removed, or renamed on any script — the smoke suite fingerprints the project's @rpc
+# surface and fails when it drifts without a bump (it prints the new hash to paste below).
+const NET_PROTOCOL_VERSION := 1
+const NET_RPC_FINGERPRINT := "919d2d753aa9692a9db36cab74bade51"
+# Distinguishes our version payload from garbage/foreign auth data.
+const NET_AUTH_MAGIC := 0x5A47_4653  # "ZGFS"
+
 @export var player_scene: PackedScene
 @export var players_parent_path: NodePath
 @export var spawn_a_path: NodePath
@@ -122,6 +134,9 @@ var lobby_flow_action: String = ""
 var last_join_ip: String = ""
 var _awaiting_connection: bool = false
 var _connect_wait: float = 0.0
+# Set when the version handshake rejects a peer, so the client-facing failure message says
+# "build mismatch" instead of the generic "couldn't reach the server".
+var _auth_fail_message: String = ""
 var lobby_manager: Node
 
 # Server-authoritative cash / ownership / ammo ledger. Created on every machine (the RPC
@@ -315,6 +330,72 @@ func connect_multiplayer_signals() -> void:
 	if not multiplayer.server_disconnected.is_connected(_on_server_disconnected):
 		multiplayer.server_disconnected.connect(_on_server_disconnected)
 
+	# Build-version handshake (see NET_PROTOCOL_VERSION). The auth phase runs BEFORE any
+	# RPC exchange, so it stays intact even when the two builds' RPC tables disagree.
+	var scene_multiplayer := multiplayer as SceneMultiplayer
+
+	if scene_multiplayer != null:
+		scene_multiplayer.auth_callback = _on_peer_auth_received
+		scene_multiplayer.auth_timeout = 5.0
+
+		if not scene_multiplayer.peer_authenticating.is_connected(_on_peer_authenticating):
+			scene_multiplayer.peer_authenticating.connect(_on_peer_authenticating)
+
+		if not scene_multiplayer.peer_authentication_failed.is_connected(_on_peer_authentication_failed):
+			scene_multiplayer.peer_authentication_failed.connect(_on_peer_authentication_failed)
+
+
+# A peer just connected and both sides must prove they run the same net protocol: send ours.
+func _on_peer_authenticating(peer_id: int) -> void:
+	var payload := PackedByteArray()
+	payload.resize(8)
+	payload.encode_u32(0, NET_AUTH_MAGIC)
+	payload.encode_u32(4, NET_PROTOCOL_VERSION)
+	(multiplayer as SceneMultiplayer).send_auth(peer_id, payload)
+
+
+# The remote's version payload arrived: admit on match, drop on anything else. A peer on a
+# build too old to even send auth never lands here — auth_timeout drops it instead.
+func _on_peer_auth_received(peer_id: int, data: PackedByteArray) -> void:
+	var scene_multiplayer := multiplayer as SceneMultiplayer
+	var remote_version := -1
+
+	if data.size() >= 8 and data.decode_u32(0) == NET_AUTH_MAGIC:
+		remote_version = int(data.decode_u32(4))
+
+	if remote_version != NET_PROTOCOL_VERSION:
+		_auth_fail_message = (
+			"Build mismatch: remote net protocol v" + str(remote_version)
+			+ " vs local v" + str(NET_PROTOCOL_VERSION) + "."
+		)
+		print("Rejecting peer ", peer_id, ". ", _auth_fail_message)
+		scene_multiplayer.disconnect_peer(peer_id)
+		return
+
+	scene_multiplayer.complete_auth(peer_id)
+
+
+func _on_peer_authentication_failed(peer_id: int) -> void:
+	if multiplayer.is_server():
+		# Covers both an explicit version rejection and the auth_timeout on clients too old
+		# to send auth at all. One line per rejected peer; they never spawn or join a lobby.
+		print("Peer ", peer_id, " failed the build-version handshake — dropped. ",
+			_auth_fail_message)
+		_auth_fail_message = ""
+		return
+
+	# Client: peer 1 never authenticated. The engine emits server_disconnected (or
+	# connection_failed) immediately after this signal, so don't emit a result here — just
+	# pin the cause and let that handler report it via _consume_auth_fail_message, otherwise
+	# its generic transport message would overwrite this specific one in the lobby browser.
+	if _auth_fail_message == "":
+		_auth_fail_message = (
+			"The server never answered the version handshake — it is likely running an"
+			+ " older build than this client."
+		)
+
+	push_warning("Connection rejected: " + _auth_fail_message)
+
 
 func has_active_multiplayer_peer() -> bool:
 	var peer := multiplayer.multiplayer_peer
@@ -372,6 +453,7 @@ func join_game(ip: String) -> void:
 	last_join_ip = ip
 	_awaiting_connection = true
 	_connect_wait = 0.0
+	_auth_fail_message = ""
 
 	print("Joining ", ip, ":", port)
 
@@ -427,14 +509,27 @@ func _on_connection_failed() -> void:
 	push_error("Connection failed.")
 	_awaiting_connection = false
 	clear_runtime_multiplayer_state()
-	connection_attempt_finished.emit(false, "Couldn't reach the server at " + last_join_ip + ".")
+	connection_attempt_finished.emit(false, _consume_auth_fail_message(
+		"Couldn't reach the server at " + last_join_ip + "."))
 
 
 func _on_server_disconnected() -> void:
 	print("Disconnected from server.")
 	_awaiting_connection = false
 	clear_runtime_multiplayer_state()
-	connection_attempt_finished.emit(false, "Lost connection to the server.")
+	connection_attempt_finished.emit(false, _consume_auth_fail_message(
+		"Lost connection to the server."))
+
+
+# If the version handshake already pinned the cause, report that instead of the generic
+# transport-level message (whichever engine signal happens to deliver the drop).
+func _consume_auth_fail_message(fallback: String) -> String:
+	if _auth_fail_message == "":
+		return fallback
+
+	var message := "Version mismatch — update your game. (" + _auth_fail_message + ")"
+	_auth_fail_message = ""
+	return message
 
 
 # ENet can sit in CONNECTING forever against a dead address (no failure event ever fires,
@@ -2437,11 +2532,10 @@ func _tick_client_perf_report(delta: float) -> void:
 	if multiplayer.is_server():
 		return
 
-	# Only after the handshake completes — during the ~1s connecting window the peer exists
-	# but rpc_id(1, ...) would error ("multiplayer peer which is not connected").
-	var peer := multiplayer.multiplayer_peer
-
-	if peer == null or peer.get_connection_status() != MultiplayerPeer.CONNECTION_CONNECTED:
+	# Only after the server is admitted into the session. The transport can sit CONNECTED
+	# while the version handshake is still pending (indefinitely against a pre-handshake
+	# server build), and rpc_id(1, ...) errors "unknown peer ID: 1" the whole time.
+	if not multiplayer.get_peers().has(1):
 		return
 
 	_client_perf_report_timer -= delta

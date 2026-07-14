@@ -2,7 +2,8 @@
 
 Current-state + gotchas handoff for AI sessions. Design vision: `PROJECT_OVERVIEW.md`.
 Player/weapon internals: `ARCHITECTURE.md` (predates the multiplayer/lobby/admin/map
-systems). Weapon how-to: `WEAPONS.md`. Re-read code directly when in doubt.
+systems). Weapon how-to: `WEAPONS.md`. In-game map editor: `MAP_CREATOR.md`. Re-read
+code directly when in doubt.
 
 ## What it is
 Zero-gravity 6DOF tactical FPS. Jolt physics + physics interpolation ON. Player =
@@ -38,12 +39,21 @@ lobbies, deployed to a DigitalOcean VPS at **147.182.160.52:7000**.
 - Client-supplied floats/vectors must pass `is_valid_vector`/`is_finite`; transforms must
   also pass `is_valid_transform` (orthonormal-basis determinant check) — replicas
   additionally orthonormalize the basis on receipt.
-- **Tests:** `godot --headless --path . -s tools/tests/run_smoke_tests.gd` (75 checks:
-  scene instantiation, economy claim validation, lobby sanitation, net-state hygiene,
-  surface-walk wall slide, grapple multi-wrap, per-map spawn/enclosure/ground checks);
+- **Tests:** `godot --headless --path . -s tools/tests/run_smoke_tests.gd` (173 checks:
+  scene instantiation, RPC-surface fingerprint, economy claim validation, lobby sanitation,
+  net-state hygiene, surface-walk wall slide, grapple multi-wrap, cylindrical-force-field
+  profile/gizmo, spinning-skybox spin math, map-creator document/bevel/importer/builder
+  checks, per-map spawn/enclosure/ground checks);
   `tools/tests/loopback_client.gd` joins a locally-running dedicated server end-to-end.
-- **"rpc node checksum failed"** = client/server on different builds (usually stale VPS
-  binary) — redeploy. UID warnings on load are harmless.
+- **Mismatched client/server builds** are rejected at connect by a version handshake
+  (`NetworkManager.NET_PROTOCOL_VERSION`, SceneMultiplayer auth — server logs "failed the
+  build-version handshake", client shows "version mismatch"). BUMP the constant whenever
+  any `@rpc` method is added/removed/renamed on any script — Godot sends RPCs as an index
+  into the alphabetically-sorted @rpc table, so differing tables silently decode calls as
+  the WRONG methods (symptoms on pre-handshake builds: "rpc node checksum failed", endless
+  "RPC 'x' is not allowed on node ... from <peer>" spam, frozen remotes). The smoke suite
+  fingerprints the @rpc surface and fails on drift, printing the new hash to record in
+  `NET_RPC_FINGERPRINT`. UID warnings on load are harmless.
 
 ## Systems map
 - **Multiplayer** (`scenes/network_manager.gd`): spawn, transform/hit/slam/tracer/projectile
@@ -83,14 +93,68 @@ lobbies, deployed to a DigitalOcean VPS at **147.182.160.52:7000**.
   are ORTHONORMALIZED before use — an editor-scaled marker/capsule must never leak scale
   into the player's basis (a scaled body errors camera/walk math everywhere).
 - **Maps** (`scripts/map_generator.gd` = scene loader, generator removed): hand-built
-  `.tscn` registered (preloaded) in the `MAPS` const; each needs `spawn_team_a/b` groups
-  (optional `gate_team_*`). Current: `diamond` (DiamondArena.tscn) and `sphere`
-  (scenes/sphere.tscn — goldberg-sphere shell, 5 spawns per pentagon pole: team A stands
-  on the bottom face, team B on the interior ceiling; enclosed, so FFA edge-spawns land
-  anywhere on the shell). New map = scene + one `MAPS` line + **re-export the server**.
+  `.tscn`s registered in `map_registry.tres` (a `MapRegistry` resource preloaded by
+  MapGenerator; each `MapListing` = a PackedScene + optional id/name that auto-derive from
+  the filename — `scripts/map_registry.gd` / `scripts/map_listing.gd`); each needs
+  `spawn_team_a/b` groups (optional `gate_team_*`). Current: `diamond` (DiamondArena.tscn)
+  and `sphere` (scenes/sphere.tscn — goldberg-sphere shell, 5 spawns per pentagon pole:
+  team A stands on the bottom face, team B on the interior ceiling; enclosed, so FFA
+  edge-spawns land anywhere on the shell). New map = author the scene, then in the inspector
+  double-click `map_registry.tres`, add a `maps` element and drag the `.tscn` into its
+  `scene` slot (no code edit) + **re-export the server** (the scene must bake into the
+  binary; preloading the registry keeps its scenes tracked as export dependencies).
+  Static lookups (`get_map_ids`/`get_map_entry`/`has_map`/...) build a cached Dictionary
+  view of the registry, so menus/lobby/tests are unchanged.
   Selection = `GameLaunch.map_id`, synced at lobby join; `scenes/test_map.tscn` previews;
   `--map <id>`. The smoke suite runtime-checks every registered map (spawn groups,
   orthonormalizable bases, enclosure, grounded spawns where promised).
+- **Force fields** (`scripts/cylindrical_force_field.gd`): `CylindricalForceField`, @tool
+  Area3D pushing non-frozen RigidBody3Ds laterally AWAY from its local Y axis. Radial
+  profile from three rings — `start_radius` (GREEN wireframe, zero force here/inside),
+  `full_radius` (YELLOW, peak `force_strength`), `end_radius` (RED, faded to zero) — with
+  `blend_in/out_falloff` ramp exponents between; `height` bands the volume; sizes are
+  properties, never node scale. Wireframe gizmo + collider are generated in `_ready`
+  (editor via @tool and in-game; unowned so never saved) — `gizmo_visible` hides it.
+  Skipping frozen bodies means each machine pushes only what it simulates (remote replicas
+  are frozen) — cosmetically consistent, no @rpc, no protocol bump. Diamond ships one on
+  its vertical axis (rings 3/6/10 m, height 50, 10 N vs the 7.5 N booster).
+- **Spinning skybox** (`scripts/spinning_skybox.gd` + `shaders/skybox_fullbright.gdshader`):
+  `SpinningSkybox`, a Node3D you parent a sky-textured sphere mesh under. Each render frame
+  it pins its ORIGIN to `get_viewport().get_camera_3d()` (infinite-distance illusion) while
+  keeping its OWN orientation plus a `degrees_per_second` spin about `spin_axis` (world);
+  `follow_camera` toggles the pinning. `physics_interpolation_mode = OFF` (per-frame driven).
+  Local/cosmetic only, no networking. The shader (`skybox_fullbright.gdshader`) is `unshaded`
+  fullbright, `shadows_disabled`, `fog_disabled`, `cull_disabled`, `depth_draw_never` (z-write
+  OFF, so it never occludes the arena and reads as the backdrop BEHIND everything); add
+  `depth_test_disabled` to the render_mode for a true on-top foreground overlay instead. It
+  samples one texture straight by UV — used as the `SpinSpaceBall` (`spin_space_ball.tscn`),
+  a UV-unwrapped inverted cube-sphere with one surface per cube face, so each of the six
+  `SpinningSpace_*` face images is a per-surface material and the six together read as a cube
+  map. The Space Station arena (`scenes/sphere.tscn`) instances the ball spinning at 15°/s.
+  Scale the MESH, not the rig (rig writes an orthonormal basis).
+- **Map creator** (`scripts/map_creator/`, how-to: `MAP_CREATOR.md`): in-game editor
+  (start menu → Map Creator → `scenes/map_creator.tscn`; transforms via drag GIZMO —
+  move arrows/rotate rings/scale cubes on their own physics layer `GIZMO_LAYER`, toolbar
+  or keys 1/2/3 — or Blender-style G/R/S modal ops, both sharing one op pipeline)
+  building DATA-ONLY maps —
+  `MapDocument` JSON + copied model files in `user://custom_maps/<slug>/`, id
+  `custom:<slug>`, built at runtime by `CustomMapBuilder` (edit mode = pick proxies that
+  never join spawn groups; runtime = real SpawnPoints). Primitives store DIMENSIONS,
+  never node scale. Colliders auto-added arena-style (MeshInstance3D → StaticBody3D →
+  CollisionShape3D): trimesh for imported models + beveled/ramp/cone/torus, ANALYTIC
+  shapes for exact box/sphere/cylinder/capsule (surface-walk wants analytic normals on
+  curves). Bevels = `BevelMesh` procedural rounded box / rim-beveled cylinder (winding
+  smoke-checked against BoxMesh — Godot fronts are CLOCKWISE). Imports
+  (`MapModelImporter`, runtime — the editor import pipeline doesn't exist in exports):
+  glb/gltf + fbx via engine document classes, obj/stl hand-parsed, .blend by shelling to
+  a detected Blender (`settings.cfg tools/blender_path`, asked once in-editor) that
+  exports a .glb into the map's assets. Playtest = save → offline TEST_ARENA with the
+  `custom:` id; returning to the start menu reopens the editor
+  (`MapCreatorEditor.consume_return_slug`). Custom maps are LOCAL-only: `has_map()` true
+  only where the file exists, servers fall back to their current map on unknown ids, and
+  the host-lobby menu never offers them (Test Arena only — networked custom maps would
+  need file sync). MapDocument type-checks/clamps every field on load (hostile JSON must
+  degrade, not crash). No `@rpc` changes — protocol version untouched.
 - **Admin:** `server_admin.gd` (command-file poll + admin-key RPC), `admin_console.gd`
   (F10), `scoreboard.gd` (Tab K/D), `server_control.ps1` (VPS menu).
 - **Player:** `player.gd` + child controllers (movement, impact, boosters, camera_rig,

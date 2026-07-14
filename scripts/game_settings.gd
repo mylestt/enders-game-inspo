@@ -21,6 +21,9 @@ static var master_volume: float = DEFAULT_VOLUME
 static var fullscreen: bool = DEFAULT_FULLSCREEN
 # Remembered admin-menu password, so it only has to be typed once. Persisted to settings.cfg.
 static var admin_password: String = ""
+# Path to blender.exe for map-creator .blend imports (auto-detected when blank; the map
+# creator asks for it once if detection fails). Persisted to settings.cfg.
+static var blender_path: String = ""
 
 # The project's original keybinds, captured before any saved overrides are applied,
 # so "Reset to Defaults" can restore them.
@@ -39,6 +42,7 @@ static func load_and_apply() -> void:
 		master_volume = clampf(float(config.get_value("audio", "master_volume", DEFAULT_VOLUME)), 0.0, 1.0)
 		fullscreen = bool(config.get_value("video", "fullscreen", DEFAULT_FULLSCREEN))
 		admin_password = String(config.get_value("admin", "password", ""))
+		blender_path = String(config.get_value("tools", "blender_path", ""))
 		apply_keybinds_from_config(config)
 
 	apply_audio()
@@ -52,6 +56,7 @@ static func save() -> void:
 	config.set_value("audio", "master_volume", master_volume)
 	config.set_value("video", "fullscreen", fullscreen)
 	config.set_value("admin", "password", admin_password)
+	config.set_value("tools", "blender_path", blender_path)
 	save_keybinds_to_config(config)
 	config.save(CONFIG_PATH)
 
