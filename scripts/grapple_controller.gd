@@ -73,6 +73,8 @@ const MAX_PIVOTS := 512
 @export var rope_width: float = 0.03
 @export var rope_color: Color = Color(0.82, 0.88, 1.0)
 
+
+
 var player: RigidBody3D
 # Standard-issue kit: every player has the grapple by default (no purchase needed). Flip to
 # false to gate it behind the shop again (see buy_menu.gd's SPECIAL SUIT SYSTEMS catalog).
@@ -88,6 +90,8 @@ var total_length: float = 0.0
 # Per-bend wrap orientation at creation (axis of (prev - bend) x (player - bend)); the
 # sign flipping is the "rope straightened back past this bend" unwrap test.
 var bend_axes: Array[Vector3] = []
+
+var initial_total_length: float = 0.0
 
 var rope_visual: MeshInstance3D
 var rope_mesh: ImmediateMesh
@@ -163,6 +167,9 @@ func try_fire() -> bool:
 		total_length = maxf(max_range, min_length)
 	else:
 		total_length = maxf(player.global_position.distance_to(anchor), min_length)
+		
+		
+	initial_total_length = total_length
 
 	_report_event(EVENT_ATTACH, anchor)
 	return true
@@ -177,6 +184,7 @@ func release() -> void:
 	bend_axes = []
 	consumed_length = 0.0
 	total_length = 0.0
+	initial_total_length = 0.0
 
 	_report_event(EVENT_RELEASE, Vector3.ZERO)
 
@@ -443,3 +451,57 @@ func _belongs_to_player(collider: Object) -> bool:
 		current = (current as Node).get_parent()
 
 	return false
+	
+
+func get_aim_target_info() -> Dictionary:
+	if attached or not has_grapple or player == null:
+		return {"available": false, "distance": 0.0}
+
+	var camera := player.get_node_or_null("CameraRig/Camera3D") as Camera3D
+
+	if camera == null:
+		return {"available": false, "distance": 0.0}
+
+	var origin := camera.global_position
+	var direction := -camera.global_transform.basis.z
+	var hit := _raycast(origin, origin + direction * max_range)
+
+	if hit.is_empty():
+		return {"available": false, "distance": 0.0}
+
+	var collider = hit.get("collider")
+
+	if collider is RigidBody3D or _belongs_to_player(collider):
+		return {"available": false, "distance": 0.0}
+
+	return {"available": true, "distance": origin.distance_to(hit["position"] as Vector3)}
+
+
+
+func get_reel_ratio() -> float:
+	if not attached or initial_total_length <= min_length:
+		return 0.0
+
+	return clampf(
+		(initial_total_length - total_length) / (initial_total_length - min_length),
+		0.0,
+		1.0
+	)
+	
+func get_camera_look_distance() -> float:
+	if player == null:
+		return -1.0
+
+	var camera := player.get_node_or_null("CameraRig/Camera3D") as Camera3D
+
+	if camera == null:
+		return -1.0
+
+	var origin := camera.global_position
+	var direction := -camera.global_transform.basis.z
+	var hit := _raycast(origin, origin + direction * 9999)
+
+	if hit.is_empty():
+		return -1.0
+
+	return origin.distance_to(hit["position"] as Vector3)

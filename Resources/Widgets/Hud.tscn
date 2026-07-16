@@ -1,0 +1,418 @@
+[gd_scene format=3 uid="uid://bbc4xgtr6w5ur"]
+
+[ext_resource type="Texture2D" uid="uid://cgyepl6dhrekf" path="res://Resources/Sprites/HUDStuff.png" id="1_nsmev"]
+[ext_resource type="Script" uid="uid://dnsswbk3p28u5" path="res://Resources/Widgets/Hud.cs" id="1_yg2gv"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_iok0e"]
+atlas = ExtResource("1_nsmev")
+region = Rect2(288, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_ohs5g"]
+atlas = ExtResource("1_nsmev")
+region = Rect2(48, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_2gqq5"]
+atlas = ExtResource("1_nsmev")
+region = Rect2(192, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_ng2q5"]
+atlas = ExtResource("1_nsmev")
+region = Rect2(240, 0, 32, 32)
+
+[sub_resource type="LabelSettings" id="LabelSettings_yg2gv"]
+font_size = 22
+outline_size = 5
+outline_color = Color(0, 0, 0, 1)
+
+[sub_resource type="LabelSettings" id="LabelSettings_iok0e"]
+font_size = 32
+outline_size = 5
+outline_color = Color(0, 0, 0, 1)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_yg2gv"]
+atlas = ExtResource("1_nsmev")
+region = Rect2(288, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_nsmev"]
+atlas = ExtResource("1_nsmev")
+region = Rect2(0, 48, 64, 64)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_5s0ub"]
+atlas = ExtResource("1_nsmev")
+region = Rect2(82, 80, 97, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_ibjyi"]
+atlas = ExtResource("1_nsmev")
+region = Rect2(82, 48, 97, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_1bung"]
+atlas = ExtResource("1_nsmev")
+region = Rect2(0, 144, 224, 48)
+
+[sub_resource type="LabelSettings" id="LabelSettings_5s0ub"]
+font_size = 60
+font_color = Color(1, 1, 1, 0.47058824)
+outline_size = 10
+outline_color = Color(0, 0, 0, 1)
+
+[sub_resource type="LabelSettings" id="LabelSettings_ibjyi"]
+font_size = 30
+font_color = Color(1, 1, 1, 0.47058824)
+outline_size = 10
+outline_color = Color(0, 0, 0, 1)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_6t8ds"]
+atlas = ExtResource("1_nsmev")
+region = Rect2(192, 48, 16, 16)
+
+[sub_resource type="LabelSettings" id="LabelSettings_2gqq5"]
+font_size = 25
+font_color = Color(0.88851863, 0.99165446, 0.97086555, 0.47058824)
+outline_size = 5
+outline_color = Color(0, 0, 0, 1)
+
+[sub_resource type="LabelSettings" id="LabelSettings_ohs5g"]
+font_size = 25
+font_color = Color(1, 1, 1, 0.47058824)
+outline_size = 5
+outline_color = Color(0, 0, 0, 1)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_gupel"]
+atlas = ExtResource("1_nsmev")
+region = Rect2(208, 48, 16, 16)
+
+[node name="Hud" type="Control" unique_id=1427951439 node_paths=PackedStringArray("healthBar", "healthText", "groundStateIndicator", "groundStateText", "ammoText", "weaponText", "grappleStateIndicator", "rangeIndicatorText", "grappleStateText", "grappleReelBar", "jumpForceText", "jumpForceBar")]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_yg2gv")
+grappleDarkColor = Color(0.25, 0.25, 0.25, 0.47058824)
+grappleAvailableColor = Color(1, 1, 1, 0.47058824)
+grappleLockedColor = Color(0.19999999, 0.50666654, 1, 0.47058824)
+healthBar = NodePath("HealthBar")
+healthText = NodePath("HealthText")
+groundStateIndicator = NodePath("GroundStateIcon")
+groundStateText = NodePath("GroundLockText")
+freeFloatIcon = SubResource("AtlasTexture_iok0e")
+pushAvailableIcon = SubResource("AtlasTexture_ohs5g")
+groundLockEnableIcon = SubResource("AtlasTexture_2gqq5")
+groundLockDisableIcon = SubResource("AtlasTexture_ng2q5")
+ammoText = NodePath("AmmoText")
+weaponText = NodePath("WeaponText")
+grappleStateIndicator = NodePath("GrappleIcon")
+rangeIndicatorText = NodePath("GrappleIcon/DistanceText")
+grappleStateText = NodePath("GrappleIcon/GrappleKey")
+grappleReelBar = NodePath("ReelBar")
+jumpForceText = NodePath("JumpIcon/JumpForceText")
+jumpForceBar = NodePath("JumpForceBar")
+
+[node name="GroundLockText" type="Label" parent="." unique_id=1661293636]
+modulate = Color(1, 1, 1, 0.78431374)
+texture_filter = 5
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.3390625
+anchor_top = 0.9925926
+anchor_right = 0.3390625
+anchor_bottom = 0.9925926
+offset_left = -125.0
+offset_top = -31.0
+offset_right = 125.0
+grow_horizontal = 2
+grow_vertical = 0
+pivot_offset = Vector2(125, 11)
+text = "(c) Disable Ground Lock"
+label_settings = SubResource("LabelSettings_yg2gv")
+horizontal_alignment = 1
+vertical_alignment = 1
+metadata/_edit_use_anchors_ = true
+
+[node name="HealthText" type="Label" parent="." unique_id=821537584]
+modulate = Color(1, 1, 1, 0.78431374)
+texture_filter = 5
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.484375
+anchor_top = 0.9398148
+anchor_right = 0.515625
+anchor_bottom = 0.96018517
+offset_left = -31.0
+offset_top = -23.0
+offset_right = 31.0
+grow_horizontal = 2
+grow_vertical = 0
+pivot_offset = Vector2(31, 11)
+text = "100/100"
+label_settings = SubResource("LabelSettings_iok0e")
+horizontal_alignment = 1
+vertical_alignment = 1
+metadata/_edit_use_anchors_ = true
+
+[node name="GroundStateIcon" type="TextureRect" parent="." unique_id=1851006632]
+modulate = Color(1, 1, 1, 0.78431374)
+texture_filter = 1
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -356.0
+offset_top = -158.0
+offset_right = -316.0
+offset_bottom = -118.0
+grow_horizontal = 2
+grow_vertical = 0
+scale = Vector2(2.3273792, 2.3273792)
+texture = SubResource("AtlasTexture_yg2gv")
+
+[node name="GroundStateFrame" type="TextureRect" parent="GroundStateIcon" unique_id=1889276553]
+modulate = Color(1, 1, 1, 0.47058824)
+texture_filter = 1
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -32.0
+offset_top = -32.0
+offset_right = 32.0
+offset_bottom = 32.0
+grow_horizontal = 2
+grow_vertical = 2
+scale = Vector2(1.25, 1.25)
+pivot_offset = Vector2(32, 32)
+texture = SubResource("AtlasTexture_nsmev")
+
+[node name="HealthBar" type="TextureProgressBar" parent="." unique_id=233559984]
+texture_filter = 1
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -142.99994
+offset_top = -135.99994
+offset_right = -45.99994
+offset_bottom = -95.99994
+grow_horizontal = 2
+grow_vertical = 0
+scale = Vector2(3, 3)
+value = 65.0
+texture_over = SubResource("AtlasTexture_5s0ub")
+texture_progress = SubResource("AtlasTexture_ibjyi")
+tint_over = Color(1, 1, 1, 0.78431374)
+tint_progress = Color(1, 1, 1, 0.78431374)
+
+[node name="AmmoShelf" type="TextureRect" parent="." unique_id=60849810]
+modulate = Color(1, 1, 1, 0.19607843)
+layout_mode = 0
+offset_left = 1531.0
+offset_top = 996.0
+offset_right = 1755.0
+offset_bottom = 1044.0
+scale = Vector2(1.734209, 1.734209)
+texture = SubResource("AtlasTexture_1bung")
+
+[node name="AmmoText" type="Label" parent="." unique_id=1134646451]
+layout_mode = 0
+offset_left = 1577.0
+offset_top = 954.0
+offset_right = 1806.0
+offset_bottom = 1037.0
+text = "255/255"
+label_settings = SubResource("LabelSettings_5s0ub")
+
+[node name="WeaponText" type="Label" parent="." unique_id=1452776106]
+layout_mode = 0
+offset_left = 1609.0
+offset_top = 989.0
+offset_right = 1918.0
+offset_bottom = 1072.0
+text = "Gun Name"
+label_settings = SubResource("LabelSettings_ibjyi")
+horizontal_alignment = 1
+vertical_alignment = 2
+
+[node name="ReelBar" type="TextureProgressBar" parent="." unique_id=613511025]
+texture_filter = 1
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = 213.0
+offset_top = -20.0
+offset_right = 310.0
+offset_bottom = 20.0
+grow_horizontal = 2
+grow_vertical = 2
+rotation = -1.5707964
+scale = Vector2(1.9054967, 1.0670781)
+pivot_offset = Vector2(48, 20)
+value = 65.0
+texture_over = SubResource("AtlasTexture_5s0ub")
+texture_progress = SubResource("AtlasTexture_ibjyi")
+tint_over = Color(1, 1, 1, 0.78431374)
+tint_progress = Color(0.63, 0.6916666, 1, 0.78431374)
+
+[node name="JumpForceBar" type="TextureProgressBar" parent="." unique_id=587706649]
+texture_filter = 1
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -289.0
+offset_top = -20.0
+offset_right = -192.0
+offset_bottom = 20.0
+grow_horizontal = 2
+grow_vertical = 2
+rotation = -1.5707964
+scale = Vector2(1.9054967, 1.0670781)
+pivot_offset = Vector2(48, 20)
+value = 65.0
+texture_over = SubResource("AtlasTexture_5s0ub")
+texture_progress = SubResource("AtlasTexture_ibjyi")
+tint_over = Color(1, 1, 1, 0.78431374)
+tint_progress = Color(1, 0.60400003, 0.27999997, 0.78431374)
+
+[node name="GrappleIcon" type="TextureRect" parent="." unique_id=1472504422]
+modulate = Color(1, 1, 1, 0.78431374)
+texture_filter = 1
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = 263.0
+offset_top = 6.0
+offset_right = 303.0
+offset_bottom = 46.0
+grow_horizontal = 2
+grow_vertical = 2
+texture = SubResource("AtlasTexture_6t8ds")
+
+[node name="GrappleKey" type="Label" parent="GrappleIcon" unique_id=1865586371]
+visible = false
+layout_mode = 1
+anchors_preset = 6
+anchor_left = 1.0
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_left = 10.0
+offset_top = -29.0
+offset_right = 142.0
+offset_bottom = 21.0
+grow_horizontal = 0
+grow_vertical = 2
+text = "[E] Grapple"
+label_settings = SubResource("LabelSettings_2gqq5")
+vertical_alignment = 1
+
+[node name="DistanceText" type="Label" parent="GrappleIcon" unique_id=1661164632]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -20.0
+offset_top = -50.0
+offset_right = 80.0
+grow_horizontal = 2
+text = "100m"
+label_settings = SubResource("LabelSettings_ohs5g")
+vertical_alignment = 1
+
+[node name="JumpIcon" type="TextureRect" parent="." unique_id=810190266]
+modulate = Color(1, 1, 1, 0.78431374)
+texture_filter = 1
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -315.0
+offset_top = 6.0
+offset_right = -275.0
+offset_bottom = 46.0
+grow_horizontal = 2
+grow_vertical = 2
+texture = SubResource("AtlasTexture_gupel")
+
+[node name="JumpKey" type="Label" parent="JumpIcon" unique_id=413526447]
+visible = false
+layout_mode = 1
+anchors_preset = 6
+anchor_left = 1.0
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_left = -180.0
+offset_top = -29.0
+offset_right = -48.0
+offset_bottom = 21.0
+grow_horizontal = 0
+grow_vertical = 2
+text = "[MWheel]"
+label_settings = SubResource("LabelSettings_2gqq5")
+horizontal_alignment = 2
+vertical_alignment = 1
+
+[node name="JumpForceText" type="Label" parent="JumpIcon" unique_id=1045763982]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -80.0
+offset_top = -50.0
+offset_right = 20.0
+grow_horizontal = 2
+text = "5N"
+label_settings = SubResource("LabelSettings_ohs5g")
+horizontal_alignment = 2
+vertical_alignment = 1
+
+[node name="ColorRect2" type="ColorRect" parent="." unique_id=447377846]
+visible = false
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -20.0
+offset_top = -20.0
+offset_right = 20.0
+offset_bottom = 20.0
+grow_horizontal = 2
+grow_vertical = 2
+scale = Vector2(25, 0.1)
+pivot_offset = Vector2(20, 20)
+
+[node name="ColorRect" type="ColorRect" parent="." unique_id=1926065839]
+visible = false
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -20.0
+offset_top = -20.0
+offset_right = 20.0
+offset_bottom = 20.0
+grow_horizontal = 2
+grow_vertical = 2
+scale = Vector2(0.1, 25)
+pivot_offset = Vector2(20, 20)

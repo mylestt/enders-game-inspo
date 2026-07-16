@@ -13,7 +13,7 @@ data = PackedVector3Array(-0.0499, 0.0025, -0.049999997, -0.049999997, 0, -0.049
 
 [node name="Space Station" unique_id=1863439975 instance=ExtResource("1_rmovq")]
 
-[node name="Cylinder" parent="." index="0" unique_id=212158476]
+[node name="Cylinder" parent="." index="0" unique_id=1069794421]
 surface_material_override/0 = SubResource("StandardMaterial3D_hmrha")
 
 [node name="StaticBody3D" type="StaticBody3D" parent="Cylinder" index="0" unique_id=1453179206]

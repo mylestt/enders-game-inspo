@@ -1,9 +1,9 @@
 [gd_scene format=3 uid="uid://d2aim5gb4yj2v"]
 
-[ext_resource type="PackedScene" uid="uid://divnxli045irj" path="res://space_station.tscn" id="1_kv0dn"]
+[ext_resource type="PackedScene" uid="uid://divnxli045irj" path="res://Resources/Maps/space_station.tscn" id="1_kv0dn"]
 [ext_resource type="Script" uid="uid://dnmhdw4wvkiwv" path="res://scripts/cylindrical_force_field.gd" id="2_4qrmy"]
 [ext_resource type="PackedScene" uid="uid://0jf5ak884hmg" path="res://scenes/spawn_point.tscn" id="3_4qrmy"]
-[ext_resource type="PackedScene" uid="uid://eok4mbiecnx2" path="res://spin_space_ball.tscn" id="3_k161k"]
+[ext_resource type="PackedScene" uid="uid://eok4mbiecnx2" path="res://Resources/Objects/spin_space_ball.tscn" id="3_k161k"]
 
 [node name="SpaceStation" type="Node3D" unique_id=450374912]
 transform = Transform3D(0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0)

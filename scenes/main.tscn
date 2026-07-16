@@ -4,7 +4,7 @@
 [ext_resource type="Script" uid="uid://dat60tk8l7fsn" path="res://scripts/buy_menu.gd" id="4_jyhfs"]
 [ext_resource type="PackedScene" uid="uid://dl2cjmy8ky8xq" path="res://scenes/test_map.tscn" id="4_tbgi4"]
 [ext_resource type="Script" uid="uid://ss27ux00fv75" path="res://scenes/network_manager.gd" id="4_tefeu"]
-[ext_resource type="PackedScene" uid="uid://f2mjnk65ihmq" path="res://player.tscn" id="5_tbgi4"]
+[ext_resource type="PackedScene" uid="uid://f2mjnk65ihmq" path="res://Resources/Objects/player.tscn" id="5_tbgi4"]
 [ext_resource type="Script" uid="uid://bjn7sj3j0c1h1" path="res://scripts/round_manager.gd" id="6_round"]
 [ext_resource type="Script" uid="uid://tjqvjd3cbcdb" path="res://scripts/server_admin.gd" id="7_admin"]
 [ext_resource type="Script" uid="uid://bl7ig0ef00xlg" path="res://scripts/admin_console.gd" id="8_console"]
@@ -12,8 +12,8 @@
 [ext_resource type="Script" uid="uid://dtglsq7hq2vtw" path="res://scripts/lobby_browser.gd" id="10_browser"]
 [ext_resource type="Script" uid="uid://dg56k8ek316nr" path="res://scripts/round_hud.gd" id="11_roundhud"]
 [ext_resource type="Script" uid="uid://cwcakba58fk0q" path="res://scripts/scoreboard.gd" id="12_scoreboard"]
-[ext_resource type="Script" path="res://scripts/game_over_hud.gd" id="13_gameover"]
-[ext_resource type="Script" path="res://scripts/drone_spawner.gd" id="14_drones"]
+[ext_resource type="Script" uid="uid://d00rhfk3nukjc" path="res://scripts/game_over_hud.gd" id="13_gameover"]
+[ext_resource type="Script" uid="uid://dundkdjk2x61u" path="res://scripts/drone_spawner.gd" id="14_drones"]
 
 [node name="World Node3D" type="Node3D" unique_id=878825741]
 script = ExtResource("1_sugp2")

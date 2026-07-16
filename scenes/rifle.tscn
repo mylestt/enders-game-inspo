@@ -1,7 +1,7 @@
 [gd_scene format=3 uid="uid://cu36rp4qulbk"]
 
 [ext_resource type="Script" uid="uid://b42le5ln2dntt" path="res://scripts/weapons/hitscan_weapon.gd" id="1_rifle"]
-[ext_resource type="PackedScene" uid="uid://cj02kh80khvwc" path="res://rifle_1_test.tscn" id="2_rifle"]
+[ext_resource type="PackedScene" uid="uid://cj02kh80khvwc" path="res://Resources/Objects/rifle_1_test.tscn" id="2_rifle"]
 [ext_resource type="PackedScene" uid="uid://d3k8i1q31qxjn" path="res://scenes/rifle_tracer_effect.tscn" id="3_rifle"]
 [ext_resource type="PackedScene" uid="uid://d13inluxpw2ta" path="res://scenes/rifle_muzzle_flash.tscn" id="4_flash"]
 
