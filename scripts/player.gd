@@ -65,6 +65,7 @@ var last_body_slam_time_by_target_peer_id: Dictionary = {}
 @onready var impact_controller: PlayerImpactController = get_node_or_null("ImpactController") as PlayerImpactController
 @onready var weapon_inventory: WeaponInventory = get_node_or_null("WeaponInventory") as WeaponInventory
 @onready var grapple_controller: GrappleController = get_node_or_null("GrappleController") as GrappleController
+@onready var name_tag: Node = get_node_or_null("NameTag")
 
 
 func _ready() -> void:
@@ -129,6 +130,14 @@ func set_multiplayer_player(new_peer_id: int, new_is_local_player: bool, new_net
 	peer_id = new_peer_id
 	is_local_player = new_is_local_player
 	network_manager = new_network_manager
+	
+	if is_local_player:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		if health != null:
+			_on_health_changed(health.current_health, health.max_health)
+
+	if name_tag != null and name_tag.has_method("Setup"):
+		name_tag.call("Setup", is_local_player, peer_id, network_manager)
 	
 	set_multiplayer_authority(peer_id)
 	

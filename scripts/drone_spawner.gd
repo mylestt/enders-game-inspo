@@ -5,7 +5,7 @@ extends Node3D
 # menu's Drones dropdown; peaceful drones never shoot). Drones spawn above random map spawn
 # markers; the cap counts live drones (they're this node's children).
 
-const DRONE_SCENE := preload("res://testingdrone.tscn")
+const DRONE_SCENE := preload("res://Resources/Objects/testingdrone.tscn")
 
 @export var spawn_interval: float = 5.0
 @export var max_drones: int = 4

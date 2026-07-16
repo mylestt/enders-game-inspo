@@ -1,7 +1,7 @@
 [gd_resource type="Resource" script_class="MapRegistry" format=3 uid="uid://506cgapobh7g"]
 
 [ext_resource type="Script" uid="uid://dlr1n2134utx1" path="res://scripts/map_listing.gd" id="1_vo68f"]
-[ext_resource type="PackedScene" uid="uid://dw8ic1buqxt2a" path="res://DiamondArena.tscn" id="2_hihqh"]
+[ext_resource type="PackedScene" uid="uid://dw8ic1buqxt2a" path="res://Resources/Maps/DiamondArena.tscn" id="2_hihqh"]
 [ext_resource type="PackedScene" uid="uid://d2aim5gb4yj2v" path="res://scenes/sphere.tscn" id="3_no633"]
 [ext_resource type="Script" uid="uid://clyynmoa5bfjy" path="res://scripts/map_registry.gd" id="4_p6ko1"]
 
