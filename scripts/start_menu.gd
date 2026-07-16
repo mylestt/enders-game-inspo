@@ -11,7 +11,6 @@ var map_creator_view: VBoxContainer
 var username_field: LineEdit
 var username_status_label: Label
 var server_ip_field: LineEdit
-var joke_popup: PanelContainer
 var status_label: Label
 var multiplayer_status_label: Label
 var map_list: ItemList
@@ -421,58 +420,6 @@ func _on_username_continue_pressed() -> void:
 	GameLaunch.set_player_username(clean)
 	username_field.text = GameLaunch.player_username
 	show_view(main_view)
-
-	if should_show_name_joke(clean):
-		show_name_joke_popup()
-
-
-func should_show_name_joke(player_name: String) -> bool:
-	var key := player_name.strip_edges().to_lower()
-	return key == "naked snake" or key == "aaron" or key == "leprosy_sowles"
-
-
-func show_name_joke_popup() -> void:
-	if joke_popup != null and is_instance_valid(joke_popup):
-		joke_popup.queue_free()
-
-	joke_popup = PanelContainer.new()
-	joke_popup.name = "NameJokePopup"
-	add_child(joke_popup)
-	joke_popup.anchor_left = 0.5
-	joke_popup.anchor_right = 0.5
-	joke_popup.anchor_top = 0.0
-	joke_popup.anchor_bottom = 0.0
-	joke_popup.offset_left = -170.0
-	joke_popup.offset_right = 170.0
-	joke_popup.offset_top = 28.0
-	joke_popup.offset_bottom = 92.0
-	joke_popup.mouse_filter = Control.MOUSE_FILTER_IGNORE
-
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.18, 0.03, 0.045, 0.94)
-	style.border_color = Color(1.0, 0.25, 0.34, 0.86)
-	style.border_width_left = 1
-	style.border_width_right = 1
-	style.border_width_top = 1
-	style.border_width_bottom = 1
-	style.corner_radius_top_left = 6
-	style.corner_radius_top_right = 6
-	style.corner_radius_bottom_left = 6
-	style.corner_radius_bottom_right = 6
-	joke_popup.add_theme_stylebox_override("panel", style)
-
-	var label := Label.new()
-	label.text = "HEY WHORE"
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.add_theme_font_size_override("font_size", 24)
-	label.add_theme_color_override("font_color", Color(1.0, 0.88, 0.9, 1.0))
-	joke_popup.add_child(label)
-
-	var tween := create_tween()
-	tween.tween_interval(0.95)
-	tween.tween_property(joke_popup, "modulate:a", 0.0, 0.28)
-	tween.tween_callback(joke_popup.queue_free)
 
 
 func _on_test_arena_pressed() -> void:
