@@ -11,7 +11,7 @@
 using Godot;
 using System;
 
-public partial class Hud : Node
+public partial class Hud : Control
 {
 	#region========================================( Variables)======================================================//
 	/*-----[ Inspector Variables ]------------------------------------------------------------------------------------*/
@@ -26,6 +26,7 @@ public partial class Hud : Node
 	public float currentHp = 100;
 	public float maxHp = 100;
 	private GroundState lastGroundState = (GroundState)(-1);
+	private Node playerRoot;
 
 	private enum GroundState
 	{
@@ -76,10 +77,19 @@ public partial class Hud : Node
 
 		weaponText.Text = "-";
 		ammoText.Text = "-";
+		
+		playerRoot = FindPlayerRoot();
+		Visible = false;
 	}
 
 	public override void _Process(double delta)
 	{
+		if (playerRoot == null) return;
+
+		bool isLocal = playerRoot.Get("is_local_player").AsBool();
+		Visible = isLocal;
+
+		if (!isLocal) return;
 		UpdateGroundStateIndicator();
 		UpdateGrappleIndicator();
 		UpdateJumpForceIndicator();
@@ -244,6 +254,22 @@ public partial class Hud : Node
 		jumpForceBar.MaxValue = maxJumpForce;
 		jumpForceBar.Step = 0.001;
 		jumpForceBar.Value = jumpForce;
+	}
+
+	
+	private Node FindPlayerRoot()
+	{
+		Node current = GetParent();
+
+		while (current != null)
+		{
+			if (current.HasMethod("get_peer_id"))
+				return current;
+
+			current = current.GetParent();
+		}
+
+		return null;
 	}
 
 
