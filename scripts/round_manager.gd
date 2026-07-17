@@ -30,6 +30,7 @@ enum State {
 enum GameMode {
 	TEAM,     # team elimination — round ends when a whole team is wiped; first to points_to_win
 	FFA,      # free-for-all deathmatch — timed, per-player K/D, auto-respawn; most kills wins
+	CTF,
 }
 
 # FFA falls back to this many seconds when no positive round_time is configured, so a
@@ -401,6 +402,31 @@ func session_end_round_team(s: Dictionary, winning_team: String) -> void:
 		session_rpc(s, "client_sync_team_scores", [scores])
 
 	set_session_state(s, State.ROUND_END, round_end_duration)
+	
+# Called by a Flag node on confirmed capture. Adds the point to the capturing player's
+# session/team, then checks the existing points_to_win threshold — reuses the same
+# session_match_over / session_end_match_team path team mode already uses.
+func server_register_flag_capture(capturing_peer_id: int, capturing_team: String) -> void:
+	if not is_server():
+		return
+
+	if capturing_team != "a" and capturing_team != "b":
+		return
+
+	var s := session_for_peer(capturing_peer_id)
+
+	if s.is_empty() or int(s["state"]) != State.ACTIVE:
+		return
+
+	if int(s["mode"]) != GameMode.CTF:
+		return
+
+	var scores: Dictionary = s["team_scores"]
+	scores[capturing_team] = int(scores.get(capturing_team, 0)) + 1
+	session_rpc(s, "client_sync_team_scores", [scores])
+
+	if session_match_over(s):
+		session_end_match_team(s, capturing_team)
 
 
 # True only if the team has players in this session and none of them are still alive.
@@ -851,12 +877,25 @@ func is_ffa() -> bool:
 	return game_mode == GameMode.FFA
 
 
+func is_ctf() -> bool:
+	return game_mode == GameMode.CTF
+
+
 func mode_from_id(mode_id: String) -> int:
-	return GameMode.FFA if mode_id == "ffa" else GameMode.TEAM
+	if mode_id == "ffa":
+		return GameMode.FFA
+	if mode_id == "ctf":
+		return GameMode.CTF
+	return GameMode.TEAM
 
 
 func mode_to_id(mode: int) -> String:
-	return "ffa" if mode == GameMode.FFA else "team"
+	match mode:
+		GameMode.FFA:
+			return "ffa"
+		GameMode.CTF:
+			return "ctf"
+	return "team"
 
 
 func state_name(value: int) -> String:

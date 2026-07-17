@@ -236,7 +236,7 @@ func setup(owner_player: RigidBody3D, owner_hud_controller: PlayerHUDController)
 	# PhysicsRayQueryParameters3D per cast. Same pattern as LimbPushController.
 	_ray_query = PhysicsRayQueryParameters3D.new()
 	_ray_query.collide_with_bodies = true
-	_ray_query.collide_with_areas = true
+	_ray_query.collide_with_areas = false
 
 	if player is CollisionObject3D:
 		_ray_query.exclude = [player.get_rid()]

@@ -144,7 +144,17 @@ func _build_ui() -> void:
 	game_mode_option.set_item_metadata(0, "team")
 	game_mode_option.add_item("Free-For-All", 1)
 	game_mode_option.set_item_metadata(1, "ffa")
-	game_mode_option.selected = 1 if GameLaunch.game_mode_id == "ffa" else 0
+	game_mode_option.add_item("Capture The Flag", 2)
+	game_mode_option.set_item_metadata(2, "ctf")
+	
+	match GameLaunch.game_mode_id:
+		"ffa":
+			game_mode_option.selected = 1
+		"ctf":
+			game_mode_option.selected = 2
+		_:
+			game_mode_option.selected = 0
+	
 	game_mode_option.item_selected.connect(_on_game_mode_selected)
 	mode_row.add_child(game_mode_option)
 	column.add_child(mode_row)
@@ -280,7 +290,8 @@ func _build_ffa_section(parent: Node) -> void:
 # Shows exactly the selected mode's section (team settings in team mode, FFA settings in
 # FFA) — never both.
 func _on_game_mode_selected(_index: int) -> void:
-	var ffa := _selected_game_mode() == "ffa"
+	var mode := _selected_game_mode()
+	var ffa := mode == "ffa"
 
 	if team_section != null:
 		team_section.visible = not ffa

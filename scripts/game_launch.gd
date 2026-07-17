@@ -59,7 +59,7 @@ static var drone_mode: int = DRONES_NONE
 # Game mode. "team" = team elimination (the original mode), "ffa" = free-for-all
 # deathmatch (random edge spawns, per-player K/D, timed match, auto-respawn, random gun).
 # RoundManager owns the authoritative copy and syncs it to clients; UI reads this field.
-const GAME_MODES := ["team", "ffa"]
+const GAME_MODES := ["team", "ffa", "ctf"]
 static var game_mode_id: String = "team"
 # FFA tuning, also settable in the host menu. round_time_limit doubles as the FFA time
 # limit (0 → RoundManager falls back to a default). ffa_weapons lists the weapon ids a
@@ -133,6 +133,8 @@ static func normalize_game_mode(value: String) -> String:
 			return "team"
 		"ffa", "free_for_all", "freeforall", "free-for-all", "deathmatch", "dm":
 			return "ffa"
+		"ctf", "capture_the_flag", "capture-the-flag":
+			return "ctf"
 
 	return "team"
 

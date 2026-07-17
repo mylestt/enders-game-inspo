@@ -1,0 +1,24 @@
+[gd_scene format=3 uid="uid://dv2q8ct0fdyoe"]
+
+[ext_resource type="Script" uid="uid://d2a8n13yedlll" path="res://Resources/Scripts/FlagCaptureZone.cs" id="1_friws"]
+[ext_resource type="Material" uid="uid://ictjshvmqobp" path="res://Resources/Materials/Mat1.tres" id="2_y7qxm"]
+[ext_resource type="PackedScene" uid="uid://bmtlx1luljh83" path="res://Resources/Objects/ctf_flag.tscn" id="3_5oonm"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_43wxm"]
+radius = 1.6453732
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_friws"]
+
+[node name="CtfCapturePoint" type="Area3D" unique_id=1261550584]
+input_ray_pickable = false
+script = ExtResource("1_friws")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1113683759]
+shape = SubResource("SphereShape3D_43wxm")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=1606494904]
+transform = Transform3D(2.498344, 0, 0, 0, 0.01176697, 0, 0, 0, 2.498344, 0, 0, 0)
+material_override = ExtResource("2_y7qxm")
+mesh = SubResource("CylinderMesh_friws")
+
+[node name="CtfFlag" parent="." unique_id=882118888 instance=ExtResource("3_5oonm")]
