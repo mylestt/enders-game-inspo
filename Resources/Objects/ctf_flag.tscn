@@ -20,6 +20,7 @@ outer_radius = 0.657
 
 [node name="CtfFlag" type="RigidBody3D" unique_id=882118888]
 collision_layer = 512
+collision_mask = 513
 mass = 17.393
 script = ExtResource("1_wsk8h")
 pickupZonePath = NodePath("Area3D")
@@ -43,6 +44,8 @@ material_override = ExtResource("2_johfm")
 mesh = SubResource("BoxMesh_dg3js")
 
 [node name="Area3D" type="Area3D" parent="." unique_id=1224199367]
+collision_layer = 512
+collision_mask = 769
 input_ray_pickable = false
 script = ExtResource("2_xlre0")
 
