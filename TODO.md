@@ -7,36 +7,36 @@ delete/rewrite items that turn out stale rather than leaving them checked-but-wr
 ## 0. Immediate housekeeping
 
 - [ ] Commit and push the July 2026 audit-pass changes (plasma replay fix, lobby settings
-      sanitation, hot-path print removal, listen-host effect playback, `tools/tests/`)
-      plus any pending uncommitted work.
+	  sanitation, hot-path print removal, listen-host effect playback, `tools/tests/`)
+	  plus any pending uncommitted work.
 - [ ] Re-export and redeploy BOTH the client and dedicated server binaries together after
-      pulling — `network_manager.gd` changed again; mismatched versions fail with
-      "rpc node checksum failed".
+	  pulling — `network_manager.gd` changed again; mismatched versions fail with
+	  "rpc node checksum failed".
 - [ ] Start the VPS with `--admin-key <key>` — the shipped default admin key is blank
-      (previously it was a real key baked into every client build).
+	  (previously it was a real key baked into every client build).
 
 ## 1. Core gameplay systems (design gap vs. PROJECT_OVERVIEW.md)
 
 - [ ] **Gate objective.** Nothing implements it yet: no trigger volumes, no "one player
-      through while a teammate holds it," no scoring hook. Maps already support
-      `gate_team_a/b` groups and `MapGenerator.get_gate()` exists as a lookup.
+	  through while a teammate holds it," no scoring hook. Maps already support
+	  `gate_team_a/b` groups and `MapGenerator.get_gate()` exists as a lookup.
 - [ ] **Design-correct scoring values.** Design calls for elimination = 2 points, gate = 3,
-      both scorable in the same round. Current code awards 1 point for a team wipe only.
-      Do this together with the gate work.
+	  both scorable in the same round. Current code awards 1 point for a team wipe only.
+	  Do this together with the gate work.
 - [ ] **Robot limb damage system.** The core combat identity from the design doc. Partial
-      plumbing exists (`LimbPushController.set_limb_disabled()` already removes disabled
-      limbs from push mechanics) but nothing calls it from combat — `PlayerHealth` is a
-      single health bar, the player is one capsule hitbox. Needs per-part hitboxes
-      (head/chest/arms/legs), server-validated per-part damage routing, and the
-      critical-zone rules (head hit = eliminated, chest hit = legs disabled).
+	  plumbing exists (`LimbPushController.set_limb_disabled()` already removes disabled
+	  limbs from push mechanics) but nothing calls it from combat — `PlayerHealth` is a
+	  single health bar, the player is one capsule hitbox. Needs per-part hitboxes
+	  (head/chest/arms/legs), server-validated per-part damage routing, and the
+	  critical-zone rules (head hit = eliminated, chest hit = legs disabled).
 - [ ] **Death/spectate state.** Dead players currently see a ~98%-black screen until round
-      reset. Minimum viable: spectate a teammate's camera or a free/orbit cam.
+	  reset. Minimum viable: spectate a teammate's camera or a free/orbit cam.
 - [x] **Match-over experience.** ~~No victory screen.~~ Done: `RoundManager.State.MATCH_END`
       → `match_ended` → `game_over_hud.gd` winner/draw screen (team + FFA variants) with
       Return to Main Menu; recovers to WAITING when the lobby empties below `min_players`.
 - [ ] **Round-state input gating.** Players can currently shoot and take damage during
-      COUNTDOWN and ROUND_END (deaths outside ACTIVE don't end rounds/count stats — see
-      `server_on_player_died`). Decide if that's intended; if not, gate firing/damage on
+	  COUNTDOWN and ROUND_END (deaths outside ACTIVE don't end rounds/count stats — see
+	  `server_on_player_died`). Decide if that's intended; if not, gate firing/damage on
       `RoundManager.State.ACTIVE`. (Deliberately left as a design decision in the July 2026
       audit — a single server-side gate in `server_attacker_may_deal_damage` would do it.)
 - [ ] **Body posture hotkeys** (fetal/upright/arms-tucked/etc.). Not started. Deliberately
@@ -49,39 +49,39 @@ delete/rewrite items that turn out stale rather than leaving them checked-but-wr
       `RoundManager.server_sync_session_to_peer()` pushes mode + scores + round state to a
       peer on lobby join, and `server_spawn_in_lobby` follows with a scoreboard broadcast.
 - [x] **Lobby capacity mismatch.** ~~Lobby settings clamp `max_players` to 64.~~ Fixed:
-      lobby capacity clamps to the ENet host's real slot count
-      (`LobbyManager._server_player_capacity()` reads `NetworkManager.max_players`).
+	  lobby capacity clamps to the ENet host's real slot count
+	  (`LobbyManager._server_player_capacity()` reads `NetworkManager.max_players`).
 - [ ] **5v5 spawn capacity check.** Verify DiamondArena actually has 5 spawn markers per
-      side and that a full 10-player round behaves (spawn overlap, team-dot readability,
-      minigun tracer/audio volume at scale).
+	  side and that a full 10-player round behaves (spawn overlap, team-dot readability,
+	  minigun tracer/audio volume at scale).
 - [ ] **Mid-round disconnect/reconnect policy.** Today a disconnect wipes cash/ownership and
-      a rejoin is a fresh spawn mid-round on whatever team parity assigns. Decide the rule
-      (same team on rejoin? sit out until next round? keep wallet for N minutes?).
+	  a rejoin is a fresh spawn mid-round on whatever team parity assigns. Decide the rule
+	  (same team on rejoin? sit out until next round? keep wallet for N minutes?).
 - [x] **Multiple lobbies.** Done: up to `LobbyManager.MAX_LOBBIES` (5) concurrent lobbies,
-      each with its own RoundManager session and lobby-scoped relays. REMAINING CONSTRAINT:
-      all lobbies share the server's one loaded map (spawn markers are global scene-tree
+	  each with its own RoundManager session and lobby-scoped relays. REMAINING CONSTRAINT:
+	  all lobbies share the server's one loaded map (spawn markers are global scene-tree
       groups) — per-lobby maps need per-instance marker lookup, and the host menu says so.
 - [ ] **Anti-cheat tier 2 (optional, do when it matters).** Current model is client-claim +
       server plausibility envelope (plus, since the July 2026 audit: per-blast per-target
       plasma dedup, fire-rate token buckets, basis/NaN validation, FFA exclusive-weapon
       grants). Next tier: server-side re-raycast of hitscan claims and blast-occlusion
-      checks so plasma can't damage through walls. Also decide explicitly whether
-      through-wall splash is a wanted feature or a bug.
+	  checks so plasma can't damage through walls. Also decide explicitly whether
+	  through-wall splash is a wanted feature or a bug.
 
 ## 3. Content
 
 - [ ] **More maps.** `diamond` and `sphere` exist (sphere: pentagon-pole spawns, omni
-      lighting, interior-verified collision). Pipeline is trivial (scene + spawn groups +
-      one `MAPS` line) — more is authoring work. Each map needs gate positions once gates
-      exist. Note: 6 of Diamond's 10 authored spawns sit >8 m from any surface, so those
-      players spawn free-floating (zero-G fallback) — check that's intended.
+	  lighting, interior-verified collision). Pipeline is trivial (scene + spawn groups +
+	  one `MAPS` line) — more is authoring work. Each map needs gate positions once gates
+	  exist. Note: 6 of Diamond's 10 authored spawns sit >8 m from any surface, so those
+	  players spawn free-floating (zero-G fallback) — check that's intended.
 - [ ] **Audio — essentially absent.** No weapon fire sounds, reloads, impacts, footsteps /
-      surface-walk audio, ambience, or UI sounds. `PlasmaProjectile` already exposes
-      `explosion_sound` (currently unassigned). Biggest single gap in game *feel* — even
-      placeholder sounds would transform playtests.
+	  surface-walk audio, ambience, or UI sounds. `PlasmaProjectile` already exposes
+	  `explosion_sound` (currently unassigned). Biggest single gap in game *feel* — even
+	  placeholder sounds would transform playtests.
 - [ ] **Player character model + animations.** Players are glowing capsules right now.
-      `y_bot.tscn` sits unused in the repo. Needed for limb damage to read visually. Big
-      job: model, rig for 6DOF orientation, remote-player animation.
+	  `y_bot.tscn` sits unused in the repo. Needed for limb damage to read visually. Big
+	  job: model, rig for 6DOF orientation, remote-player animation.
 - [ ] **Weapon balance pass with real players.** WEAPONS.md's tuning table is reference
       values, not tested balance. Plasma-cannon self-knockback as mobility
       (rocket-jumping) is an emergent mechanic worth deliberately tuning rather than
