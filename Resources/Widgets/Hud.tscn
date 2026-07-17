@@ -71,15 +71,15 @@ font_color = Color(0.88851863, 0.99165446, 0.97086555, 0.47058824)
 outline_size = 5
 outline_color = Color(0, 0, 0, 1)
 
+[sub_resource type="AtlasTexture" id="AtlasTexture_gupel"]
+atlas = ExtResource("1_nsmev")
+region = Rect2(208, 48, 16, 16)
+
 [sub_resource type="LabelSettings" id="LabelSettings_ohs5g"]
 font_size = 25
 font_color = Color(1, 1, 1, 0.47058824)
 outline_size = 5
 outline_color = Color(0, 0, 0, 1)
-
-[sub_resource type="AtlasTexture" id="AtlasTexture_gupel"]
-atlas = ExtResource("1_nsmev")
-region = Rect2(208, 48, 16, 16)
 
 [node name="Hud" type="Control" unique_id=1427951439 node_paths=PackedStringArray("healthBar", "healthText", "groundStateIndicator", "groundStateText", "ammoText", "weaponText", "grappleStateIndicator", "rangeIndicatorText", "grappleStateText", "grappleReelBar", "jumpForceText", "jumpForceBar")]
 layout_mode = 3
@@ -103,10 +103,10 @@ groundLockDisableIcon = SubResource("AtlasTexture_ng2q5")
 ammoText = NodePath("AmmoText")
 weaponText = NodePath("WeaponText")
 grappleStateIndicator = NodePath("GrappleIcon")
-rangeIndicatorText = NodePath("GrappleIcon/DistanceText")
+rangeIndicatorText = NodePath("DistanceText")
 grappleStateText = NodePath("GrappleIcon/GrappleKey")
 grappleReelBar = NodePath("ReelBar")
-jumpForceText = NodePath("JumpIcon/JumpForceText")
+jumpForceText = NodePath("JumpForceText")
 jumpForceBar = NodePath("JumpForceBar")
 
 [node name="GroundLockText" type="Label" parent="." unique_id=1661293636]
@@ -303,7 +303,6 @@ grow_vertical = 2
 texture = SubResource("AtlasTexture_6t8ds")
 
 [node name="GrappleKey" type="Label" parent="GrappleIcon" unique_id=1865586371]
-visible = false
 layout_mode = 1
 anchors_preset = 6
 anchor_left = 1.0
@@ -318,19 +317,6 @@ grow_horizontal = 0
 grow_vertical = 2
 text = "[E] Grapple"
 label_settings = SubResource("LabelSettings_2gqq5")
-vertical_alignment = 1
-
-[node name="DistanceText" type="Label" parent="GrappleIcon" unique_id=1661164632]
-layout_mode = 1
-anchors_preset = 5
-anchor_left = 0.5
-anchor_right = 0.5
-offset_left = -20.0
-offset_top = -50.0
-offset_right = 80.0
-grow_horizontal = 2
-text = "100m"
-label_settings = SubResource("LabelSettings_ohs5g")
 vertical_alignment = 1
 
 [node name="JumpIcon" type="TextureRect" parent="." unique_id=810190266]
@@ -351,7 +337,6 @@ grow_vertical = 2
 texture = SubResource("AtlasTexture_gupel")
 
 [node name="JumpKey" type="Label" parent="JumpIcon" unique_id=413526447]
-visible = false
 layout_mode = 1
 anchors_preset = 6
 anchor_left = 1.0
@@ -366,20 +351,6 @@ grow_horizontal = 0
 grow_vertical = 2
 text = "[MWheel]"
 label_settings = SubResource("LabelSettings_2gqq5")
-horizontal_alignment = 2
-vertical_alignment = 1
-
-[node name="JumpForceText" type="Label" parent="JumpIcon" unique_id=1045763982]
-layout_mode = 1
-anchors_preset = 5
-anchor_left = 0.5
-anchor_right = 0.5
-offset_left = -80.0
-offset_top = -50.0
-offset_right = 20.0
-grow_horizontal = 2
-text = "5N"
-label_settings = SubResource("LabelSettings_ohs5g")
 horizontal_alignment = 2
 vertical_alignment = 1
 
@@ -416,3 +387,32 @@ grow_horizontal = 2
 grow_vertical = 2
 scale = Vector2(0.1, 25)
 pivot_offset = Vector2(20, 20)
+
+[node name="DistanceText" type="Label" parent="." unique_id=1661164632]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = 263.0
+offset_top = 496.0
+offset_right = 363.0
+offset_bottom = 546.0
+grow_horizontal = 2
+text = "100m"
+label_settings = SubResource("LabelSettings_ohs5g")
+vertical_alignment = 1
+
+[node name="JumpForceText" type="Label" parent="." unique_id=1045763982]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -375.0
+offset_top = 496.0
+offset_right = -275.0
+offset_bottom = 546.0
+grow_horizontal = 2
+text = "5N"
+label_settings = SubResource("LabelSettings_ohs5g")
+horizontal_alignment = 2
+vertical_alignment = 1
