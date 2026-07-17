@@ -10,6 +10,8 @@ radius = 1.6453732
 [sub_resource type="CylinderMesh" id="CylinderMesh_friws"]
 
 [node name="CtfCapturePoint" type="Area3D" unique_id=1261550584]
+collision_layer = 512
+collision_mask = 769
 input_ray_pickable = false
 script = ExtResource("1_friws")
 
