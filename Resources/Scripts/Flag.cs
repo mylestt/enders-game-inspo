@@ -73,7 +73,7 @@ public partial class Flag : Node3D
 		if (carrierPeerId == 0 || carrierNode == null)
 			return;
 
-		GlobalPosition = carrierNode.GlobalPosition + Vector3.Up * carryHeightOffset;
+		GlobalPosition = carrierNode.GlobalPosition + carrierNode.Basis.Y * carryHeightOffset;
 		GlobalRotation = carrierNode.GlobalRotation;
 
 		bool isLocal = carrierNode.Get("is_local_player").AsBool();
