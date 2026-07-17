@@ -166,7 +166,7 @@ func advance_session(s: Dictionary, delta: float) -> void:
 				set_session_state(s, State.WAITING_FOR_PLAYERS)
 				return
 
-			if session_is_ffa(s):
+			if session_is_ffa(s) or session_is_ctf(s):
 				_tick_session_respawns(s, delta)
 
 			if session_time_limit(s) > 0.0:
@@ -259,17 +259,27 @@ func _tick_session_respawns(s: Dictionary, delta: float) -> void:
 
 	for peer_id in ready_to_respawn:
 		pending.erase(peer_id)
-		_ffa_respawn_player(s, int(peer_id))
-
-
-func _ffa_respawn_player(s: Dictionary, peer_id: int) -> void:
+		_session_respawn_player(s, int(peer_id))
+		
+func _session_respawn_player(s: Dictionary, peer_id: int) -> void:
 	if network_manager == null or not get_players().has(peer_id):
 		return
 
-	var spawn_transform: Transform3D = network_manager.get_ffa_spawn_transform(session_player_positions(s, peer_id))
+	var spawn_transform: Transform3D
+
+	if session_is_ffa(s):
+		spawn_transform = network_manager.get_ffa_spawn_transform(session_player_positions(s, peer_id))
+	else:
+		var spawn_index := 0
+
+		if "spawn_index_by_peer_id" in network_manager and network_manager.spawn_index_by_peer_id.has(peer_id):
+			spawn_index = int(network_manager.spawn_index_by_peer_id[peer_id])
+
+		spawn_transform = network_manager.get_spawn_transform(spawn_index)
+
 	session_reset_player(s, peer_id, spawn_transform)
 
-	if network_manager.has_method("server_apply_ffa_loadout"):
+	if session_is_ffa(s) and network_manager.has_method("server_apply_ffa_loadout"):
 		network_manager.call("server_apply_ffa_loadout", peer_id)
 
 
@@ -371,6 +381,10 @@ func server_on_player_died(dead_peer_id: int, attacker_peer_id: int) -> void:
 		_check_ffa_kill_limit(s, attacker_peer_id, dead_peer_id)
 		return
 
+	if session_is_ctf(s):
+		s["pending_respawns"][dead_peer_id] = float(s["respawn_time"])
+		return
+
 	var dead_team := _team_of(dead_peer_id)
 
 	if _is_session_team_eliminated(s, dead_team):
@@ -465,6 +479,9 @@ func _team_of(peer_id: int) -> String:
 
 func session_is_ffa(s: Dictionary) -> bool:
 	return int(s["mode"]) == GameMode.FFA
+	
+func session_is_ctf(s: Dictionary) -> bool:
+	return int(s["mode"]) == GameMode.CTF
 
 
 # FFA always needs an end, so a non-positive round_time falls back to the default.

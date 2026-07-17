@@ -18,6 +18,7 @@ public partial class Flag : Node3D
 	[Export] public float carryHeightOffset = 1.2f;
 	[Export] public string flagTeam = "";
 	[Export] public float autoReturnSeconds = 20.0f;
+	[Export] public float pickupCooldownSeconds = 1.0f;
 
 
 	/*-----[ External Variables ]-------------------------------------------------------------------------------------*/
@@ -29,6 +30,7 @@ public partial class Flag : Node3D
 	public int carrierPeerId = 0;
 	public bool isDropped = false;
 	private float droppedElapsed = 0.0f;
+	private float pickupCooldownRemaining = 0.0f;
 	private bool ctfModeActive = true;
 	
 
@@ -36,6 +38,7 @@ public partial class Flag : Node3D
 	[Export] public NodePath pickupZonePath = "FlagPickupZone";
 	private FlagPickupZone pickupZone;
 	private Vector3 homePosition;
+	private Vector3 homeRotation;
 	private Node3D carrierNode;
 	private Node roundManager;
 
@@ -48,6 +51,7 @@ public partial class Flag : Node3D
 	public override void _Ready()
 	{
 		homePosition = GlobalPosition;
+		homeRotation = GlobalRotation;
 		pickupZone = GetNode<FlagPickupZone>(pickupZonePath);
 		pickupZone.Connect(FlagPickupZone.SignalName.FlagPickedUp, new Callable(this, MethodName.OnFlagPickedUp));
 	}
@@ -58,6 +62,8 @@ public partial class Flag : Node3D
 		
 		if (!ctfModeActive)
 			return;
+		
+		TickPickupCooldown((float)delta);
 		
 		if (isDropped)
 			TickAutoReturn((float)delta);
@@ -91,16 +97,10 @@ public partial class Flag : Node3D
 
 		ctfModeActive = isCtf;
 
-		if (!ctfModeActive)
-		{
-			Visible = false;
-			pickupZone.Monitoring = false;
-			return;
-		}
+		ctfModeActive = isCtf;
 
-		bool carried = IsCarried();
-		Visible = !carried;
-		pickupZone.Monitoring = !carried;
+		Visible = ctfModeActive;
+		pickupZone.Monitoring = ctfModeActive && ShouldMonitorPickup();
 	}
 	
 	private Node GetRoundManager()
@@ -110,6 +110,22 @@ public partial class Flag : Node3D
 
 		roundManager = GetTree().Root.FindChild("RoundManager", true, false);
 		return roundManager;
+	}
+	
+	private bool ShouldMonitorPickup()
+	{
+		return !IsCarried() && pickupCooldownRemaining <= 0.0f;
+	}
+	
+	private void TickPickupCooldown(float delta)
+	{
+		if (pickupCooldownRemaining <= 0.0f)
+			return;
+
+		pickupCooldownRemaining -= delta;
+
+		if (pickupCooldownRemaining <= 0.0f && ShouldMonitorPickup())
+			pickupZone.Monitoring = true;
 	}
 	
 	private void TickAutoReturn(float delta)
@@ -279,8 +295,9 @@ public partial class Flag : Node3D
         carrierPeerId = peerId;
         isDropped = false;
         carrierNode = FindPlayerByPeerId(peerId);
+        pickupCooldownRemaining = 0.0f;
         pickupZone.Monitoring = false;
-        Visible = false;
+        Visible = true;
     }
 
     [Rpc(MultiplayerApi.RpcMode.Authority, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, CallLocal = true)]
@@ -290,8 +307,9 @@ public partial class Flag : Node3D
         carrierNode = null;
         isDropped = true;
         droppedElapsed = 0.0f;
+        pickupCooldownRemaining = pickupCooldownSeconds;
         GlobalPosition = dropPosition;
-        pickupZone.Monitoring = true;
+        pickupZone.Monitoring = false;
         Visible = true;
     }
 
@@ -302,7 +320,9 @@ public partial class Flag : Node3D
         carrierNode = null;
         isDropped = false;
         droppedElapsed = 0.0f;
+        pickupCooldownRemaining = 0.0f;
         GlobalPosition = homePosition;
+        GlobalRotation = homeRotation;
         pickupZone.Monitoring = true;
         Visible = true;
     }
@@ -314,7 +334,9 @@ public partial class Flag : Node3D
         carrierNode = null;
         isDropped = false;
         droppedElapsed = 0.0f;
+        pickupCooldownRemaining = 0.0f;
         GlobalPosition = homePosition;
+        GlobalRotation = homeRotation;
         pickupZone.Monitoring = true;
         Visible = true;
 
