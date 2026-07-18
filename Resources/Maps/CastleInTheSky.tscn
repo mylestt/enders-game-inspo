@@ -85,6 +85,8 @@ light_color = Color(0.42270073, 0.025425997, 0, 1)
 [node name="OmniLight3D4" parent="CITS_Castle2" index="51" unique_id=492308488]
 light_color = Color(0.42270073, 0.025425997, 0, 1)
 
+[node name="Bevels" type="Node3D" parent="CITS_Castle2" unique_id=1659134162]
+
 [node name="SpawnsA" type="Node3D" parent="." unique_id=1820730938]
 transform = Transform3D(-5.732056e-15, 1, -4.371139e-08, -1.3113416e-07, -4.371139e-08, -1, -1, 0, 1.3113416e-07, -25.5, 26.808178, -10.483635)
 
