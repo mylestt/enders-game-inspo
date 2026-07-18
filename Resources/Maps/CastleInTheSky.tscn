@@ -3,11 +3,11 @@
 [ext_resource type="PackedScene" uid="uid://0jf5ak884hmg" path="res://scenes/spawn_point.tscn" id="1_k66gf"]
 [ext_resource type="PackedScene" uid="uid://dogwa1i6o25k1" path="res://Resources/Objects/cits_castle.tscn" id="1_lkmil"]
 [ext_resource type="PackedScene" uid="uid://bv863scax14op" path="res://Resources/Objects/flags.tscn" id="4_mmdha"]
-[ext_resource type="Shader" uid="uid://bd7pwahd6p47d" path="res://Resources/Maps/Blackhole.gdshader" id="4_wx5mg"]
+[ext_resource type="Shader" uid="uid://bd7pwahd6p47d" path="res://Resources/Materials/Shaders/Blackhole.gdshader" id="4_wx5mg"]
 [ext_resource type="Script" uid="uid://b2035ijkuruvj" path="res://Resources/Scripts/GravityWell.cs" id="5_xtbh1"]
 [ext_resource type="Script" uid="uid://cowgnckwku2cn" path="res://Resources/Scripts/KillZone.cs" id="6_enx61"]
 [ext_resource type="Script" uid="uid://cgbdjaqnwspe0" path="res://Resources/Scripts/BoundaryPushback.cs" id="6_fug0c"]
-[ext_resource type="Shader" uid="uid://cy4bdmc57fxal" path="res://Resources/Maps/BlackholeRim.gdshader" id="6_wx5mg"]
+[ext_resource type="Shader" uid="uid://cy4bdmc57fxal" path="res://Resources/Materials/Shaders/BlackholeRim.gdshader" id="6_wx5mg"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_k66gf"]
 sky_top_color = Color(0, 0, 0, 1)
@@ -141,13 +141,19 @@ omni_shadow_mode = 0
 [node name="CtfCapturePoint" parent="Flags" index="0" unique_id=1261550584]
 transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, -56.5, 150.136, -26.5)
 
-[node name="OmniLight3D" parent="Flags/CtfCapturePoint/CtfFlag" parent_id_path=PackedInt32Array(757648796, 1261550584, 882118888) index="4" unique_id=277124240]
+[node name="CtfFlag" parent="Flags/CtfCapturePoint" index="2" unique_id=882118888]
+flagTeam = "b"
+
+[node name="OmniLight3D" parent="Flags/CtfCapturePoint/CtfFlag" index="4" unique_id=277124240]
 light_color = Color(1, 0, 0, 1)
 
 [node name="CtfCapturePoint2" parent="Flags" index="1" unique_id=1964966274]
 transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, -16, -1.3639984, -26.5)
 
-[node name="OmniLight3D" parent="Flags/CtfCapturePoint2/CtfFlag" parent_id_path=PackedInt32Array(757648796, 1964966274, 882118888) index="4" unique_id=277124240]
+[node name="CtfFlag" parent="Flags/CtfCapturePoint2" index="2" unique_id=882118888]
+flagTeam = "a"
+
+[node name="OmniLight3D" parent="Flags/CtfCapturePoint2/CtfFlag" index="4" unique_id=277124240]
 light_color = Color(0.0333333, 0, 1, 1)
 
 [node name="LevelBounds" type="Area3D" parent="." unique_id=842712839]

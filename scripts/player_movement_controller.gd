@@ -89,7 +89,7 @@ enum MovementMode {
 # Edge traversal: a surface ahead in the walk direction takes over as the walked surface once
 # it's within stand range (concave seam), and forward-down rays carry the body over a convex
 # crest. Only REASONABLE seams are walkable: candidates angled further than max_edge_angle
-# from the current surface are ignored — sharp rims are a drop-off, steep walls a jam.
+# from the current surface are ignored — sharp rims are a drop-off, steep walls a jam.surface_walk_max_concave_angle_degrees
 @export var surface_walk_wrap_probe: bool = true
 @export var surface_walk_max_edge_angle_degrees: float = 70.0
 # Concave handover limit for the FEELER ray only (walking INTO a surface). Kept a bit
@@ -98,7 +98,7 @@ enum MovementMode {
 # a face ~90° off the one you stand on is a WALL — it blocks you like a wall instead of
 # rotating you onto it. Raise back toward 120 to restore walk-up-any-wall traversal;
 # lower toward max_edge_angle for stricter walls.
-@export var surface_walk_max_concave_angle_degrees: float = 80.0
+@export var surface_walk_max_concave_angle_degrees: float = 95.0
 # What happens when you WALK INTO a face too steep to climb (steeper than the concave limit
 # above). OFF (default): you stop dead against it and slide along its base, staying grounded
 # — a wall behaves like a wall. ON: you detach into zero-G instead. Either way the wall is
@@ -147,7 +147,7 @@ enum MovementMode {
 # Entry ALIGNMENT gate: C only accepts a surface whose normal is within
 # `entry_max_angle_degrees` of the body's own up — your feet must genuinely face it. Spawn
 # grounding (round start / respawn) is exempt and still snaps to the nearest surface.
-@export var surface_walk_entry_max_angle_degrees: float = 15.0
+@export var surface_walk_entry_max_angle_degrees: float = 20.0
 @export var surface_walk_lock_max_distance: float = 4.0          # metres: farthest you can lock from
 @export var surface_walk_lock_sweet_spot: float = 1.5            # metres: perfect-timing distance
 @export var surface_walk_lock_daze_max_strength: float = 0.85    # 0..1: worst-case look sluggishness
