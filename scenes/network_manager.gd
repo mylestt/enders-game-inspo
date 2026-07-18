@@ -1618,6 +1618,45 @@ func client_apply_body_slam_impulse(
 	if target != null and target.has_method("apply_network_body_slam_impulse"):
 		target.call("apply_network_body_slam_impulse", impulse, contact_position)
 
+func request_environmental_kill(peer_id: int, damage: float) -> void:
+	if multiplayer.multiplayer_peer == null:
+		var player = players_by_peer_id.get(peer_id)
+
+		if player != null and player.has_method("apply_weapon_damage"):
+			player.call("apply_weapon_damage", damage, 0)
+
+		return
+
+	if multiplayer.is_server():
+		server_process_environmental_kill(peer_id, damage)
+	else:
+		rpc_id(1, "server_request_environmental_kill", damage)
+
+
+@rpc("any_peer", "reliable")
+func server_request_environmental_kill(damage: float) -> void:
+	if not multiplayer.is_server():
+		return
+
+	var peer_id := multiplayer.get_remote_sender_id()
+	server_process_environmental_kill(peer_id, damage)
+
+
+func server_process_environmental_kill(peer_id: int, damage: float) -> void:
+	if not multiplayer.is_server():
+		return
+
+	if not players_by_peer_id.has(peer_id):
+		return
+
+	if damage <= 0.0:
+		return
+
+	apply_confirmed_damage(peer_id, 0, damage)
+
+	for member_peer_id in _lobby_client_peers_for(peer_id):
+		rpc_id(int(member_peer_id), "client_apply_weapon_damage", peer_id, 0, damage)
+
 
 func request_plasma_explosion_hit(
 	attacker_peer_id: int,
