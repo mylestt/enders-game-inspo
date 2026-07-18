@@ -7,7 +7,7 @@ _data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(0.60106385, 0.8539326), 0.0, 0.0
 point_count = 3
 
 [sub_resource type="Curve" id="Curve_damage_falloff"]
-_data = [Vector2(0, 1), 0.0, 0.0, 0, 1, Vector2(0.11170214, 1), 0.0, 0.0, 0, 0, Vector2(1, 0), -1.1257485, 0.0, 1, 0]
+_data = [Vector2(0, 1), 0.0, -0.64834785, 0, 1, Vector2(0.53723407, 0.6516854), -0.9681647, -0.9681647, 0, 0, Vector2(1, 0), -1.4082398, 0.0, 1, 0]
 point_count = 3
 
 [sub_resource type="Curve" id="Curve_airburst_falloff"]
@@ -24,13 +24,13 @@ colors = PackedColorArray(1, 0.96, 0.72, 1, 0.32, 0.82, 1, 1, 0.886433, 0.682105
 
 [node name="PlasmaProjectile" type="Node3D" unique_id=314346046]
 script = ExtResource("1_projectile")
-lifetime = 8.0
+lifetime = 20.0
 projectile_color = Color(0.9953677, 0.9305383, 0.8935923, 1)
 projectile_radius = 0.15000000000000002
 projectile_emission_energy = 65.5
 projectile_light_energy = 10.3
 projectile_light_range = 11.0
-explosion_radius = 10.0
+explosion_radius = 20.0
 explosion_duration = 0.52
 explosion_color = Color(0.9696792, 0.6335907, 0.3188606, 1)
 explosion_emission_energy = 15.0
@@ -44,9 +44,10 @@ impact_core_emission_energy = 35.3
 shockwave_color = Color(0.65850765, 0.8980313, 0.9999996, 1)
 shockwave_radius_multiplier = 1.28
 shockwave_emission_energy = 32.4
-screen_shake_radius_multiplier = 5.8999999999999995
+screen_shake_radius_multiplier = 7.199999999999999
 screen_shake_falloff_curve = SubResource("Curve_screen_shake_falloff")
 damage_falloff_curve = SubResource("Curve_damage_falloff")
+airburst_center_impulse = 19.0
 airburst_edge_impulse = 9.5
 airburst_falloff_curve = SubResource("Curve_airburst_falloff")
 particle_amount = 800

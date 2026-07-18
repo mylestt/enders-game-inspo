@@ -5,8 +5,10 @@
 
 [node name="PlasmaCannon" type="Node3D" unique_id=1878215640]
 script = ExtResource("1_pc")
-projectile_speed = 50.0
-rounds_per_second = 1.4
+projectile_speed = 75.0
+rounds_per_second = 2.26
+burst_count = 2
+burst_interval = 0.2
 weapon_weight = 1.6
 aim_origin_node_path = NodePath("Muzzle")
 recoil_enabled = false
