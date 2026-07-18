@@ -1,0 +1,36 @@
+[gd_scene format=3 uid="uid://bv863scax14op"]
+
+[ext_resource type="PackedScene" uid="uid://dv2q8ct0fdyoe" path="res://Resources/Objects/ctf_capture_point.tscn" id="1_5kefj"]
+[ext_resource type="Material" uid="uid://dkr58dr03qoar" path="res://Resources/Materials/MatBlue.tres" id="2_k036x"]
+[ext_resource type="Material" uid="uid://ca0uuhsuxts63" path="res://Resources/Materials/MatRed.tres" id="3_qcy7u"]
+
+[node name="Flags" type="Node3D" unique_id=757648796]
+
+[node name="CtfCapturePoint" parent="." unique_id=1261550584 instance=ExtResource("1_5kefj")]
+transform = Transform3D(1, 0, 0, 0, -1, -8.742278e-08, 0, 8.742278e-08, -1, 0, 67.863785, 0)
+flagPath = NodePath("../CtfCapturePoint2/CtfFlag")
+
+[node name="MeshInstance3D" parent="CtfCapturePoint" index="1" unique_id=1606494904]
+material_override = ExtResource("2_k036x")
+
+[node name="CtfFlag" parent="CtfCapturePoint" index="2" unique_id=882118888]
+gravity_scale = 0.0
+linear_damp = 50.0
+angular_damp = 50.0
+flagTeam = "a"
+
+[node name="CtfCapturePoint2" parent="." unique_id=1964966274 instance=ExtResource("1_5kefj")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -67.864, 0)
+flagPath = NodePath("../CtfCapturePoint/CtfFlag")
+
+[node name="MeshInstance3D" parent="CtfCapturePoint2" index="1" unique_id=1606494904]
+material_override = ExtResource("3_qcy7u")
+
+[node name="CtfFlag" parent="CtfCapturePoint2" index="2" unique_id=882118888]
+gravity_scale = 0.0
+linear_damp = 50.0
+angular_damp = 50.0
+flagTeam = "b"
+
+[editable path="CtfCapturePoint"]
+[editable path="CtfCapturePoint2"]

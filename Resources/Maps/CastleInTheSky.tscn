@@ -1,0 +1,197 @@
+[gd_scene format=3 uid="uid://bim628e205jid"]
+
+[ext_resource type="PackedScene" uid="uid://0jf5ak884hmg" path="res://scenes/spawn_point.tscn" id="1_k66gf"]
+[ext_resource type="PackedScene" uid="uid://dogwa1i6o25k1" path="res://Resources/Objects/cits_castle.tscn" id="1_lkmil"]
+[ext_resource type="PackedScene" uid="uid://bv863scax14op" path="res://Resources/Objects/flags.tscn" id="4_mmdha"]
+[ext_resource type="Shader" uid="uid://bd7pwahd6p47d" path="res://Resources/Maps/Blackhole.gdshader" id="4_wx5mg"]
+[ext_resource type="Script" uid="uid://b2035ijkuruvj" path="res://Resources/Scripts/GravityWell.cs" id="5_xtbh1"]
+[ext_resource type="Script" uid="uid://cowgnckwku2cn" path="res://Resources/Scripts/KillZone.cs" id="6_enx61"]
+[ext_resource type="Script" uid="uid://cgbdjaqnwspe0" path="res://Resources/Scripts/BoundaryPushback.cs" id="6_fug0c"]
+[ext_resource type="Shader" uid="uid://cy4bdmc57fxal" path="res://Resources/Maps/BlackholeRim.gdshader" id="6_wx5mg"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_k66gf"]
+sky_top_color = Color(0, 0, 0, 1)
+sky_horizon_color = Color(0, 0, 0, 1)
+ground_bottom_color = Color(0, 0, 0, 1)
+ground_horizon_color = Color(0, 0, 0, 1)
+
+[sub_resource type="Sky" id="Sky_t0wg1"]
+sky_material = SubResource("ProceduralSkyMaterial_k66gf")
+
+[sub_resource type="Environment" id="Environment_lkmil"]
+background_mode = 2
+sky = SubResource("Sky_t0wg1")
+glow_enabled = true
+glow_bloom = 0.2
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_enx61"]
+radius = 148.0
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_xtbh1"]
+radius = 57.75
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_stsjn"]
+radius = 14.5
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_ohdjg"]
+render_priority = 0
+shader = ExtResource("4_wx5mg")
+shader_parameter/glow_color = Color(0.99999994, 0.5437584, 0.26613075, 1)
+shader_parameter/glow_power = 4.6350001964125
+shader_parameter/glow_intensity = 5.0
+shader_parameter/swirl_speed = 0.42000001995
+
+[sub_resource type="SphereMesh" id="SphereMesh_wx5mg"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_fug0c"]
+render_priority = 0
+shader = ExtResource("6_wx5mg")
+shader_parameter/disk_color_hot = Color(1, 0.95, 0.7, 0)
+shader_parameter/disk_color_cool = Color(0.9, 0.25140002, 0.054, 0)
+shader_parameter/inner_radius = 0.330000015675
+shader_parameter/outer_radius = 0.82900003611762
+shader_parameter/swirl_strength = 11.270000535325
+shader_parameter/swirl_speed = 1.2
+shader_parameter/band_count = 3.4590001168025
+shader_parameter/brightness = 4.1650001978375
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_ohdjg"]
+
+[node name="CastleInTheSky" type="Node3D" unique_id=661804348]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1751705479]
+environment = SubResource("Environment_lkmil")
+
+[node name="CITS_Castle" parent="." unique_id=538640883 instance=ExtResource("1_lkmil")]
+
+[node name="CITS_Castle2" parent="." unique_id=1581840505 instance=ExtResource("1_lkmil")]
+transform = Transform3D(0.8660254, 0.5, -8.742278e-08, 0.5, -0.8660254, 0, 7.5710346e-08, 4.371139e-08, 1, -42.5, 159, 0)
+
+[node name="OmniLight3D2" parent="CITS_Castle2" index="46" unique_id=1758637931]
+light_color = Color(0.42270073, 0.025425997, 0, 1)
+
+[node name="OmniLight3D8" parent="CITS_Castle2" index="47" unique_id=320383416]
+light_color = Color(0.42270073, 0.025425997, 0, 1)
+
+[node name="OmniLight3D3" parent="CITS_Castle2" index="48" unique_id=1293909175]
+light_color = Color(0.42270073, 0.025425997, 0, 1)
+
+[node name="OmniLight3D9" parent="CITS_Castle2" index="49" unique_id=587347084]
+light_color = Color(0.42270073, 0.025425997, 0, 1)
+
+[node name="OmniLight3D10" parent="CITS_Castle2" index="50" unique_id=546795374]
+light_color = Color(0.42270073, 0.025425997, 0, 1)
+
+[node name="OmniLight3D4" parent="CITS_Castle2" index="51" unique_id=492308488]
+light_color = Color(0.42270073, 0.025425997, 0, 1)
+
+[node name="SpawnsA" type="Node3D" parent="." unique_id=1820730938]
+transform = Transform3D(-5.732056e-15, 1, -4.371139e-08, -1.3113416e-07, -4.371139e-08, -1, -1, 0, 1.3113416e-07, -25.5, 26.808178, -10.483635)
+
+[node name="SpawnA0" parent="SpawnsA" unique_id=1706213118 instance=ExtResource("1_k66gf")]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -4, 0, 0)
+
+[node name="SpawnA1" parent="SpawnsA" unique_id=1947802861 instance=ExtResource("1_k66gf")]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 4, 0, 0)
+
+[node name="SpawnA2" parent="SpawnsA" unique_id=816767035 instance=ExtResource("1_k66gf")]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, 0)
+
+[node name="SpawnA3" parent="SpawnsA" unique_id=425021132 instance=ExtResource("1_k66gf")]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -8, 0, 0)
+
+[node name="SpawnA4" parent="SpawnsA" unique_id=1256341588 instance=ExtResource("1_k66gf")]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 8, 0, 0)
+
+[node name="SpawnsB" type="Node3D" parent="." unique_id=47837009]
+transform = Transform3D(-3.7855173e-08, 0.8660254, 0.49999997, -2.1855694e-08, 0.49999997, -0.8660254, -1, -4.371139e-08, 1.9106855e-15, -51, 122.80818, -10.483635)
+
+[node name="SpawnB0" parent="SpawnsB" unique_id=1076447488 instance=ExtResource("1_k66gf")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4, 0, 0)
+team = 1
+
+[node name="SpawnB1" parent="SpawnsB" unique_id=716591621 instance=ExtResource("1_k66gf")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 0, 0)
+team = 1
+
+[node name="SpawnB2" parent="SpawnsB" unique_id=2110375489 instance=ExtResource("1_k66gf")]
+team = 1
+
+[node name="SpawnB3" parent="SpawnsB" unique_id=669644147 instance=ExtResource("1_k66gf")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8, 0, 0)
+team = 1
+
+[node name="SpawnB4" parent="SpawnsB" unique_id=873987794 instance=ExtResource("1_k66gf")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 0, 0)
+team = 1
+
+[node name="OmniLight3D" type="OmniLight3D" parent="." unique_id=1397984358]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16.5, 89, 0)
+light_color = Color(0.8610322, 0.48909158, 1, 1)
+light_energy = 10.0
+light_indirect_energy = 10.0
+light_size = 5555.0
+shadow_enabled = true
+shadow_blur = 0.001
+omni_range = 500.0
+omni_shadow_mode = 0
+
+[node name="Flags" parent="." unique_id=757648796 instance=ExtResource("4_mmdha")]
+
+[node name="CtfCapturePoint" parent="Flags" index="0" unique_id=1261550584]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, -56.5, 150.136, -26.5)
+
+[node name="OmniLight3D" parent="Flags/CtfCapturePoint/CtfFlag" parent_id_path=PackedInt32Array(757648796, 1261550584, 882118888) index="4" unique_id=277124240]
+light_color = Color(1, 0, 0, 1)
+
+[node name="CtfCapturePoint2" parent="Flags" index="1" unique_id=1964966274]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, -16, -1.3639984, -26.5)
+
+[node name="OmniLight3D" parent="Flags/CtfCapturePoint2/CtfFlag" parent_id_path=PackedInt32Array(757648796, 1964966274, 882118888) index="4" unique_id=277124240]
+light_color = Color(0.0333333, 0, 1, 1)
+
+[node name="LevelBounds" type="Area3D" parent="." unique_id=842712839]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 88.5, 0)
+collision_mask = 257
+script = ExtResource("6_fug0c")
+maxPushSpeed = 99.0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="LevelBounds" unique_id=2038984225]
+shape = SubResource("SphereShape3D_enx61")
+
+[node name="GravityWell" type="Area3D" parent="." unique_id=1122791217]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 88.5, 0)
+collision_mask = 257
+script = ExtResource("5_xtbh1")
+gravityStrength = 10000.0
+maxPullSpeed = 40000.0
+minFalloffDistance = 1.0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="GravityWell" unique_id=2042946385]
+shape = SubResource("SphereShape3D_xtbh1")
+
+[node name="KillOrb" type="Area3D" parent="." unique_id=1046697514]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 88.5, 0)
+collision_mask = 257
+script = ExtResource("6_enx61")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="KillOrb" unique_id=1940272748]
+shape = SubResource("SphereShape3D_stsjn")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=667475508]
+transform = Transform3D(8.28221, -30.909626, 0, 30.909626, 8.28221, 0, 0, 0, 32, 15.5, 88.5, 0)
+material_override = SubResource("ShaderMaterial_ohdjg")
+mesh = SubResource("SphereMesh_wx5mg")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="MeshInstance3D" unique_id=518718700]
+transform = Transform3D(-0.08382685, 0.7393631, -0.435, 0.24671759, 0.3052914, 1.0434422, 1.1303556, -0.011803567, -0.26000702, 0, 0, 0)
+material_override = SubResource("ShaderMaterial_fug0c")
+transparency = 1.0
+mesh = SubResource("PlaneMesh_ohdjg")
+
+[editable path="CITS_Castle2"]
+[editable path="Flags"]
+[editable path="Flags/CtfCapturePoint"]
+[editable path="Flags/CtfCapturePoint/CtfFlag"]
+[editable path="Flags/CtfCapturePoint2"]
+[editable path="Flags/CtfCapturePoint2/CtfFlag"]

@@ -1,0 +1,452 @@
+[gd_scene format=3 uid="uid://dogwa1i6o25k1"]
+
+[node name="CITS_Castle" type="CSGCombiner3D" unique_id=538640883]
+use_collision = true
+collision_mask = 769
+
+[node name="Passthrough" type="CSGBox3D" parent="." unique_id=429252891]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 8.5, 0)
+size = Vector3(13, 18, 49)
+
+[node name="Ally" type="CSGBox3D" parent="." unique_id=741863669]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 9, 0)
+operation = 2
+size = Vector3(11, 17, 47)
+
+[node name="CSGBox3D21" type="CSGBox3D" parent="." unique_id=498987237]
+transform = Transform3D(-4.371139e-08, 0, 1, 0, 1, 0, -1, 0, -4.371139e-08, -26.25, 1.75, 21.25)
+size = Vector3(11.5, 27.5, 21.5)
+
+[node name="Tower" type="CSGCombiner3D" parent="." unique_id=1418614028]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -11.5, 0, 24)
+
+[node name="Tower" type="CSGCylinder3D" parent="Tower" unique_id=1413564460]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 9.375, 0)
+radius = 5.5
+height = 19.75
+
+[node name="Tower-" type="CSGCylinder3D" parent="Tower" unique_id=679439075]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 9.8125, 0)
+operation = 2
+radius = 4.5
+height = 18.875
+
+[node name="TowerTop" type="CSGCylinder3D" parent="Tower" unique_id=1066326468]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 21.546875, 0)
+radius = 6.5
+height = 5.09375
+
+[node name="TowerTop-" type="CSGCylinder3D" parent="Tower" unique_id=1894806042]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 22.207031, 0)
+operation = 2
+radius = 5.5
+height = 3.7734375
+
+[node name="CSGBox3D" type="CSGBox3D" parent="Tower" unique_id=786952192]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5, 23.050001, 0)
+operation = 2
+size = Vector3(15, 4, 2)
+
+[node name="CSGBox3D2" type="CSGBox3D" parent="Tower" unique_id=796113544]
+transform = Transform3D(-4.371139e-08, 0, 1, 0, 1, 0, -1, 0, -4.371139e-08, 0, 23.050001, 0)
+operation = 2
+size = Vector3(15, 4, 2)
+
+[node name="CSGBox3D4" type="CSGBox3D" parent="Tower" unique_id=1934836891]
+transform = Transform3D(0.7071067, 0, 0.7071068, 0, 1, 0, -0.7071068, 0, 0.7071067, 0, 23.050001, 0)
+operation = 2
+size = Vector3(15, 4, 2)
+
+[node name="CSGBox3D3" type="CSGBox3D" parent="Tower" unique_id=1666974989]
+transform = Transform3D(-0.7071068, 0, 0.7071067, 0, 1, 0, -0.7071067, 0, -0.7071068, 0, 23.050001, 0)
+operation = 2
+size = Vector3(15, 4, 2)
+
+[node name="CSGPolygon3D2" type="CSGPolygon3D" parent="Tower" unique_id=1185074465]
+transform = Transform3D(0.3, 0, 0, 0, 0.39999998, 0, 0, 0, 2.89, 0, 12.1, 6.3500004)
+operation = 2
+polygon = PackedVector2Array(-4.5, -1, -4.5, 9, -3.5, 11, -1, 12, 1, 12, 3.5, 11, 4.5, 9, 4.5, -1)
+
+[node name="Tower2" type="CSGCombiner3D" parent="." unique_id=2079239372]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 12, 0, 24)
+
+[node name="Tower" type="CSGCylinder3D" parent="Tower2" unique_id=1401644438]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 9.375, 0)
+radius = 5.5
+height = 19.75
+
+[node name="Tower-" type="CSGCylinder3D" parent="Tower2" unique_id=1669010833]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 9.8125, 0)
+operation = 2
+radius = 4.5
+height = 18.875
+
+[node name="TowerTop" type="CSGCylinder3D" parent="Tower2" unique_id=1685271414]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 21.546875, 0)
+radius = 6.5
+height = 5.09375
+
+[node name="TowerTop-" type="CSGCylinder3D" parent="Tower2" unique_id=1956799883]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 22.207031, 0)
+operation = 2
+radius = 5.5
+height = 3.7734375
+
+[node name="CSGBox3D" type="CSGBox3D" parent="Tower2" unique_id=713369598]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5, 23.050001, 0)
+operation = 2
+size = Vector3(15, 4, 2)
+
+[node name="CSGBox3D2" type="CSGBox3D" parent="Tower2" unique_id=1744242004]
+transform = Transform3D(-4.371139e-08, 0, 1, 0, 1, 0, -1, 0, -4.371139e-08, 0, 23.050001, 0)
+operation = 2
+size = Vector3(15, 4, 2)
+
+[node name="CSGBox3D4" type="CSGBox3D" parent="Tower2" unique_id=1300019119]
+transform = Transform3D(0.7071067, 0, 0.7071068, 0, 1, 0, -0.7071068, 0, 0.7071067, 0, 23.050001, 0)
+operation = 2
+size = Vector3(15, 4, 2)
+
+[node name="CSGBox3D3" type="CSGBox3D" parent="Tower2" unique_id=302569403]
+transform = Transform3D(-0.7071068, 0, 0.7071067, 0, 1, 0, -0.7071067, 0, -0.7071068, 0, 23.050001, 0)
+operation = 2
+size = Vector3(15, 4, 2)
+
+[node name="CSGPolygon3D2" type="CSGPolygon3D" parent="Tower2" unique_id=1235262155]
+transform = Transform3D(0.3, 0, 0, 0, 0.39999998, 0, 0, 0, 2.89, 0, 12.1, 6.3500004)
+operation = 2
+polygon = PackedVector2Array(-4.5, -1, -4.5, 9, -3.5, 11, -1, 12, 1, 12, 3.5, 11, 4.5, 9, 4.5, -1)
+
+[node name="Tower3" type="CSGCombiner3D" parent="." unique_id=523221377]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 12, 0, -23.5)
+
+[node name="Tower" type="CSGCylinder3D" parent="Tower3" unique_id=1977718940]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 18.1875, 0)
+radius = 5.5
+height = 37.375
+
+[node name="Tower-" type="CSGCylinder3D" parent="Tower3" unique_id=1571901206]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 18.859375, 0)
+operation = 2
+radius = 4.5
+height = 36.96875
+
+[node name="TowerTop" type="CSGCylinder3D" parent="Tower3" unique_id=1375211302]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 39.046875, 0)
+radius = 6.5
+height = 5.09375
+
+[node name="TowerTop-" type="CSGCylinder3D" parent="Tower3" unique_id=900720467]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 39.70703, 0)
+operation = 2
+radius = 5.5
+height = 3.7734375
+
+[node name="CSGBox3D" type="CSGBox3D" parent="Tower3" unique_id=1165000660]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5, 40.050003, 0)
+operation = 2
+size = Vector3(15, 4, 2)
+
+[node name="CSGBox3D2" type="CSGBox3D" parent="Tower3" unique_id=1377405825]
+transform = Transform3D(-4.371139e-08, 0, 1, 0, 1, 0, -1, 0, -4.371139e-08, 0, 40.050003, 0)
+operation = 2
+size = Vector3(15, 4, 2)
+
+[node name="CSGBox3D4" type="CSGBox3D" parent="Tower3" unique_id=2124369126]
+transform = Transform3D(0.7071067, 0, 0.7071068, 0, 1, 0, -0.7071068, 0, 0.7071067, 0, 40.050003, 0)
+operation = 2
+size = Vector3(15, 4, 2)
+
+[node name="CSGBox3D3" type="CSGBox3D" parent="Tower3" unique_id=581705763]
+transform = Transform3D(-0.7071068, 0, 0.7071067, 0, 1, 0, -0.7071067, 0, -0.7071068, 0, 40.050003, 0)
+operation = 2
+size = Vector3(15, 4, 2)
+
+[node name="CSGPolygon3D2" type="CSGPolygon3D" parent="Tower3" unique_id=2048812239]
+transform = Transform3D(0.3, 0, 0, 0, 0.39999998, 0, 0, 0, 2.89, 0, 29.1, 6.3500004)
+operation = 2
+polygon = PackedVector2Array(-4.5, -1, -4.5, 9, -3.5, 11, -1, 12, 1, 12, 3.5, 11, 4.5, 9, 4.5, -1)
+
+[node name="CSGPolygon3D" type="CSGPolygon3D" parent="." unique_id=1140299557]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 24.5)
+operation = 2
+polygon = PackedVector2Array(-4.5, -1, -4.5, 9, -3.5, 11, -1, 12, 1, 12, 3.5, 11, 4.5, 9, 4.5, -1)
+
+[node name="CSGPolygon3D2" type="CSGPolygon3D" parent="." unique_id=618094869]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, -23.5)
+operation = 2
+polygon = PackedVector2Array(-4.5, -1, -4.5, 9, -3.5, 11, -1, 12, 1, 12, 3.5, 11, 4.5, 9, 4.5, -1)
+
+[node name="CSGBox3D5" type="CSGBox3D" parent="." unique_id=476663965]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 19, 24)
+size = Vector3(13, 3, 5)
+
+[node name="CSGBox3D19" type="CSGBox3D" parent="." unique_id=167054855]
+transform = Transform3D(-4.371139e-08, 0, 1, 0, 1, 0, -1, 0, -4.371139e-08, 6.9999995, 19, 0)
+size = Vector3(44, 3, 1)
+
+[node name="CSGBox3D20" type="CSGBox3D" parent="." unique_id=281994037]
+transform = Transform3D(-4.371139e-08, 0, 1, 0, 1, 0, -1, 0, -4.371139e-08, -17, 15.25, -10.25)
+size = Vector3(34.5, 31.5, 21)
+
+[node name="CSGBox3D22" type="CSGBox3D" parent="." unique_id=1886477734]
+transform = Transform3D(-4.371139e-08, 0, 1, 0, 1, 0, -1, 0, -4.371139e-08, -17, 15.25, -10.25)
+operation = 2
+size = Vector3(32.5, 29.5, 19)
+
+[node name="CSGBox3D6" type="CSGBox3D" parent="." unique_id=749945650]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 22, 24)
+operation = 2
+size = Vector3(20, 7, 3)
+
+[node name="CSGBox3D10" type="CSGBox3D" parent="." unique_id=143027577]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -11, 22, 24)
+operation = 2
+size = Vector3(5, 7, 5)
+
+[node name="CSGBox3D11" type="CSGBox3D" parent="." unique_id=454616608]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 12, 22, 24)
+operation = 2
+size = Vector3(5, 7, 5)
+
+[node name="CSGBox3D7" type="CSGBox3D" parent="." unique_id=133072534]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 19.5, 24)
+operation = 2
+size = Vector3(2, 2, 5)
+
+[node name="CSGBox3D8" type="CSGBox3D" parent="." unique_id=1599713228]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4, 19.5, 24)
+operation = 2
+size = Vector3(2, 2, 5)
+
+[node name="CSGBox3D9" type="CSGBox3D" parent="." unique_id=2009077776]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 19.5, 24)
+operation = 2
+size = Vector3(2, 2, 5)
+
+[node name="CSGBox3D12" type="CSGBox3D" parent="." unique_id=2140247785]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.75, 19, -23.5)
+size = Vector3(14.5, 3, 5)
+
+[node name="CSGBox3D15" type="CSGBox3D" parent="." unique_id=1319952215]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 12, 37, -23.5)
+operation = 2
+size = Vector3(5, 7, 5)
+
+[node name="CSGBox3D16" type="CSGBox3D" parent="." unique_id=238198062]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 19.5, -23.5)
+operation = 2
+size = Vector3(2, 2, 5)
+
+[node name="CSGBox3D17" type="CSGBox3D" parent="." unique_id=267750851]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4, 19.5, -23.5)
+operation = 2
+size = Vector3(2, 2, 5)
+
+[node name="CSGBox3D18" type="CSGBox3D" parent="." unique_id=1296556636]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 19.5, -23.5)
+operation = 2
+size = Vector3(2, 2, 5)
+
+[node name="CSGPolygon3D3" type="CSGPolygon3D" parent="." unique_id=984433953]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, -0.5, 0.5, 34.5)
+polygon = PackedVector2Array(-36.5, 19, 18, 19, 18, 10, 21.5, -10, 16, -19.5, 5, -18, -15, -19.5, -36.5, -6.5)
+depth = 25.0
+
+[node name="CSGPolygon3D4" type="CSGPolygon3D" parent="." unique_id=812011361]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0.5, 0.5, -8)
+polygon = PackedVector2Array(-33, 26, 20, 26, 28, 12.5, 19, -8.5, 17, -23.5, 6.5, -23.5, -18.5, -23.5, -37.5, -23.5)
+depth = 25.0
+
+[node name="CSGPolygon3D5" type="CSGPolygon3D" parent="." unique_id=1467587182]
+transform = Transform3D(-4.371139e-08, -4.371139e-08, 1, -1, 1.9106855e-15, -4.371139e-08, 0, -1, -4.371139e-08, 41, 0.5, 1)
+operation = 2
+polygon = PackedVector2Array(6, 13, 14.5, 14.5, 20.5, 9, 20.5, -3.5, 17, -9.5, 6, -10.5, 2, -5, 2, 9)
+depth = 100.0
+
+[node name="CSGPolygon3D6" type="CSGPolygon3D" parent="." unique_id=474034109]
+transform = Transform3D(-4.371139e-08, -4.371139e-08, 1, -1, 1.9106855e-15, -4.371139e-08, 0, -1, -4.371139e-08, 41, 1.5, -1)
+polygon = PackedVector2Array(1, 40, 10.5, 40, 26, 40, 26, 0, 26, -42, 1, -42, 1, -29.5, 6.5, -19, 18, -11.5, 21.5, -5.5, 21.5, 7, 15.5, 12.5, 7.5, 18, 1, 28)
+depth = 100.0
+
+[node name="CSGPolygon3D7" type="CSGPolygon3D" parent="." unique_id=1808266078]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -64.5, -18.5, 10.5)
+polygon = PackedVector2Array(5.5, -1.5, -13.576958, -0.14055252, -25.5, 14.5, -33, 47.5, -37, 76.5, -41.5, 76, -38, 47, -30.5, 14.5, -16, -4, 5.5, -6)
+depth = 24.0
+
+[node name="CSGPolygon3D8" type="CSGPolygon3D" parent="." unique_id=2052215362]
+transform = Transform3D(-4.3711385e-08, 0, 2.6, 0, 1, 0, -0.99999994, 0, -1.13649605e-07, -5.5, 1.5, -1)
+operation = 2
+polygon = PackedVector2Array(-4.5, -1, -4.5, 9, -3.5, 11, -1, 12, 1, 12, 3.5, 11, 4.5, 9, 4.5, -1)
+
+[node name="CSGBox3D14" type="CSGBox3D" parent="." unique_id=1675638322]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -17, -1.25, -19.75)
+operation = 2
+size = Vector3(19, 14.5, 13.5)
+
+[node name="CSGBox3D23" type="CSGBox3D" parent="." unique_id=1426098368]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -17, -5, -16)
+operation = 2
+size = Vector3(19, 7, 21)
+
+[node name="CSGBox3D24" type="CSGBox3D" parent="." unique_id=1147021459]
+transform = Transform3D(1, 0, 0, 0, 0.8660254, -0.5, 0, 0.5, 0.8660254, -17, -8.75, -12.25)
+operation = 2
+size = Vector3(19, 1.5, 5.5)
+
+[node name="CSGBox3D25" type="CSGBox3D" parent="." unique_id=1506158870]
+transform = Transform3D(0.70710677, 0, -0.70710677, 0, 1, 0, 0.70710677, 0, 0.70710677, -25.749998, -4.75, -10.482232)
+operation = 2
+size = Vector3(4, 6.5, 11)
+
+[node name="CSGBox3D26" type="CSGBox3D" parent="." unique_id=1219367132]
+transform = Transform3D(0.7071067, 0, 0.7071068, 0, 1, 0, -0.7071068, 0, 0.7071067, -7.012561, -4.75, -9.598349)
+operation = 2
+size = Vector3(4, 6.5, 13.5)
+
+[node name="CSGCombiner3D3" type="CSGCombiner3D" parent="." unique_id=1578409079]
+
+[node name="CSGSphere3D3" type="CSGSphere3D" parent="CSGCombiner3D3" unique_id=2012395136]
+transform = Transform3D(0.79999995, 1.1920929e-07, 0, 5.9604645e-08, 2.7000003, 0, 0, 0, 1.5999999, 86, 105, -0.5)
+radius = 5.475
+
+[node name="CSGSphere3D6" type="CSGSphere3D" parent="CSGCombiner3D3" unique_id=589496733]
+transform = Transform3D(0.5656854, 1.9091884, 0, -0.56568533, 1.9091884, 0, 0, 0, 1.5999998, 81.5, 13.5, 63)
+radius = 5.475
+
+[node name="CSGSphere3D7" type="CSGSphere3D" parent="CSGCombiner3D3" unique_id=1586384026]
+transform = Transform3D(-0.20705524, 2.6079998, 0, -0.7727406, -0.6988117, 0, 0, 0, 1.5999997, -8, 36, 56)
+radius = 5.475
+
+[node name="CSGSphere3D9" type="CSGSphere3D" parent="CSGCombiner3D3" unique_id=636414586]
+transform = Transform3D(0.20705521, 2.6079998, 0, -0.77274054, 0.6988111, 0, 0, 0, 1.5999999, -26, 36, -111.5)
+radius = 5.475
+
+[node name="CSGSphere3D8" type="CSGSphere3D" parent="CSGCombiner3D3" unique_id=300742450]
+transform = Transform3D(-1.0536712e-08, 1.9091883, -1.1313708, -0.7727405, 0.494134, 0.2928203, 0.20705518, 1.8441342, 1.0928203, -8, 104, 103.5)
+radius = 5.475
+
+[node name="CSGSphere3D5" type="CSGSphere3D" parent="CSGCombiner3D3" unique_id=1439042028]
+transform = Transform3D(0.20705529, 2.6079998, 0, -0.7727406, 0.6988115, 0, 0, 0, 1.5999998, 73, 55, -0.5)
+radius = 5.475
+
+[node name="CSGPolygon3D9" type="CSGPolygon3D" parent="." unique_id=1760066949]
+transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, -26.5, 18, -23)
+polygon = PackedVector2Array(-3.5, 0.5, 1.5, 0.5, 3, -0.5, 3, -2.5, 1.5, -3.5, -3.5, -3.5)
+depth = 19.0
+
+[node name="CSGPolygon3D10" type="CSGPolygon3D" parent="." unique_id=1994934046]
+transform = Transform3D(-4.371139e-08, 0, -1, 8.742278e-08, -1, -3.821371e-15, -1, -8.742278e-08, 4.371139e-08, -26.5, -3, -11.5)
+polygon = PackedVector2Array(-3.5, -1.5, 0.5, -1.5, 1.5, -1.5, 2, -2.5, 1.5, -3.5, -3.5, -3.5)
+depth = 19.0
+
+[node name="CSGPolygon3D11" type="CSGPolygon3D" parent="." unique_id=1418445559]
+transform = Transform3D(1, 8.742278e-08, 0, 8.742278e-08, -1, -3.821371e-15, 0, 3.8213714e-15, -1, -28, -2, -9)
+polygon = PackedVector2Array(1, -2.5, 3.5, -2.5, 2.5, -3, 2, -3.5, 1.5, -4.5, 1, -4.5)
+depth = 19.0
+
+[node name="CSGPolygon3D12" type="CSGPolygon3D" parent="." unique_id=1548236]
+transform = Transform3D(-4.371139e-08, 4.2351647e-22, -1, 8.742278e-08, -1, -3.821371e-15, -1, -8.742278e-08, 4.371139e-08, -26.5, -2, 7.5)
+polygon = PackedVector2Array(1, -2.5, 3.5, -2.5, 2.5, -3, 2, -3.5, 1.5, -4.5, 1, -4.5)
+depth = 19.0
+
+[node name="CSGPolygon3D15" type="CSGPolygon3D" parent="." unique_id=1768274471]
+transform = Transform3D(-4.371139e-08, 4.2351647e-22, -1, 1, 1.3113416e-07, -4.371139e-08, 1.3113416e-07, -1, -5.7320566e-15, -26.5, -10, -29)
+polygon = PackedVector2Array(1, -2.5, 3.5, -2.5, 2.5, -3, 2, -3.5, 1.5, -4.5, 1, -4.5)
+depth = 19.0
+
+[node name="CSGPolygon3D17" type="CSGPolygon3D" parent="." unique_id=355148325]
+transform = Transform3D(-4.371139e-08, 4.2351647e-22, -1, 1, 1.3113416e-07, -4.371139e-08, 1.3113416e-07, -1, -5.7320566e-15, -26.5, 17, -29.5)
+polygon = PackedVector2Array(1, -2.5, 3.5, -2.5, 2.5, -3, 2, -3.5, 1.5, -4.5, 1, -4.5)
+depth = 19.0
+
+[node name="CSGPolygon3D16" type="CSGPolygon3D" parent="." unique_id=1819026742]
+transform = Transform3D(-4.371139e-08, 4.2351647e-22, -1, 7.1054274e-15, 1, 2.1175824e-22, 1, -7.1054274e-15, -4.371139e-08, -26.5, 17, -28)
+polygon = PackedVector2Array(1, -2.5, 3.5, -2.5, 2.5, -3, 2, -3.5, 1.5, -4.5, 1, -4.5)
+depth = 19.0
+
+[node name="CSGPolygon3D13" type="CSGPolygon3D" parent="." unique_id=1509715810]
+transform = Transform3D(1, 4.371139e-08, -4.371139e-08, -4.3711385e-08, -2.9802322e-08, -1, -4.371139e-08, 1, -2.9802326e-08, -28, -0.5, 8.5)
+polygon = PackedVector2Array(1, -2.5, 3.5, -2.5, 2.5, -3, 2, -3.5, 1.5, -4.5, 1, -4.5)
+depth = 31.0
+
+[node name="CSGPolygon3D14" type="CSGPolygon3D" parent="." unique_id=1168407778]
+transform = Transform3D(0, -1, 2.980233e-08, -4.3711385e-08, -2.9802322e-08, -1, 1, 0, -4.371139e-08, -29, -8.5, -28)
+polygon = PackedVector2Array(1, -2.5, 3.5, -2.5, 2.5, -3, 2, -3.5, 1.5, -4.5, 1, -4.5)
+depth = 39.0
+
+[node name="CSGPolygon3D18" type="CSGPolygon3D" parent="." unique_id=1717552645]
+transform = Transform3D(-1, 4.371139e-08, 4.371139e-08, -4.3711385e-08, -2.9802322e-08, -1, -4.371139e-08, -1, 2.9802333e-08, -6, -8.5, -29)
+polygon = PackedVector2Array(1, -2.5, 3.5, -2.5, 2.5, -3, 2, -3.5, 1.5, -4.5, 1, -4.5)
+depth = 39.0
+
+[node name="CSGBox3D13" type="CSGBox3D" parent="." unique_id=1660046810]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 22, -23.5)
+operation = 2
+size = Vector3(20, 7, 3)
+
+[node name="OmniLight3D2" type="OmniLight3D" parent="." unique_id=1758637931]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 7.5, 0)
+light_color = Color(0, 0.22726631, 0.3766342, 1)
+light_energy = 6.0
+light_indirect_energy = 10.0
+light_size = 5555.0
+shadow_enabled = true
+shadow_blur = 0.001
+omni_range = 50.0
+omni_shadow_mode = 0
+
+[node name="OmniLight3D8" type="OmniLight3D" parent="." unique_id=320383416]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16.5, 5, -8.5)
+light_color = Color(0, 0.22726631, 0.3766342, 1)
+light_energy = 6.0
+light_indirect_energy = 10.0
+light_size = 5555.0
+shadow_enabled = true
+shadow_blur = 0.001
+omni_range = 50.0
+omni_shadow_mode = 0
+
+[node name="OmniLight3D3" type="OmniLight3D" parent="." unique_id=1293909175]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 7.5, 33.5)
+light_color = Color(0, 0.22726631, 0.3766342, 1)
+light_energy = 6.0
+light_indirect_energy = 10.0
+light_size = 5555.0
+shadow_enabled = true
+shadow_blur = 0.001
+omni_range = 50.0
+omni_shadow_mode = 0
+
+[node name="OmniLight3D9" type="OmniLight3D" parent="." unique_id=587347084]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4.5, -9.5, -2.5)
+light_color = Color(0, 0.22726631, 0.3766342, 1)
+light_energy = 6.0
+light_indirect_energy = 10.0
+light_size = 5555.0
+shadow_enabled = true
+shadow_blur = 0.001
+omni_range = 50.0
+omni_shadow_mode = 0
+
+[node name="OmniLight3D10" type="OmniLight3D" parent="." unique_id=546795374]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -51.5, -9.5, -2.5)
+light_color = Color(0, 0.22726631, 0.3766342, 1)
+light_energy = 6.0
+light_indirect_energy = 10.0
+light_size = 5555.0
+shadow_enabled = true
+shadow_blur = 0.001
+omni_range = 50.0
+omni_shadow_mode = 0
+
+[node name="OmniLight3D4" type="OmniLight3D" parent="." unique_id=492308488]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 7.5, -37)
+light_color = Color(0, 0.22726631, 0.3766342, 1)
+light_energy = 6.0
+light_indirect_energy = 10.0
+light_size = 5555.0
+shadow_enabled = true
+shadow_blur = 0.001
+omni_range = 50.0
+omni_shadow_mode = 0

@@ -5,6 +5,7 @@
 [ext_resource type="PackedScene" uid="uid://d2aim5gb4yj2v" path="res://scenes/sphere.tscn" id="3_no633"]
 [ext_resource type="PackedScene" uid="uid://f1tmtvxnumc2" path="res://capture_the_flag.tscn" id="4_hihqh"]
 [ext_resource type="Script" uid="uid://clyynmoa5bfjy" path="res://scripts/map_registry.gd" id="4_p6ko1"]
+[ext_resource type="PackedScene" uid="uid://bim628e205jid" path="res://Resources/Maps/CastleInTheSky.tscn" id="5_no633"]
 
 [sub_resource type="Resource" id="Resource_tbgnw"]
 script = ExtResource("1_vo68f")
@@ -25,6 +26,13 @@ id = "Cuboid"
 display_name = "RingArena"
 metadata/_custom_type_script = "uid://dlr1n2134utx1"
 
+[sub_resource type="Resource" id="Resource_p6ko1"]
+script = ExtResource("1_vo68f")
+scene = ExtResource("5_no633")
+id = "sky_castle"
+display_name = "Sky Castle"
+metadata/_custom_type_script = "uid://dlr1n2134utx1"
+
 [resource]
 script = ExtResource("4_p6ko1")
-maps = Array[ExtResource("1_vo68f")]([SubResource("Resource_tbgnw"), SubResource("Resource_ccjqi"), SubResource("Resource_no633")])
+maps = Array[ExtResource("1_vo68f")]([SubResource("Resource_tbgnw"), SubResource("Resource_ccjqi"), SubResource("Resource_no633"), SubResource("Resource_p6ko1")])
