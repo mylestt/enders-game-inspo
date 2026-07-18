@@ -15,6 +15,7 @@ var center_label: Label
 var current_state: int = 0
 var current_timer: float = 0.0
 var is_ffa_mode: bool = false
+var is_ctf_mode: bool = false
 
 
 func _ready() -> void:
@@ -27,6 +28,7 @@ func _ready() -> void:
 
 	round_manager = get_node_or_null(round_manager_path)
 	is_ffa_mode = GameLaunch.game_mode_id == "ffa"
+	is_ctf_mode = GameLaunch.game_mode_id == "ctf"
 	_build_ui()
 	_apply_mode()
 
@@ -99,6 +101,7 @@ func _process(delta: float) -> void:
 
 func _on_game_mode_changed(mode_id: String) -> void:
 	is_ffa_mode = mode_id == "ffa"
+	is_ctf_mode = mode_id == "ctf"
 	_apply_mode()
 
 
@@ -137,11 +140,17 @@ func _update_center() -> void:
 	if center_label == null:
 		return
 
-	var active_label := "FREE FOR ALL" if is_ffa_mode else "ROUND ACTIVE"
+	var active_label := "ROUND ACTIVE"
+
+	if is_ffa_mode:
+		active_label = "FREE FOR ALL"
+	elif is_ctf_mode:
+		active_label = "CAPTURE THE FLAG"
 
 	match current_state:
 		RoundManager.State.COUNTDOWN:
-			var verb := "Match" if is_ffa_mode else "Round"
+			# FFA and CTF are one continuous match, not a series of rounds.
+			var verb := "Match" if (is_ffa_mode or is_ctf_mode) else "Round"
 			center_label.text = verb + " starts in " + str(ceili(current_timer))
 		RoundManager.State.ACTIVE:
 			if current_timer > 0.0:

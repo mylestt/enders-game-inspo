@@ -33,8 +33,8 @@ enum GameMode {
 	CTF,
 }
 
-# FFA falls back to this many seconds when no positive round_time is configured, so a
-# free-for-all always has an end.
+# FFA and CTF fall back to this many seconds when no positive round_time is configured, so
+# a timed mode always has an end (both run one continuous match with auto-respawns).
 const FFA_DEFAULT_TIME_LIMIT := 300.0
 # Implicit session covering ALL players on servers that don't run the lobby system
 # (direct-connect/testing setups). Lobby servers never create it.
@@ -175,6 +175,8 @@ func advance_session(s: Dictionary, delta: float) -> void:
 				if float(s["timer"]) <= 0.0:
 					if session_is_ffa(s):
 						session_end_match_ffa(s)
+					elif session_is_ctf(s):
+						session_end_match_ctf(s)   # timed match: most captures wins
 					else:
 						session_end_round_team(s, "")   # "" = timed out, no winner
 
@@ -299,6 +301,13 @@ func session_end_match_ffa(s: Dictionary) -> void:
 	session_rpc(s, "client_match_ended", [result])
 	match_ended.emit(result)
 	set_session_state(s, State.MATCH_END)
+
+
+# Ends a CTF match: the team with the most flag captures wins (equal captures → draw).
+# CTF has no rounds — a whole match is one continuous ACTIVE phase with auto-respawns, so the
+# clock is its natural end (an early points_to_win capture can still finish it sooner).
+func session_end_match_ctf(s: Dictionary) -> void:
+	session_end_match_team(s, session_leading_team(s))
 
 
 # Ends a team match on the given winning team ("" = draw).
@@ -484,12 +493,12 @@ func session_is_ctf(s: Dictionary) -> bool:
 	return int(s["mode"]) == GameMode.CTF
 
 
-# FFA always needs an end, so a non-positive round_time falls back to the default.
+# FFA and CTF always need an end, so a non-positive round_time falls back to the default.
 # Team mode keeps its "0 = unlimited" meaning.
 func session_time_limit(s: Dictionary) -> float:
 	var limit := float(s["round_time"])
 
-	if session_is_ffa(s):
+	if session_is_ffa(s) or session_is_ctf(s):
 		return limit if limit > 0.0 else FFA_DEFAULT_TIME_LIMIT
 
 	return limit
@@ -723,7 +732,7 @@ func server_command(command: String) -> String:
 					return "Usage: end_round [a|b]  (no team = draw)"
 
 			for s in sessions.values():
-				if int(s["state"]) == State.ACTIVE and not session_is_ffa(s):
+				if int(s["state"]) == State.ACTIVE and not session_is_ffa(s) and not session_is_ctf(s):
 					session_end_round_team(s, winner)
 
 			return "Round ended for active team lobbies. Winner: " + ("draw" if winner == "" else "team " + winner.to_upper())
