@@ -74,8 +74,7 @@ func _fire_charged_shot() -> void:
 # --- Scale hooks the base fire pipeline calls (see Weapon.fire_hitscan) ------------------
 
 func get_effective_hitscan_damage() -> float:
-	return lerpf(hitscan_damage * charge_min_damage_fraction, hitscan_damage, _fire_charge_ratio)
-
+	return lerpf(hitscan_damage * charge_min_damage_fraction, hitscan_damage, _fire_charge_ratio) * get_owner_damage_multiplier()
 
 func get_tracer_size_scale() -> float:
 	return lerpf(tracer_charge_min_scale, tracer_charge_max_scale, _fire_charge_ratio)

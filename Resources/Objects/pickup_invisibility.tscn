@@ -1,5 +1,6 @@
 [gd_scene format=3 uid="uid://b4hyfeb7b51pp"]
 
+[ext_resource type="Script" uid="uid://bvy38pp5rpmxb" path="res://Resources/Scripts/PowerUp.cs" id="1_7ylrc"]
 [ext_resource type="PackedScene" uid="uid://b0tugl5abhku" path="res://Resources/Models/invisibility.tscn" id="1_gu7ag"]
 [ext_resource type="Material" uid="uid://2vlw6uxvyg0g" path="res://Resources/Materials/PwrInvisibilityGlow.tres" id="2_7ylrc"]
 
@@ -10,6 +11,10 @@ radius = 1.25
 
 [node name="PickupInvisibility" type="Area3D" unique_id=1263626603]
 collision_mask = 257
+script = ExtResource("1_7ylrc")
+type = 3
+healAmount = 25.0
+visualPath = NodePath("Invisibility2")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1962151733]
 shape = SubResource("SphereShape3D_y04er")

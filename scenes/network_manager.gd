@@ -2296,6 +2296,92 @@ func client_apply_weapon_damage(
 	damage: float
 ) -> void:
 	apply_confirmed_damage(target_peer_id, attacker_peer_id, damage)
+	
+	
+# --- Power-up replication ------------------------------------------------------------
+
+func request_environmental_heal(peer_id: int, amount: float) -> void:
+	if multiplayer.multiplayer_peer == null:
+		var player = players_by_peer_id.get(peer_id)
+
+		if player != null and player.has_method("apply_full_heal_amount"):
+			player.call("apply_full_heal_amount", amount)
+
+		return
+
+	if multiplayer.is_server():
+		server_process_environmental_heal(peer_id, amount)
+	else:
+		rpc_id(1, "server_request_environmental_heal", amount)
+
+
+@rpc("any_peer", "reliable")
+func server_request_environmental_heal(amount: float) -> void:
+	if not multiplayer.is_server():
+		return
+
+	server_process_environmental_heal(multiplayer.get_remote_sender_id(), amount)
+
+
+func server_process_environmental_heal(peer_id: int, amount: float) -> void:
+	if not multiplayer.is_server():
+		return
+
+	if not players_by_peer_id.has(peer_id) or amount <= 0.0:
+		return
+
+	var player = players_by_peer_id[peer_id]
+
+	if player != null and player.has_method("apply_full_heal_amount"):
+		player.call("apply_full_heal_amount", amount)
+
+	for member_peer_id in _lobby_client_peers_for(peer_id):
+		rpc_id(int(member_peer_id), "client_apply_heal_amount", peer_id, amount)
+
+
+@rpc("authority", "reliable")
+func client_apply_heal_amount(peer_id: int, amount: float) -> void:
+	var player = players_by_peer_id.get(peer_id)
+
+	if player != null and player.has_method("apply_full_heal_amount"):
+		player.call("apply_full_heal_amount", amount)
+
+
+func broadcast_powerup_state(peer_id: int, kind: String, active: bool, value: float) -> void:
+	if multiplayer.multiplayer_peer == null:
+		return
+
+	if multiplayer.is_server():
+		_relay_powerup_state(peer_id, kind, active, value)
+	else:
+		rpc_id(1, "server_relay_powerup_state", kind, active, value)
+
+
+@rpc("any_peer", "reliable")
+func server_relay_powerup_state(kind: String, active: bool, value: float) -> void:
+	if not multiplayer.is_server():
+		return
+
+	_relay_powerup_state(multiplayer.get_remote_sender_id(), kind, active, value)
+
+
+func _relay_powerup_state(peer_id: int, kind: String, active: bool, value: float) -> void:
+	if not players_by_peer_id.has(peer_id):
+		return
+
+	client_apply_powerup_state(peer_id, kind, active, value)
+
+	for member_peer_id in _lobby_client_peers_for(peer_id):
+		if int(member_peer_id) != peer_id:
+			rpc_id(int(member_peer_id), "client_apply_powerup_state", peer_id, kind, active, value)
+
+
+@rpc("authority", "reliable")
+func client_apply_powerup_state(peer_id: int, kind: String, active: bool, value: float) -> void:
+	var player = players_by_peer_id.get(peer_id)
+
+	if player != null and player.has_method("apply_powerup_state"):
+		player.call("apply_powerup_state", kind, active, value)
 
 
 # --- Weapon shot tracer replication ------------------------------------------------

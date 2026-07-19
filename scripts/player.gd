@@ -34,6 +34,8 @@ var buy_menu_open: bool = false
 # does and stops the mouse from re-capturing on click so the menu stays usable.
 var external_menu_open: bool = false
 var is_dead: bool = false
+var damage_multiplier: float = 1.0
+var shield_damage_reduction: float = 0.0
 
 var peer_id: int = 0
 var is_local_player: bool = false
@@ -256,6 +258,85 @@ func apply_camera_recoil(vertical_degrees: float, horizontal_degrees: float) -> 
 func update_weapon_ammo_hud(current_ammo: int, reserve_ammo: int, reloading: bool) -> void:
 	if is_local_player and hud_controller != null and hud_controller.has_method("update_ammo"):
 		hud_controller.update_ammo(current_ammo, reserve_ammo, reloading)
+		
+# --- Power-ups ----------------------------------------------------------------------
+
+func apply_powerup_heal(amount: float) -> void:
+	if not is_local_player:
+		return
+
+	if network_manager != null and network_manager.has_method("request_environmental_heal"):
+		network_manager.call("request_environmental_heal", peer_id, amount)
+	elif health != null:
+		health.heal(amount)
+
+
+func apply_powerup_state(kind: String, active: bool, value: float) -> void:
+	match kind:
+		"shield":
+			shield_damage_reduction = value if active else 0.0
+			update_powerup_visual(active, Color(1.0, 0.55, 0.1, 1.0), 1.0)
+		"damage_multiplier":
+			damage_multiplier = value if active else 1.0
+			update_powerup_visual(active, Color(0.7, 0.2, 0.3, 1.0), 1.0)
+		"invisibility":
+			update_powerup_visual(active, Color(1.0, 1.0, 1.0, 0.15), 0.15)
+
+
+func update_powerup_visual(active: bool, color: Color, alpha: float) -> void:
+	var mesh := get_node_or_null("MeshInstance3D") as MeshInstance3D
+
+	if mesh == null:
+		return
+
+	if active:
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = color
+		if alpha < 1.0:
+			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mesh.material_override = mat
+	elif not is_dead:
+		mesh.material_override = null
+
+
+func activate_shield(duration: float, reduction: float) -> void:
+	if not is_local_player:
+		return
+
+	_start_timed_powerup("shield", clampf(reduction, 0.0, 1.0), duration)
+
+
+func activate_damage_multiplier(multiplier: float, duration: float) -> void:
+	if not is_local_player:
+		return
+
+	_start_timed_powerup("damage_multiplier", multiplier, duration)
+
+
+func activate_invisibility(duration: float) -> void:
+	if not is_local_player:
+		return
+
+	_start_timed_powerup("invisibility", 0.0, duration)
+
+
+func _start_timed_powerup(kind: String, value: float, duration: float) -> void:
+	apply_powerup_state(kind, true, value)
+	_broadcast_powerup_state(kind, true, value)
+
+	get_tree().create_timer(duration).timeout.connect(func():
+		apply_powerup_state(kind, false, 0.0)
+		_broadcast_powerup_state(kind, false, 0.0)
+	)
+
+
+func _broadcast_powerup_state(kind: String, active: bool, value: float) -> void:
+	if network_manager != null and network_manager.has_method("broadcast_powerup_state"):
+		network_manager.call("broadcast_powerup_state", peer_id, kind, active, value)
+
+
+func get_damage_multiplier() -> float:
+	return damage_multiplier
 
 
 func get_peer_id() -> int:
@@ -596,6 +677,11 @@ func apply_ffa_loadout(weapon_id: StringName, booster_fuel: float) -> void:
 func apply_full_heal() -> void:
 	if health != null:
 		health.reset_health()
+		
+
+func apply_full_heal_amount(amount: float) -> void:
+	if health != null:
+		health.heal(amount)
 
 
 # Server-granted ammo refill (the "ammo on kill" rule). Only meaningful on the owning client.
@@ -695,11 +781,12 @@ func apply_weapon_damage(damage: float, attacker_peer_id: int = 0) -> void:
 	if health == null:
 		return
 
-	if health.apply_damage(damage, attacker_peer_id):
-		if is_local_player and health.current_health > 0.0 and hud_controller != null and hud_controller.has_method("show_hurt_effect"):
-			var damage_ratio := damage / maxf(health.max_health, 1.0)
-			hud_controller.show_hurt_effect(damage_ratio)
+	var reduced_damage := damage * (1.0 - shield_damage_reduction)
 
+	if health.apply_damage(reduced_damage, attacker_peer_id):
+		if is_local_player and health.current_health > 0.0 and hud_controller != null and hud_controller.has_method("show_hurt_effect"):
+			var damage_ratio := reduced_damage / maxf(health.max_health, 1.0)
+			hud_controller.show_hurt_effect(damage_ratio)
 
 func apply_network_plasma_impulse(impulse: Vector3) -> void:
 	if has_active_network_session() and not is_local_player:

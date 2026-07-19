@@ -1,6 +1,7 @@
 [gd_scene format=3 uid="uid://clpa65e3xylyx"]
 
 [ext_resource type="PackedScene" uid="uid://dwpv5fny36ft8" path="res://Resources/Models/health.tscn" id="1_4f2if"]
+[ext_resource type="Script" uid="uid://bvy38pp5rpmxb" path="res://Resources/Scripts/PowerUp.cs" id="1_eij6x"]
 [ext_resource type="Material" uid="uid://dnyfeo5lflwr8" path="res://Resources/Materials/PwrHealthGlow.tres" id="2_eij6x"]
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_y04er"]
@@ -10,6 +11,9 @@ radius = 1.25
 
 [node name="PickupHealth" type="Area3D" unique_id=918252171]
 collision_mask = 257
+script = ExtResource("1_eij6x")
+healAmount = 25.0
+visualPath = NodePath("Health")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1500060341]
 shape = SubResource("SphereShape3D_y04er")

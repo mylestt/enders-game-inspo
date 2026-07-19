@@ -401,9 +401,14 @@ func submit_hitscan_damage(
 # The damage one ray deals. Base guns deal a flat hitscan_damage; a charge weapon overrides
 # this to scale with how long it was charged (see ChargeHitscanWeapon).
 func get_effective_hitscan_damage() -> float:
-	return hitscan_damage
+	return hitscan_damage * get_owner_damage_multiplier()
 
+func get_owner_damage_multiplier() -> float:
+	if owner_player != null and owner_player.has_method("get_damage_multiplier"):
+		return float(owner_player.call("get_damage_multiplier"))
 
+	return 1.0
+	
 # Width multiplier for this shot's tracer (1.0 = the tracer scene's authored width). A charge
 # weapon overrides this so the beam thickens with charge; see spawn_hitscan_tracer.
 func get_tracer_size_scale() -> float:
