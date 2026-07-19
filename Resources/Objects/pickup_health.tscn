@@ -5,7 +5,7 @@
 [ext_resource type="Material" uid="uid://dnyfeo5lflwr8" path="res://Resources/Materials/PwrHealthGlow.tres" id="2_eij6x"]
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_y04er"]
-radius = 1.25
+radius = 2.0
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_y04er"]
 
@@ -13,6 +13,9 @@ radius = 1.25
 collision_mask = 257
 script = ExtResource("1_eij6x")
 healAmount = 25.0
+shieldDuration = 20.0
+damageMultiplierDuration = 20.0
+invisibilityDuration = 20.0
 visualPath = NodePath("Health")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1500060341]

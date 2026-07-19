@@ -36,6 +36,9 @@ var external_menu_open: bool = false
 var is_dead: bool = false
 var damage_multiplier: float = 1.0
 var shield_damage_reduction: float = 0.0
+var screen_tint_overlay: ColorRect
+const SCREEN_TINT_PRIORITY := ["damage_multiplier", "invisibility", "shield"]
+var active_screen_tints: Dictionary = {}
 
 var peer_id: int = 0
 var is_local_player: bool = false
@@ -276,12 +279,27 @@ func apply_powerup_state(kind: String, active: bool, value: float) -> void:
 		"shield":
 			shield_damage_reduction = value if active else 0.0
 			update_powerup_visual(active, Color(1.0, 0.55, 0.1, 1.0), 1.0)
+			_set_screen_tint("shield", active, Color(1.0, 0.55, 0.1, 0.05))
 		"damage_multiplier":
 			damage_multiplier = value if active else 1.0
-			update_powerup_visual(active, Color(0.7, 0.2, 0.3, 1.0), 1.0)
+			update_powerup_visual(active, Color(1.0, 0.15, 0.1, 1.0), 1.0)
+			_set_screen_tint("damage_multiplier", active, Color(1.0, 0.1, 0.1, 0.05))
 		"invisibility":
 			update_powerup_visual(active, Color(1.0, 1.0, 1.0, 0.15), 0.15)
+			_set_screen_tint("invisibility", active, Color(0.6, 0.1, 1.0, 0.05))
 
+func _set_screen_tint(key: String, active: bool, color: Color) -> void:
+	if not is_local_player:
+		return
+
+	_ensure_screen_tint_overlay()
+
+	if active:
+		active_screen_tints[key] = color
+	else:
+		active_screen_tints.erase(key)
+
+	_update_screen_tint()
 
 func update_powerup_visual(active: bool, color: Color, alpha: float) -> void:
 	var mesh := get_node_or_null("MeshInstance3D") as MeshInstance3D
@@ -337,6 +355,46 @@ func _broadcast_powerup_state(kind: String, active: bool, value: float) -> void:
 
 func get_damage_multiplier() -> float:
 	return damage_multiplier
+
+func _ensure_screen_tint_overlay() -> void:
+	if screen_tint_overlay != null or not is_local_player:
+		return
+
+	var layer := CanvasLayer.new()
+	layer.layer = 80
+	add_child(layer)
+
+	screen_tint_overlay = ColorRect.new()
+	screen_tint_overlay.color = Color(0.0, 0.0, 0.0, 0.0)
+	screen_tint_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	screen_tint_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(screen_tint_overlay)
+
+
+func _update_screen_tint() -> void:
+	if screen_tint_overlay == null:
+		return
+
+	for key in SCREEN_TINT_PRIORITY:
+		if active_screen_tints.has(key):
+			screen_tint_overlay.color = active_screen_tints[key]
+			return
+
+	screen_tint_overlay.color = Color(0.0, 0.0, 0.0, 0.0)
+
+
+func flash_heal_screen() -> void:
+	_ensure_screen_tint_overlay()
+
+	if screen_tint_overlay == null:
+		return
+
+	var flash_color := Color(0.2, 1.0, 0.3, 0.05)
+	screen_tint_overlay.color = flash_color
+
+	var tween := create_tween()
+	tween.tween_property(screen_tint_overlay, "color:a", 0.0, 0.75)
+	tween.finished.connect(_update_screen_tint)
 
 
 func get_peer_id() -> int:
@@ -682,6 +740,9 @@ func apply_full_heal() -> void:
 func apply_full_heal_amount(amount: float) -> void:
 	if health != null:
 		health.heal(amount)
+
+	if is_local_player:
+		flash_heal_screen()
 
 
 # Server-granted ammo refill (the "ammo on kill" rule). Only meaningful on the owning client.
