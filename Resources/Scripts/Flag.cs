@@ -24,6 +24,7 @@ public partial class Flag : Node3D
 	/*-----[ External Variables ]-------------------------------------------------------------------------------------*/
 	[Signal] public delegate void FlagPickedUpEventHandler(Node3D player);
 	[Signal] public delegate void FlagCapturedEventHandler(int capturingPeerId);
+	[Signal] public delegate void FlagReturnedEventHandler();
 	
 
 	/*-----[ Internal Variables ]-------------------------------------------------------------------------------------*/
@@ -50,6 +51,7 @@ public partial class Flag : Node3D
 	/*-----[ Mono Functions ]-----------------------------------------------------------------------------------------*/
 	public override void _Ready()
 	{
+		AddToGroup("ctf_flags");
 		homePosition = GlobalPosition;
 		homeRotation = GlobalRotation;
 		pickupZone = GetNode<FlagPickupZone>(pickupZonePath);
@@ -325,6 +327,8 @@ public partial class Flag : Node3D
         GlobalRotation = homeRotation;
         pickupZone.Monitoring = true;
         Visible = true;
+        
+        EmitSignal(SignalName.FlagReturned);
     }
 
     [Rpc(MultiplayerApi.RpcMode.Authority, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, CallLocal = true)]

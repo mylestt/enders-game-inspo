@@ -14,6 +14,7 @@
 [ext_resource type="Script" uid="uid://cwcakba58fk0q" path="res://scripts/scoreboard.gd" id="12_scoreboard"]
 [ext_resource type="Script" uid="uid://d00rhfk3nukjc" path="res://scripts/game_over_hud.gd" id="13_gameover"]
 [ext_resource type="Script" uid="uid://dundkdjk2x61u" path="res://scripts/drone_spawner.gd" id="14_drones"]
+[ext_resource type="Script" uid="uid://c07247hpxrq76" path="res://Resources/Scripts/CtfNotificationHud.gd" id="15_jkv2x"]
 
 [node name="World Node3D" type="Node3D" unique_id=878825741]
 script = ExtResource("1_sugp2")
@@ -68,3 +69,7 @@ transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, -37)
 
 [node name="SpawnPointB" type="Marker3D" parent="." unique_id=1767691915]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 37)
+
+[node name="CtfNotificationHud" type="CanvasLayer" parent="." unique_id=1409887623]
+script = ExtResource("15_jkv2x")
+metadata/_custom_type_script = "uid://c07247hpxrq76"

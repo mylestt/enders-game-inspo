@@ -1,5 +1,6 @@
 [gd_scene format=3 uid="uid://ctd4kao86avi2"]
 
+[ext_resource type="Script" uid="uid://bvy38pp5rpmxb" path="res://Resources/Scripts/PowerUp.cs" id="1_238k8"]
 [ext_resource type="PackedScene" uid="uid://ba0wxt3075tb6" path="res://Resources/Models/damage.tscn" id="1_mxikf"]
 [ext_resource type="Material" uid="uid://dr4u27k3drwpx" path="res://Resources/Materials/PwrDamageGlow.tres" id="2_238k8"]
 
@@ -10,6 +11,7 @@ radius = 1.25
 
 [node name="PickupDamage" type="Area3D" unique_id=640534951]
 collision_mask = 257
+script = ExtResource("1_238k8")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=303415708]
 shape = SubResource("SphereShape3D_y04er")
