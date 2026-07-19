@@ -181,7 +181,8 @@ func report_weapon_shot(
 	end: Vector3,
 	did_hit: bool,
 	normal: Vector3,
-	weapon_id: String
+	weapon_id: String,
+	tracer_scale: float = 1.0
 ) -> void:
 	if not is_local_player:
 		return
@@ -190,7 +191,7 @@ func report_weapon_shot(
 		return
 
 	if network_manager != null and network_manager.has_method("broadcast_weapon_shot"):
-		network_manager.call("broadcast_weapon_shot", peer_id, origin, end, did_hit, normal, weapon_id)
+		network_manager.call("broadcast_weapon_shot", peer_id, origin, end, did_hit, normal, weapon_id, tracer_scale)
 
 
 # Replicates a fired projectile so other clients spawn a cosmetic copy of the bolt.
@@ -1159,8 +1160,9 @@ func get_has_grapple_wire() -> bool:
 	return grapple_controller.get_has_grapple()
 
 
-# Shop pass-throughs. Weapon ids are WeaponInventory's SLOT_IDS ("minigun", "railgun",
-# "rifle", "plasma_cannon", ...); the buy menu's weapon group names match them 1:1.
+# Shop pass-throughs. Weapon ids come from the weapon registry (weapon_registry.tres /
+# WeaponInventory.get_weapon_ids(): "minigun", "railgun", ...); the buy menu's weapon group
+# names match them 1:1.
 func purchase_weapon(weapon_id: StringName) -> bool:
 	if weapon_inventory == null:
 		return false

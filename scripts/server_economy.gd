@@ -227,7 +227,7 @@ func client_purchase_result(item_id: String, success: bool, message: String, new
 
 
 func is_weapon_group(group: String) -> bool:
-	return StringName(group) in WeaponInventory.SLOT_IDS
+	return StringName(group) in WeaponInventory.get_weapon_ids()
 
 
 func is_single_purchase_group(group: String) -> bool:

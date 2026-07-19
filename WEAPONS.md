@@ -17,7 +17,9 @@ Weapons are split into three responsibilities. Keep them separate.
 | **Viewmodel** | `scripts/weapons/weapon_spring_sway.gd` (`WeaponSpringSway`) | the `WeaponMount` node | Pure procedural animation: sway, visual recoil spring, idle, ADS pose, equip/reload poses, sustained kickback. |
 
 Subclasses of `Weapon` decide *when* to fire; the base does *everything else*:
-- `hitscan_weapon.gd` (`HitscanWeapon`) — cooldown fire: single-shot (railgun) or burst (battle rifle).
+- `hitscan_weapon.gd` (`HitscanWeapon`) — cooldown fire: single-shot or burst (battle rifle).
+- `charge_hitscan_weapon.gd` (`ChargeHitscanWeapon`) — subclass of `HitscanWeapon` (the railgun):
+  hold to charge, release to fire; damage + tracer width scale with charge (see §7C).
 - `minigun_weapon.gd` (`MinigunWeapon`) — wind-up spin-up full-auto.
 - `projectile_weapon.gd` (`ProjectileWeapon`) — subclass of `HitscanWeapon` (inherits its
   whole fire cadence) that launches a travelling bolt (plasma cannon) instead of a ray; see
@@ -240,13 +242,29 @@ There is **no pivot auto-snap** — position the gun directly via the root node'
 Damage, `rounds_per_second`/`burst_count`, `hitscan_spread_degrees`, the three recoil channels
 (§3), `mag_size`/`reload_time`, `ads_fov`. Use the existing guns as reference (§8).
 
-### C. Register it (`scripts/weapons/weapon_inventory.gd`)
-1. Add an id const: `const RIFLE_ID: StringName = &"rifle"`.
-2. Add the scene to the `WEAPON_SCENES` const registry (the server reads the same registry
-   to build its ammo/damage validation stats — see `scripts/server_economy.gd`).
-3. (Optional quick-swap) add the id to `SLOT_IDS` (slot index → key `weapon_slot_<n>`),
-   add `elif event.is_action_pressed("weapon_slot_<n>"): ...try_quick_swap(<n-1>)` in
-   `player.gd _input`, and add the `weapon_slot_<n>` action to `project.godot`.
+### C. Register it (`weapon_registry.tres`) — same flow as the map registry
+Weapons live in a **resource registry** exactly like maps (`map_registry.tres`). No code edit:
+1. Double-click `weapon_registry.tres` in the FileSystem dock, add an element to `weapons`, and
+   drag your weapon `.tscn` into its `scene` slot. `id`/`display_name` auto-derive from the
+   filename (`WeaponListing.resolve_id/resolve_name`), so set them explicitly only when the id
+   must differ from the filename. **Entry ORDER is the quick-swap slot order** (first = key 1).
+2. That's it — `WeaponInventory` preloads the registry and every consumer reads it through the
+   static lookups (`get_weapon_ids()` / `get_weapon_scene()` / `get_weapon_name()`): the shop
+   (via matching group id), the server's ammo/damage validation (`ServerEconomy.get_weapon_stats`),
+   the FFA pool, and `NetworkManager.get_tracer_scene_for_weapon`. Preloading the `.tres` also makes
+   the exporter bake the weapon scene into the server binary.
+3. (Quick-swap) the id auto-maps to `weapon_slot_<n>` by its registry index. Only if you exceed
+   the existing slot keys, add `elif event.is_action_pressed("weapon_slot_<n>"): ...try_quick_swap(<n-1>)`
+   in `player.gd _input` and add the `weapon_slot_<n>` action to `project.godot`.
+
+**Charge-up weapons** (like the railgun): root the scene with `ChargeHitscanWeapon`
+(`scripts/weapons/charge_hitscan_weapon.gd`) instead of `HitscanWeapon`. Holding the trigger
+charges; releasing fires one shot whose **damage and tracer width** scale from a tap to a full
+charge. `hitscan_damage` is the FULL-charge value (and what the server clamps claims to — a
+charged shot needs no economy change). Tune `max_charge_time`, `charge_min_damage_fraction`,
+`tracer_charge_min_scale`/`_max_scale`, `charge_min_recoil_mult`. The tracer width is relayed
+with the shot (a trailing `tracer_scale` arg on the weapon-shot RPCs — this is why
+`NET_PROTOCOL_VERSION` is 2) so bystanders see the same-sized beam.
 
 Purchase/ownership need no new code: `player.purchase_weapon(id)` / `player.has_weapon(id)`
 are generic pass-throughs to the inventory, and online purchases are validated by the
@@ -268,9 +286,9 @@ triggers "rpc node checksum failed"). See `DEPLOY.md`.
 
 | | Minigun | Railgun | Battle Rifle | Plasma Cannon |
 |---|---|---|---|---|
-| Script | `MinigunWeapon` | `HitscanWeapon` | `HitscanWeapon` | `ProjectileWeapon` |
-| Fire | wind-up 0.92s, 50 rps | 1 rps, semi-auto | 3-round burst, semi-auto | 1.4 rps, semi-auto, 55 m/s bolt |
-| Damage | 15 | 90 | 12 (36/burst) | 100→5 radial falloff |
+| Script | `MinigunWeapon` | `ChargeHitscanWeapon` | `HitscanWeapon` | `ProjectileWeapon` |
+| Fire | wind-up 0.92s, 50 rps | hold-to-charge (1.1s), release to fire | 3-round burst, semi-auto | 1.4 rps, semi-auto, 55 m/s bolt |
+| Damage | 15 | 35 (tap) → 100 (full charge) | 12 (36/burst) | 100→5 radial falloff |
 | Spread | (0.58, 1.75)° | 0 | (0.35, 0.35)° | 0 |
 | Mag / reserve / reload | 200 / 600 / 3.0s | 5 / 20 / 1.8s | 36 / 108 / 2.2s | 5 / 20 / 2.6s |
 | `ads_fov` | 62 | 42 (scope) | 55 | 55 |

@@ -58,10 +58,23 @@ lobbies, deployed to a DigitalOcean VPS at **147.182.160.52:7000**.
 ## Systems map
 - **Multiplayer** (`scenes/network_manager.gd`): spawn, transform/hit/slam/tracer/projectile
   relay, validated plasma blast damage+impulse, scoreboard. Tracer relay is per-weapon
-  (`get_tracer_scene_for_weapon`) so bystanders see the shooter's own tracer.
+  (`get_tracer_scene_for_weapon`) so bystanders see the shooter's own tracer; the shot relay
+  also carries a `tracer_scale` (the charge railgun's variable beam width — hence
+  `NET_PROTOCOL_VERSION` is 2).
   `scripts/server_economy.gd`: server-authoritative cash/purchases/ownership + per-weapon
   ammo ledger + fire-rate validation of damage claims. Teams = spawn-slot parity (even=A,
   odd=B → 1v1@2, 2v2@4).
+- **Weapon registry** (`weapon_registry.tres`, how-to: `WEAPONS.md`): weapons are registered
+  in a resource EXACTLY like maps (`WeaponRegistry`/`WeaponListing` mirror
+  `MapRegistry`/`MapListing`) — drag a weapon `.tscn` into `weapon_registry.tres` in the
+  inspector, no code edit; entry order = quick-swap slot order. `WeaponInventory` preloads it and
+  exposes static lookups (`get_weapon_ids`/`get_weapon_scene`/`get_weapon_name`, cached like
+  `MapGenerator`) read by the shop, `ServerEconomy` stats, the FFA pool, and the tracer relay.
+  Re-export the server after adding a weapon (scene must bake in). The **railgun** is a
+  `ChargeHitscanWeapon` (`scripts/weapons/charge_hitscan_weapon.gd`): hold to charge, release to
+  fire; damage AND tracer width scale from a tap to a full charge. `hitscan_damage` is the FULL
+  value (the server clamps claims to it, so the charge needs no economy change); tune
+  `max_charge_time`/`charge_min_damage_fraction`/`tracer_charge_min_scale`/`_max_scale`.
 - **Lobbies** (`scripts/lobby_manager.gd`): up to 5 concurrent; a lobby closes when its last
   member leaves. Each has its own settings dict + RoundManager session (`sessions[lobby_id]`),
   replicated only to members; every relay is lobby-scoped, cross-lobby damage rejected,
@@ -178,10 +191,25 @@ lobbies, deployed to a DigitalOcean VPS at **147.182.160.52:7000**.
   so you stop against it and stay grounded (`get_surface_walk_wall_block_normal` /
   `strip_into_wall_component`) — deterministic instead of physics-depenetration randomly
   lifting you off some walls; flip `surface_walk_wall_forces_zero_g` to detach into zero-G
-  on wall contact instead. Curved surfaces: author them with
-  PRIMITIVE colliders (SphereShape3D etc. — analytic, smooth normals), not trimesh. Exit =
-  jump or all probes missing past grace. Camera rolls with the body on an eased tween
-  (`surface_walk_align_*`), never a snap. Jump-off keeps the tangential run
+  on wall contact instead. Walking toward a DROP-OFF is handled the same way
+  (`get_surface_walk_ledge_block_normal`): look-ahead down-probes (`surface_walk_ledge_look_ahead`
+  /`_max_drop`, gated by the CONCAVE limit + convex sweeps so crests/spheres/steep-but-walkable
+  seams don't false-block) find no ground → the into-the-void velocity is stripped so you STOP
+  at the lip and stay grounded. Curved surfaces: author them with
+  PRIMITIVE colliders (SphereShape3D etc. — analytic, smooth normals), not trimesh. **Surface
+  walk NEVER auto-exits into zero-G** — you leave ONLY by jumping (`push`) or disengaging (C),
+  or via external force-exits (death/respawn/knockback/grapple-tension). Steep edges and walls
+  just stop you. If ground is somehow lost anyway (shoved off / clipped past a lip) the body
+  holds (`surface_walk_ground_lost`: drift arrested, snap tows you back) rather than floating
+  off. Camera rolls with the body on an eased tween
+  (`surface_walk_align_*`), never a snap. Camera PITCH is gimbal-stabilized: the body's
+  alignment nod (forward tilting fore/aft as it banks onto seams/curves) is measured and
+  cancelled on the camera so only the mouse (+recoil) pitch the view — a per-frame offset
+  (`surface_walk_pitch_stabilize`) added to the aim on the camera write only, washed toward 0 at
+  `surface_walk_pitch_stabilize_recenter` (LOWER = more locked, HIGHER = follows the surface
+  sooner, 0 = off) so deliberate wall/ceiling transitions still settle the view onto the new
+  surface (never left looking the wrong way; offset clamped so aim+offset stays within the pitch
+  limit). Jump-off keeps the tangential run
   (×`surface_walk_jump_momentum_carry`, 1.35). Ground-lock (C): feet ray first, then
   nearest surface around the body — but ONLY surfaces whose normal matches the body's up
   within `surface_walk_entry_max_angle_degrees` (15°): you must actually orient your feet

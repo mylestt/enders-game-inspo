@@ -50,7 +50,7 @@ var shop_items: Array[Dictionary] = [
 		"group": "railgun",
 		"level": 1,
 		"title": "Railgun",
-		"description": "High-damage single-shot rail rifle. Slow fire rate, heavy recoil.",
+		"description": "Charge-up rail rifle. Hold to charge, release to fire — the longer the charge, the more damage and the fatter the beam.",
 		"price": 5000
 	},
 	{

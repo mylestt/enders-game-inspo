@@ -346,7 +346,10 @@ func fire_hitscan() -> Dictionary:
 		hit_collider = hit_result.get("collider")
 		submit_hitscan_damage(hit_collider, hit_position, origin, direction)
 
-	spawn_hitscan_tracer(origin, hit_position, hit_something, hit_normal)
+	# Tracer width scale (1.0 for normal guns; a charge weapon returns its charge ratio). Sent
+	# to the local tracer AND relayed with the shot so bystanders see the same-sized beam.
+	var tracer_scale := get_tracer_size_scale()
+	spawn_hitscan_tracer(origin, hit_position, hit_something, hit_normal, tracer_scale)
 	trigger_muzzle_flash()
 
 	if owner_player != null and owner_player.has_method("report_weapon_shot"):
@@ -356,7 +359,8 @@ func fire_hitscan() -> Dictionary:
 			hit_position,
 			hit_something,
 			hit_normal,
-			String(inventory_id)
+			String(inventory_id),
+			tracer_scale
 		)
 
 	return {
@@ -387,11 +391,23 @@ func submit_hitscan_damage(
 		owner_player.call(
 			"submit_weapon_hit",
 			target,
-			hitscan_damage,
+			get_effective_hitscan_damage(),
 			hit_position,
 			shot_origin,
 			shot_direction
 		)
+
+
+# The damage one ray deals. Base guns deal a flat hitscan_damage; a charge weapon overrides
+# this to scale with how long it was charged (see ChargeHitscanWeapon).
+func get_effective_hitscan_damage() -> float:
+	return hitscan_damage
+
+
+# Width multiplier for this shot's tracer (1.0 = the tracer scene's authored width). A charge
+# weapon overrides this so the beam thickens with charge; see spawn_hitscan_tracer.
+func get_tracer_size_scale() -> float:
+	return 1.0
 
 
 func find_damage_target(collider: Object) -> Node:
@@ -444,7 +460,8 @@ func spawn_hitscan_tracer(
 	start_position: Vector3,
 	end_position: Vector3,
 	hit_something: bool,
-	hit_normal: Vector3
+	hit_normal: Vector3,
+	size_scale: float = 1.0
 ) -> Node:
 	if hitscan_tracer_scene == null:
 		return null
@@ -459,7 +476,7 @@ func spawn_hitscan_tracer(
 	effect_parent.add_child(tracer)
 
 	if tracer.has_method("play"):
-		tracer.call("play", start_position, end_position, hit_something, hit_normal)
+		tracer.call("play", start_position, end_position, hit_something, hit_normal, size_scale)
 	elif tracer is Node3D:
 		var tracer_node := tracer as Node3D
 		tracer_node.global_position = start_position

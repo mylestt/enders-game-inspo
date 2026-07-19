@@ -36,14 +36,6 @@ var booster_fuel_spin: SpinBox
 var kill_limit_spin: SpinBox
 var weapon_checks: Dictionary = {}
 
-# Friendly display names for the FFA weapon-pool checkboxes, keyed by WeaponInventory id.
-const WEAPON_DISPLAY_NAMES := {
-	"minigun": "Minigun",
-	"railgun": "Railgun",
-	"rifle": "Battle Rifle",
-	"plasma_cannon": "Plasma Cannon",
-}
-
 
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -278,10 +270,11 @@ func _build_ffa_section(parent: Node) -> void:
 	# Empty ffa_weapons means "all weapons", so every box starts checked in that case.
 	var allow_all := GameLaunch.ffa_weapons.is_empty()
 
-	for weapon_id in WeaponInventory.SLOT_IDS:
+	for weapon_id in WeaponInventory.get_weapon_ids():
 		var id := String(weapon_id)
 		var check := CheckBox.new()
-		check.text = String(WEAPON_DISPLAY_NAMES.get(id, id))
+		# Display name comes from the weapon registry (weapon_registry.tres).
+		check.text = WeaponInventory.get_weapon_name(weapon_id)
 		check.button_pressed = allow_all or GameLaunch.ffa_weapons.has(id)
 		ffa_section.add_child(check)
 		weapon_checks[id] = check
@@ -416,14 +409,14 @@ func _on_back_pressed() -> void:
 func _selected_ffa_weapons() -> Array:
 	var chosen: Array = []
 
-	for weapon_id in WeaponInventory.SLOT_IDS:
+	for weapon_id in WeaponInventory.get_weapon_ids():
 		var id := String(weapon_id)
 		var check: CheckBox = weapon_checks.get(id)
 
 		if check != null and check.button_pressed:
 			chosen.append(id)
 
-	if chosen.size() == WeaponInventory.SLOT_IDS.size():
+	if chosen.size() == WeaponInventory.get_weapon_ids().size():
 		return []
 
 	return chosen

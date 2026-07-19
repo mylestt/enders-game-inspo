@@ -69,6 +69,16 @@ enum MovementMode {
 @export var surface_walk_max_snap_speed: float = 8.0
 @export var surface_walk_mouse_sensitivity: float = 0.0025
 @export var surface_walk_pitch_limit_degrees: float = 82.0
+# View-pitch stabilizer ("gimbal"): the camera pitch you set with the mouse is held steady
+# against the body's own pitch nod as it re-orients to follow the surface — walking over bumps,
+# seams and curves no longer rocks your aim up/down; only the mouse (and recoil) pitch the view.
+# It works by measuring the pitch the alignment adds to the body each frame and cancelling it on
+# the camera, then washing that cancellation out at this per-second rate so a SUSTAINED
+# reorientation (deliberately climbing onto a wall/ceiling) still settles the view onto the new
+# surface instead of leaving you looking the wrong way. LOWER = more locked / gimbaled (quick
+# nods held out harder, big transitions settle slower); HIGHER = looser (follows the surface
+# sooner). Keep it > 0 so transitions always settle. 0 disables the stabilizer entirely.
+@export var surface_walk_pitch_stabilize_recenter: float = 3.0
 @export var surface_walk_space_launches_off: bool = true
 
 @export var surface_walk_transition_duration: float = 0.14
@@ -83,7 +93,6 @@ enum MovementMode {
 @export var surface_walk_spawn_probe_distance: float = 8.0
 
 @export var surface_walk_edge_check_extra_distance: float = 0.35
-@export var surface_walk_edge_grace_time: float = 0.06
 @export var surface_walk_surface_normal_min_dot: float = 0.65
 
 # Edge traversal: a surface ahead in the walk direction takes over as the walked surface once
@@ -106,6 +115,16 @@ enum MovementMode {
 # rejected steep face randomly LIFTS you off some walls (inward-leaning/curved ones) but not
 # others, which reads as "sometimes I leave ground mode against a wall, sometimes I don't".
 @export var surface_walk_wall_forces_zero_g: bool = false
+# Ledge block: surface walk NEVER auto-drops you into zero-G — once grounded you leave only by
+# jumping or disengaging (C). Walking toward a drop-off (a face steeper than max_edge_angle, or
+# empty air, ahead-and-below) is arrested exactly like a wall: the into-the-void part of the
+# walk is stripped so you stop at the lip and stay grounded. Look-ahead is how far in front of
+# the body centre to test for a drop (metres); max_drop is how far down a step may be and still
+# count as walkable ground you can descend onto (beyond it = a cliff, so you stop). The test
+# reuses the ground probe's angle gate + convex-crest sweeps, so walking OVER a rounded crest /
+# sphere / bevel is unaffected — only genuine drop-offs block.
+@export var surface_walk_ledge_look_ahead: float = 0.45
+@export var surface_walk_ledge_max_drop: float = 0.6
 # The ground orientation target is BLENDED from several probes (down ray + four foot rays
 # + the crest sweeps), weighted by hit distance, instead of one winner-takes-all ray.
 # Crossing a seam the weight hands over gradually — no face-to-face flip-flopping — and on
@@ -189,6 +208,10 @@ var surface_walk_anchor_point: Vector3 = Vector3.ZERO
 # along the smoothed body normal launches the body when a seam swaps the anchor ~90 degrees.
 var surface_walk_anchor_normal: Vector3 = Vector3.UP
 var surface_walk_pitch: float = 0.0
+# Camera-pitch offset that cancels the body's alignment-induced nod (the "gimbal", see
+# surface_walk_pitch_stabilize_recenter). Added to surface_walk_pitch only when writing the
+# camera; the aim value itself stays mouse/recoil-driven. Washes toward 0 each frame.
+var surface_walk_pitch_stabilize: float = 0.0
 # Low-passed orientation target (see surface_walk_target_smoothing) and how long a face
 # OTHER than the anchored one has been the nearest support (drives the anchor switch).
 var surface_walk_smoothed_target: Vector3 = Vector3.UP
@@ -201,7 +224,11 @@ var surface_walk_transition_target_transform: Transform3D
 
 var camera_base_position: Vector3 = Vector3.ZERO
 var surface_walk_shake_timer: float = 0.0
-var surface_walk_no_surface_timer: float = 0.0
+# TRUE for any frame the ground probe found nothing under us. We no longer exit on this (surface
+# walk only ends on jump / disengage); instead handle_surface_walk_movement arrests drift and
+# the snap tows us back toward the last surface. The proactive ledge block normally stops us at
+# a lip before we ever reach this state.
+var surface_walk_ground_lost: bool = false
 var surface_walk_align_rate: float = 0.0   # rad/s, eased by surface_walk_align_accel
 var _pre_surface_walk_material: PhysicsMaterial = null
 
@@ -721,7 +748,7 @@ func enter_surface_walk_mode(hit_position: Vector3, surface_normal: Vector3, ins
 	surface_walk_anchor_normal = surface_walk_normal
 	surface_walk_smoothed_target = surface_walk_normal
 	surface_walk_anchor_foreign_time = 0.0
-	surface_walk_no_surface_timer = 0.0
+	surface_walk_ground_lost = false
 	surface_walk_align_rate = 0.0
 
 	var look_forward := (-player.global_transform.basis.z).normalized()
@@ -735,6 +762,7 @@ func enter_surface_walk_mode(hit_position: Vector3, surface_normal: Vector3, ins
 	
 	surface_walk_forward = projected_forward.normalized()
 	surface_walk_pitch = 0.0
+	surface_walk_pitch_stabilize = 0.0
 	recoil_pending = Vector2.ZERO
 	recoil_offset = Vector2.ZERO
 	
@@ -752,7 +780,7 @@ func enter_surface_walk_mode(hit_position: Vector3, surface_normal: Vector3, ins
 	if instant:
 		# Spawn path: snap straight onto the surface with no slide-in animation or entry shake.
 		surface_walk_transition_active = false
-		surface_walk_no_surface_timer = 0.0
+		surface_walk_ground_lost = false
 		player.global_transform = target_transform
 		player.reset_physics_interpolation()
 		print("Spawned in surface-walk mode.")
@@ -805,7 +833,7 @@ func update_surface_walk_transition(delta: float) -> void:
 	if raw_t >= 1.0:
 		player.global_transform = surface_walk_transition_target_transform
 		surface_walk_transition_active = false
-		surface_walk_no_surface_timer = 0.0
+		surface_walk_ground_lost = false
 
 
 func start_surface_walk_entry_shake() -> void:
@@ -843,14 +871,16 @@ func update_surface_walk_edge_check(delta: float) -> bool:
 	var result := get_surface_walk_ground_result()
 
 	if result.is_empty():
-		surface_walk_no_surface_timer += delta
-
-		if surface_walk_no_surface_timer >= surface_walk_edge_grace_time:
-			print("Surface walk ended: walked off surface.")
-			exit_surface_walk_mode()
-			return true
-
+		# No ground under us. Surface walk NEVER auto-exits — you leave only by jumping or
+		# disengaging — so instead of dropping into zero-G we flag the loss and hold: the body
+		# keeps its last orientation, handle_surface_walk_movement arrests any drift, and the
+		# snap tows us back toward the last surface plane. The proactive ledge block usually
+		# stops us at a lip before this ever fires; this is the shoved-off / clipped-past safety
+		# net. Look and jump still run this frame (edge check returns false, not true).
+		surface_walk_ground_lost = true
 		return false
+
+	surface_walk_ground_lost = false
 
 	var raw_normal := (result["normal"] as Vector3).normalized()
 	var target_normal := (result.get("target_normal", raw_normal) as Vector3).normalized()
@@ -866,8 +896,6 @@ func update_surface_walk_edge_check(delta: float) -> bool:
 	var smoothed := surface_walk_smoothed_target.lerp(target_normal, smooth_weight)
 	surface_walk_smoothed_target = smoothed.normalized() if smoothed.length() > 0.01 else target_normal
 	align_surface_walk_normal_toward(surface_walk_smoothed_target, delta)
-
-	surface_walk_no_surface_timer = 0.0
 
 	# Anchor (snap plane / movement tangent / gate reference) with hysteresis: standing on an
 	# edge the nearest hit alternates faces every frame, so a DIFFERENT face only takes the
@@ -920,6 +948,12 @@ func align_surface_walk_normal_toward(target_normal: Vector3, delta: float) -> v
 	var step_angle := minf(desired_step, surface_walk_align_rate * delta)
 	var t := clampf(step_angle / full_angle, 0.0, 1.0)
 
+	# Snapshot before the turn so the stabilizer can measure the PITCH this alignment adds to the
+	# body (forward tilting toward the old up axis) and cancel it on the camera — a left/right
+	# tilt is roll and stays 0 here, so only the fore/aft nod is compensated.
+	var old_forward := surface_walk_forward
+	var old_up := surface_walk_normal
+
 	var new_normal := surface_walk_normal.slerp(target_normal, t).normalized()
 	surface_walk_forward = Quaternion(surface_walk_normal, new_normal) * surface_walk_forward
 	surface_walk_normal = new_normal
@@ -930,6 +964,9 @@ func align_surface_walk_normal_toward(target_normal: Vector3, delta: float) -> v
 		projected_forward = get_fallback_surface_forward(surface_walk_normal)
 
 	surface_walk_forward = projected_forward.normalized()
+
+	if surface_walk_pitch_stabilize_recenter > 0.0:
+		surface_walk_pitch_stabilize -= (surface_walk_forward - old_forward).dot(old_up)
 
 
 # Ground probe. A feeler along the walk direction hands over an approaching concave seam
@@ -1113,8 +1150,9 @@ func exit_surface_walk_mode() -> void:
 	
 	surface_walk_transition_active = false
 	surface_walk_shake_timer = 0.0
-	surface_walk_no_surface_timer = 0.0
+	surface_walk_ground_lost = false
 	surface_walk_align_rate = 0.0
+	surface_walk_pitch_stabilize = 0.0
 
 	surface_walk_daze_timer = 0.0
 	surface_walk_daze_duration = 0.0
@@ -1175,8 +1213,29 @@ func update_surface_walk_mouse_look(delta: float) -> void:
 	var pitch_limit := deg_to_rad(surface_walk_pitch_limit_degrees)
 	surface_walk_pitch = clampf(surface_walk_pitch, -pitch_limit, pitch_limit)
 
+	# Wash the gimbal offset back toward 0 so a sustained reorientation (climbing onto a wall)
+	# still settles the view onto the new surface, and clamp it so aim + offset never exceed the
+	# pitch limit. Runs every surface-walk frame (this function always does), so it decays even on
+	# ground-lost frames where no fresh nod is added.
+	if surface_walk_pitch_stabilize_recenter > 0.0:
+		surface_walk_pitch_stabilize *= exp(-surface_walk_pitch_stabilize_recenter * delta)
+		surface_walk_pitch_stabilize = clampf(
+			surface_walk_pitch_stabilize,
+			-pitch_limit - surface_walk_pitch,
+			pitch_limit - surface_walk_pitch
+		)
+	else:
+		surface_walk_pitch_stabilize = 0.0
+
 	if camera != null:
-		camera.rotation = Vector3(surface_walk_pitch, 0.0, 0.0)
+		camera.rotation = Vector3(get_surface_walk_applied_pitch(), 0.0, 0.0)
+
+
+# The pitch actually shown on the camera: the mouse/recoil aim plus the gimbal stabilizer offset,
+# clamped to the pitch limit. surface_walk_pitch alone stays the pure aim.
+func get_surface_walk_applied_pitch() -> float:
+	var pitch_limit := deg_to_rad(surface_walk_pitch_limit_degrees)
+	return clampf(surface_walk_pitch + surface_walk_pitch_stabilize, -pitch_limit, pitch_limit)
 
 
 func update_surface_walk_orientation() -> void:
@@ -1212,6 +1271,12 @@ func handle_surface_walk_movement(delta: float) -> void:
 			forward * input_vector.y
 		).normalized() * target_speed
 
+	# Ground lost this frame (shoved off / clipped past a lip): don't drive into the void. Kill
+	# walk input; move_toward + the snap below arrest drift and tow us back toward the last
+	# surface. We stay in surface-walk mode — only jump / disengage exit.
+	if surface_walk_ground_lost:
+		desired_tangent_velocity = Vector3.ZERO
+
 	# A face directly ahead that's too steep to climb (steeper than the concave handover
 	# limit) is a WALL. Handle it deterministically here instead of leaving it to physics
 	# depenetration (which lifts you off some walls and not others). ON -> detach to zero-G;
@@ -1230,6 +1295,18 @@ func handle_surface_walk_movement(delta: float) -> void:
 		if wall_tangent.length() > 0.001:
 			desired_tangent_velocity = strip_into_wall_component(desired_tangent_velocity, wall_tangent.normalized())
 
+	# A drop-off ahead (a face steeper than max_edge_angle, or empty air, below-and-ahead) is a
+	# LEDGE. Surface walk never floats you off one: strip the into-the-void part of the walk so
+	# you stop at the lip and stay grounded, exactly as a wall stops you. `ledge_dir` points from
+	# the body toward the ledge; the block tangent points the other way (away from it).
+	var ledge_dir := get_surface_walk_ledge_block_normal()
+
+	if ledge_dir != Vector3.ZERO:
+		var ledge_tangent := (-ledge_dir).slide(surface_walk_anchor_normal)
+
+		if ledge_tangent.length() > 0.001:
+			desired_tangent_velocity = strip_into_wall_component(desired_tangent_velocity, ledge_tangent.normalized())
+
 	# Slide on the ANCHOR normal (the snap's axis) so last tick's snap component is removed
 	# before the fresh one is added — sliding on the smoothed normal lets snap velocity
 	# accumulate into walk speed when the two diverge at a seam (launches the player).
@@ -1246,6 +1323,13 @@ func handle_surface_walk_movement(delta: float) -> void:
 
 		if wall_tangent.length() > 0.001:
 			new_tangent_velocity = strip_into_wall_component(new_tangent_velocity, wall_tangent.normalized())
+
+	# Same for a ledge: a fast run mustn't carry you off the lip before decel finishes.
+	if ledge_dir != Vector3.ZERO:
+		var ledge_tangent := (-ledge_dir).slide(surface_walk_anchor_normal)
+
+		if ledge_tangent.length() > 0.001:
+			new_tangent_velocity = strip_into_wall_component(new_tangent_velocity, ledge_tangent.normalized())
 
 	var snap_velocity := get_surface_walk_snap_velocity()
 
@@ -1295,6 +1379,50 @@ func get_surface_walk_wall_block_normal() -> Vector3:
 		return Vector3.ZERO
 
 	return hit_normal
+
+
+# A drop-off ahead in the walk direction — no ground at all within a small step below-and-ahead.
+# Returns the LEDGE DIRECTION (move_dir, pointing toward the drop) so the caller can strip the
+# into-the-void part of the walk; ZERO when there's something to step onto (so you don't stop for
+# nothing) or when idle. The look-ahead point stands in for where the feet land next step; from it
+# we probe straight down plus two convex-crest sweeps. These probes use the CONCAVE limit (not the
+# stricter edge limit) as their "is there ground" gate: a steep-but-walkable seam ahead — a
+# rounded crest / sphere / bevel to walk over, or a steep concave seam the feeler climbs (the
+# Diamond arena's ~70.5° interior faces) — must NOT read as a void, or we'd wrongly block legit
+# traversal. Only a TRUE cliff (nothing within max_drop) returns a block; that's what stops surface
+# walk from floating you off the edge of a surface. Anything steeper than the concave limit is a
+# wall, already handled by get_surface_walk_wall_block_normal.
+func get_surface_walk_ledge_block_normal() -> Vector3:
+	var move_dir := get_surface_walk_probe_move_direction()
+
+	if move_dir == Vector3.ZERO:
+		return Vector3.ZERO
+
+	var lifted := player.global_position + surface_walk_normal * 0.08 + move_dir * surface_walk_ledge_look_ahead
+	var probe_length := surface_walk_body_offset + surface_walk_edge_check_extra_distance + surface_walk_ledge_max_drop
+	var walkable_limit := surface_walk_max_concave_angle_degrees
+
+	# Straight down at the look-ahead point: any ground there means it's not a void.
+	if not probe_surface_walk_ray(lifted, -surface_walk_normal, probe_length, walkable_limit).is_empty():
+		return Vector3.ZERO
+
+	# Convex-crest sweeps: a rounded lip curves the next face down-and-away, so a straight-down
+	# ray can miss it while it's still perfectly walkable. These forward-down casts catch it
+	# (mirroring the ground probe's wrap sweeps) so a crest walk-over is never mistaken for a drop.
+	if surface_walk_wrap_probe:
+		var wrap_right := move_dir.cross(surface_walk_normal)
+
+		if wrap_right.length() > 0.01:
+			wrap_right = wrap_right.normalized()
+
+			for sweep_degrees: float in [30.0, 60.0]:
+				var sweep_dir := (-surface_walk_normal).rotated(wrap_right, deg_to_rad(sweep_degrees))
+
+				if not probe_surface_walk_ray(lifted, sweep_dir, probe_length, walkable_limit).is_empty():
+					return Vector3.ZERO
+
+	# Nothing within a step ahead: a drop-off. Block motion toward it.
+	return move_dir
 
 
 func get_surface_walk_target_speed(sprinting: bool) -> float:
@@ -1548,7 +1676,9 @@ func update_recoil(delta: float) -> void:
 	if recoil_pending.length_squared() < 0.00000001:
 		recoil_pending = Vector2.ZERO
 
-	var base := surface_walk_pitch if walking else look_pitch
+	# Base the recoil around the APPLIED pitch while walking (aim + gimbal stabilizer) so the
+	# stabilized view holds under fire too; the permanent climb above still writes the pure aim.
+	var base := get_surface_walk_applied_pitch() if walking else look_pitch
 	recoil_offset.x = clampf(recoil_offset.x, -limit - base, limit - base)
 
 	var recover_rate := recoil_recovery_speed
