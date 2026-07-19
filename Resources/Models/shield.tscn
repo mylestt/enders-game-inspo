@@ -1,0 +1,9 @@
+[gd_scene format=3 uid="uid://uwk6cdomr4w6"]
+
+[ext_resource type="PackedScene" uid="uid://bg3e5qhh87uta" path="res://Resources/Models/Shield.fbx" id="1_ad2dc"]
+[ext_resource type="Material" uid="uid://cyyew52w0th31" path="res://Resources/Materials/PwrShield.tres" id="2_gqqu1"]
+
+[node name="Shield" unique_id=340274862 instance=ExtResource("1_ad2dc")]
+
+[node name="Cube_001" parent="." index="0" unique_id=1076597709]
+material_override = ExtResource("2_gqqu1")

@@ -1,0 +1,9 @@
+[gd_scene format=3 uid="uid://dwpv5fny36ft8"]
+
+[ext_resource type="PackedScene" uid="uid://csox1td6u5npq" path="res://Resources/Models/Health.fbx" id="1_4p8f0"]
+[ext_resource type="Material" uid="uid://bnhdx01hl7lvy" path="res://Resources/Materials/PwrHealth.tres" id="2_hl6in"]
+
+[node name="Health" unique_id=1367357081 instance=ExtResource("1_4p8f0")]
+
+[node name="Cube" parent="." index="0" unique_id=95398370]
+material_override = ExtResource("2_hl6in")

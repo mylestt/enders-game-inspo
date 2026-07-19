@@ -1,0 +1,12 @@
+[gd_scene format=3 uid="uid://b0tugl5abhku"]
+
+[ext_resource type="PackedScene" uid="uid://bp1sdorwpq6bo" path="res://Resources/Models/Invisibility.fbx" id="1_53bn5"]
+[ext_resource type="Material" uid="uid://c61las7i0vcoi" path="res://Resources/Materials/PwrInvisibility.tres" id="2_53bn5"]
+
+[node name="Invisibility" unique_id=361960671 instance=ExtResource("1_53bn5")]
+
+[node name="Cube" parent="." index="0" unique_id=1230531275]
+material_override = ExtResource("2_53bn5")
+
+[node name="Cube_003" parent="." index="1" unique_id=558340812]
+material_override = ExtResource("2_53bn5")

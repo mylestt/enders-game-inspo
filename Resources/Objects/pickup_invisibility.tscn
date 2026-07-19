@@ -1,0 +1,23 @@
+[gd_scene format=3 uid="uid://b4hyfeb7b51pp"]
+
+[ext_resource type="PackedScene" uid="uid://b0tugl5abhku" path="res://Resources/Models/invisibility.tscn" id="1_gu7ag"]
+[ext_resource type="Material" uid="uid://2vlw6uxvyg0g" path="res://Resources/Materials/PwrInvisibilityGlow.tres" id="2_7ylrc"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_y04er"]
+radius = 1.25
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_y04er"]
+
+[node name="PickupInvisibility" type="Area3D" unique_id=1263626603]
+collision_mask = 257
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1962151733]
+shape = SubResource("SphereShape3D_y04er")
+
+[node name="Invisibility2" parent="." unique_id=361960671 instance=ExtResource("1_gu7ag")]
+transform = Transform3D(0.125, 0, 0, 0, 0.125, 0, 0, 0, 0.125, 0, 0, 0)
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=1678508471]
+transform = Transform3D(2, 0, 0, 0, 2, 0, 0, 0, 2, 0, -1.25, 0)
+material_override = ExtResource("2_7ylrc")
+mesh = SubResource("PlaneMesh_y04er")

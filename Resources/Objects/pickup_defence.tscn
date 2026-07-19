@@ -1,0 +1,23 @@
+[gd_scene format=3 uid="uid://wgb77r1d4cf2"]
+
+[ext_resource type="PackedScene" uid="uid://uwk6cdomr4w6" path="res://Resources/Models/shield.tscn" id="1_xwist"]
+[ext_resource type="Material" uid="uid://ddunmys0tf0iq" path="res://Resources/Materials/PwrShieldGlow.tres" id="2_d6jjw"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_y04er"]
+radius = 1.25
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_y04er"]
+
+[node name="PickupDefence" type="Area3D" unique_id=1574293906]
+collision_mask = 257
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=830870493]
+shape = SubResource("SphereShape3D_y04er")
+
+[node name="Shield" parent="." unique_id=340274862 instance=ExtResource("1_xwist")]
+transform = Transform3D(0.125, 0, 0, 0, 0.125, 0, 0, 0, 0.125, 0, 0, 0)
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=605590607]
+transform = Transform3D(2, 0, 0, 0, 2, 0, 0, 0, 2, 0, -1.25, 0)
+material_override = ExtResource("2_d6jjw")
+mesh = SubResource("PlaneMesh_y04er")

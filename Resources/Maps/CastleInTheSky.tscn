@@ -67,22 +67,22 @@ environment = SubResource("Environment_lkmil")
 [node name="CITS_Castle2" parent="." unique_id=1581840505 instance=ExtResource("1_lkmil")]
 transform = Transform3D(0.8660254, 0.5, -8.742278e-08, 0.5, -0.8660254, 0, 7.5710346e-08, 4.371139e-08, 1, -42.5, 159, 0)
 
-[node name="OmniLight3D2" parent="CITS_Castle2" index="46" unique_id=1758637931]
+[node name="OmniLight3D2" parent="CITS_Castle2" index="53" unique_id=1758637931]
 light_color = Color(0.42270073, 0.025425997, 0, 1)
 
-[node name="OmniLight3D8" parent="CITS_Castle2" index="47" unique_id=320383416]
+[node name="OmniLight3D8" parent="CITS_Castle2" index="54" unique_id=320383416]
 light_color = Color(0.42270073, 0.025425997, 0, 1)
 
-[node name="OmniLight3D3" parent="CITS_Castle2" index="48" unique_id=1293909175]
+[node name="OmniLight3D3" parent="CITS_Castle2" index="56" unique_id=1293909175]
 light_color = Color(0.42270073, 0.025425997, 0, 1)
 
-[node name="OmniLight3D9" parent="CITS_Castle2" index="49" unique_id=587347084]
+[node name="OmniLight3D9" parent="CITS_Castle2" index="57" unique_id=587347084]
 light_color = Color(0.42270073, 0.025425997, 0, 1)
 
-[node name="OmniLight3D10" parent="CITS_Castle2" index="50" unique_id=546795374]
+[node name="OmniLight3D10" parent="CITS_Castle2" index="58" unique_id=546795374]
 light_color = Color(0.42270073, 0.025425997, 0, 1)
 
-[node name="OmniLight3D4" parent="CITS_Castle2" index="51" unique_id=492308488]
+[node name="OmniLight3D4" parent="CITS_Castle2" index="59" unique_id=492308488]
 light_color = Color(0.42270073, 0.025425997, 0, 1)
 
 [node name="Bevels" type="Node3D" parent="CITS_Castle2" unique_id=1659134162]

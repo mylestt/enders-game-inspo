@@ -1,0 +1,23 @@
+[gd_scene format=3 uid="uid://clpa65e3xylyx"]
+
+[ext_resource type="PackedScene" uid="uid://dwpv5fny36ft8" path="res://Resources/Models/health.tscn" id="1_4f2if"]
+[ext_resource type="Material" uid="uid://dnyfeo5lflwr8" path="res://Resources/Materials/PwrHealthGlow.tres" id="2_eij6x"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_y04er"]
+radius = 1.25
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_y04er"]
+
+[node name="PickupHealth" type="Area3D" unique_id=918252171]
+collision_mask = 257
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1500060341]
+shape = SubResource("SphereShape3D_y04er")
+
+[node name="Health" parent="." unique_id=1367357081 instance=ExtResource("1_4f2if")]
+transform = Transform3D(0.125, 0, 0, 0, 0.125, 0, 0, 0, 0.125, 0, 0, 0)
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=270663404]
+transform = Transform3D(2, 0, 0, 0, 2, 0, 0, 0, 2, 0, -1.25, 0)
+material_override = ExtResource("2_eij6x")
+mesh = SubResource("PlaneMesh_y04er")

@@ -1,0 +1,23 @@
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://dnyfeo5lflwr8"]
+
+[ext_resource type="Texture2D" uid="uid://b17gt6rchx35c" path="res://MuzzleFlashVFX/shared/texture/flash_front/flash_front_01.png" id="1_l7gei"]
+[ext_resource type="Texture2D" uid="uid://dxbtf7tgndy6h" path="res://MuzzleFlashVFX/shared/texture/flash_front/flash_front_03.png" id="2_yties"]
+
+[sub_resource type="CompressedTexture2D" id="CompressedTexture2D_8qsu7"]
+
+[resource]
+transparency = 1
+blend_mode = 1
+cull_mode = 2
+albedo_color = Color(0.32, 0.62600017, 1, 0.15686275)
+albedo_texture = ExtResource("1_l7gei")
+metallic_specular = 0.0
+emission_enabled = true
+emission = Color(0.39838934, 1.9871625, 6.295782e-06, 1)
+emission_operator = 1
+emission_texture = ExtResource("2_yties")
+rim_tint = 0.65
+backlight = Color(0.88515717, 0.00026317895, 0.79356456, 1)
+refraction_scale = 1.0
+refraction_texture = SubResource("CompressedTexture2D_8qsu7")
+disable_receive_shadows = true
