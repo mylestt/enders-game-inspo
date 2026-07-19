@@ -39,6 +39,8 @@ func _run_all() -> void:
 	test_lobby_settings_sanitation()
 	test_network_state_hygiene()
 	test_surface_walk_wall_slide()
+	test_surface_walk_pitch_gimbal()
+	test_charge_weapon_scaling()
 	await test_grapple_multiwrap()
 	await test_cylindrical_force_field()
 	test_spinning_skybox()
@@ -124,7 +126,7 @@ func test_scene_instantiation() -> void:
 			instance.free()
 
 	# The weapon registry itself: every id must resolve to a Weapon-rooted scene.
-	for weapon_id in WeaponInventory.SLOT_IDS:
+	for weapon_id in WeaponInventory.get_weapon_ids():
 		var weapon_scene := WeaponInventory.get_weapon_scene(weapon_id)
 		var weapon = weapon_scene.instantiate() if weapon_scene != null else null
 		check(weapon is Weapon, "weapon registry '%s' roots a Weapon" % weapon_id)
@@ -380,6 +382,111 @@ func test_surface_walk_wall_slide() -> void:
 	# Parallel to the wall (pure +Z): untouched.
 	var parallel := mc.strip_into_wall_component(Vector3(0, 0, 4), wall_tangent)
 	check(parallel.is_equal_approx(Vector3(0, 0, 4)), "parallel motion is unaffected")
+
+
+# --- Surface-walk pitch gimbal ----------------------------------------------------------
+# When the walked-surface normal tilts fore/aft, the body noses up/down; the stabilizer stores
+# a camera-pitch offset that CANCELS that nod (so only the mouse pitches the view). Assert the
+# offset takes the opposing sign, that recenter <= 0 disables it, and that the applied pitch is
+# clamped to the pitch limit. Uses a bare controller instance — align_surface_walk_normal_toward
+# only touches member vectors/floats (no player/camera needed).
+
+func test_surface_walk_pitch_gimbal() -> void:
+	print("- movement: surface-walk pitch gimbal")
+
+	var mc := PlayerMovementController.new()
+	mc.surface_walk_forward = Vector3(0, 0, -1)
+	mc.surface_walk_align_rate = 1000.0   # keep the step off the rate limiter so a nod accrues
+
+	# Normal tilted +10 deg about +X (body right) noses the forward UP -> offset must go negative.
+	mc.surface_walk_normal = Vector3.UP
+	mc.surface_walk_pitch_stabilize = 0.0
+	mc.align_surface_walk_normal_toward(Vector3.UP.rotated(Vector3.RIGHT, deg_to_rad(10.0)), 0.1)
+	check(mc.surface_walk_pitch_stabilize < -0.0001, "nose-up nod is cancelled by a negative pitch offset")
+
+	# Opposite tilt noses the forward DOWN -> offset must go positive.
+	mc.surface_walk_normal = Vector3.UP
+	mc.surface_walk_forward = Vector3(0, 0, -1)
+	mc.surface_walk_align_rate = 1000.0
+	mc.surface_walk_pitch_stabilize = 0.0
+	mc.align_surface_walk_normal_toward(Vector3.UP.rotated(Vector3.RIGHT, deg_to_rad(-10.0)), 0.1)
+	check(mc.surface_walk_pitch_stabilize > 0.0001, "nose-down nod is cancelled by a positive pitch offset")
+
+	# recenter <= 0 disables the stabilizer: no offset accrues from alignment.
+	mc.surface_walk_normal = Vector3.UP
+	mc.surface_walk_forward = Vector3(0, 0, -1)
+	mc.surface_walk_align_rate = 1000.0
+	mc.surface_walk_pitch_stabilize = 0.0
+	mc.surface_walk_pitch_stabilize_recenter = 0.0
+	mc.align_surface_walk_normal_toward(Vector3.UP.rotated(Vector3.RIGHT, deg_to_rad(10.0)), 0.1)
+	check(is_equal_approx(mc.surface_walk_pitch_stabilize, 0.0), "recenter = 0 disables the stabilizer")
+
+	# Applied pitch (aim + offset) is clamped to the pitch limit so it can't invert the view.
+	mc.surface_walk_pitch = 0.0
+	mc.surface_walk_pitch_stabilize = deg_to_rad(200.0)
+	var applied := mc.get_surface_walk_applied_pitch()
+	check(is_equal_approx(applied, deg_to_rad(mc.surface_walk_pitch_limit_degrees)),
+		"applied pitch clamps to the pitch limit")
+
+	mc.free()
+
+
+# --- Charge railgun scaling -------------------------------------------------------------
+# A charge weapon scales damage AND tracer width from a floor (a tap) to full (a complete
+# charge), and its hitscan_damage is the FULL value the server clamps claims to.
+
+func test_charge_weapon_scaling() -> void:
+	print("- weapons: charge railgun scaling")
+
+	var gun := ChargeHitscanWeapon.new()
+	gun.hitscan_damage = 100.0
+	gun.charge_min_damage_fraction = 0.35
+	gun.tracer_charge_min_scale = 0.4
+	gun.tracer_charge_max_scale = 1.8
+	gun.max_charge_time = 1.0
+
+	gun._fire_charge_ratio = 0.0
+	check(is_equal_approx(gun.get_effective_hitscan_damage(), 35.0), "uncharged shot deals the floor damage")
+	check(is_equal_approx(gun.get_tracer_size_scale(), 0.4), "uncharged tracer is the min width")
+
+	gun._fire_charge_ratio = 1.0
+	check(is_equal_approx(gun.get_effective_hitscan_damage(), 100.0), "full charge deals the full (clamp) damage")
+	check(is_equal_approx(gun.get_tracer_size_scale(), 1.8), "full-charge tracer is the max width")
+
+	gun._fire_charge_ratio = 0.5
+	check(is_equal_approx(gun.get_effective_hitscan_damage(), 67.5), "half charge interpolates damage")
+
+	gun.charge_time = 5.0   # beyond max
+	check(is_equal_approx(gun.charge_ratio(), 1.0), "charge ratio clamps at full")
+	gun.charge_time = 0.25
+	check(is_equal_approx(gun.charge_ratio(), 0.25), "charge ratio tracks hold time")
+	gun.free()
+
+	# The REGISTERED railgun is a charge weapon, and the economy clamps claims to its full-charge
+	# damage, so a charged shot always validates (no economy change needed for the charge).
+	var scene := WeaponInventory.get_weapon_scene(&"railgun")
+	var railgun = scene.instantiate() if scene != null else null
+	check(railgun is ChargeHitscanWeapon, "the registered railgun is a ChargeHitscanWeapon")
+
+	if railgun != null:
+		var economy := _make_economy()
+		var stats := economy.get_weapon_stats("railgun")
+		check(
+			is_equal_approx(float(stats["damage"]), float(railgun.hitscan_damage)),
+			"economy clamps railgun claims to its full-charge damage"
+		)
+		economy.free()
+		railgun.free()
+
+	# The tracer effect's width scale multiplies its beam width (so bystanders see the charge).
+	var tracer := WeaponHitscanTracerEffect.new()
+	tracer.tracer_width = 0.1
+	tracer.tail_width_multiplier = 1.0
+	tracer.size_scale = 1.0
+	var base_width := tracer.get_width_at_ratio(1.0)
+	tracer.size_scale = 2.0
+	check(is_equal_approx(tracer.get_width_at_ratio(1.0), base_width * 2.0), "tracer width scales with the charge")
+	tracer.free()
 
 
 # --- Grapple multi-wrap -----------------------------------------------------------------

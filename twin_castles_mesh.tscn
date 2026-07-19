@@ -1,0 +1,5 @@
+[gd_scene format=3 uid="uid://m7osillk6al2"]
+
+[ext_resource type="PackedScene" uid="uid://pw37brqa0fnk" path="res://Props/TwinCastles.glb" id="1_8v0o3"]
+
+[node name="TwinCastles" unique_id=264307900 instance=ExtResource("1_8v0o3")]

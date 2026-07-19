@@ -3,21 +3,20 @@ extends Node
 
 signal weapon_equipped(weapon_id: StringName, weapon: Weapon)
 
-const MINIGUN_ID: StringName = &"minigun"
-const RAILGUN_ID: StringName = &"railgun"
-const RIFLE_ID: StringName = &"rifle"
-const PLASMA_CANNON_ID: StringName = &"plasma_cannon"
-# Quick-swap slots: key 1 -> index 0, key 2 -> index 1, key 3 -> index 2, key 4 -> index 3.
-const SLOT_IDS: Array[StringName] = [MINIGUN_ID, RAILGUN_ID, RIFLE_ID, PLASMA_CANNON_ID]
+# The single weapon registry lives in a preloaded resource, editable in the inspector, exactly
+# like the map registry (map_registry.tres / MapGenerator). Drag a weapon .tscn into
+# weapon_registry.tres to register it — no code edit. Preloading it makes the exporter track
+# every weapon scene as a dependency so they bake into the dedicated-server build (a bare
+# load("res://…") string is not tracked and would ship missing). The static lookups below are
+# read by the server too (ServerEconomy stats, NetworkManager tracer relay, FFA pool) — the
+# server never equips a weapon, it only reads the same registry.
+const WEAPON_REGISTRY := preload("res://weapon_registry.tres")
 
-# The single weapon registry. Static so the server (which never equips weapons) can read the
-# same scenes to build its validation stats — see ServerEconomy.get_weapon_stats.
-const WEAPON_SCENES: Dictionary = {
-	MINIGUN_ID: preload("res://scenes/minigun.tscn"),
-	RAILGUN_ID: preload("res://scenes/railgun.tscn"),
-	RIFLE_ID: preload("res://scenes/rifle.tscn"),
-	PLASMA_CANNON_ID: preload("res://scenes/plasma_cannon.tscn"),
-}
+# Cached {"id","name","scene"} view of WEAPON_REGISTRY.weapons, built once on first access.
+# Registry ORDER is the quick-swap slot order (index 0 = key 1, ...). Mirrors
+# MapGenerator._entries_cache.
+static var _entries_cache: Array = []
+static var _entries_built: bool = false
 
 @export var weapon_mount_path: NodePath = NodePath("../CameraRig/Camera3D/WeaponMount")
 @export var ads_blend_speed: float = 12.0
@@ -87,10 +86,12 @@ func request_reload() -> void:
 
 
 func try_quick_swap(slot: int) -> void:
-	if slot < 0 or slot >= SLOT_IDS.size():
+	var slot_ids := get_weapon_ids()
+
+	if slot < 0 or slot >= slot_ids.size():
 		return
 
-	var weapon_id := SLOT_IDS[slot]
+	var weapon_id := slot_ids[slot]
 
 	if not has_weapon(weapon_id) or weapon_id == equipped_weapon_id:
 		return
@@ -254,8 +255,55 @@ func _restore_equipped_ammo(weapon_id: StringName) -> void:
 	equipped_weapon.ammo_changed.emit(equipped_weapon.current_ammo, equipped_weapon.current_reserve)
 
 
+# --- Registry lookups (mirror MapGenerator.get_map_* ) ---------------------------------
+
+# The registered weapons as {"id","name","scene"} dicts, in slot order, built from
+# weapon_registry.tres.
+static func get_weapon_entries() -> Array:
+	if _entries_built:
+		return _entries_cache
+
+	_entries_cache = []
+
+	if WEAPON_REGISTRY != null:
+		for listing in WEAPON_REGISTRY.weapons:
+			if listing == null or listing.scene == null:
+				continue
+
+			_entries_cache.append({
+				"id": StringName(listing.resolve_id()),
+				"name": listing.resolve_name(),
+				"scene": listing.scene,
+			})
+
+	_entries_built = true
+	return _entries_cache
+
+
+# Weapon ids in slot order (index 0 = quick-swap key 1). Replaces the old SLOT_IDS const.
+static func get_weapon_ids() -> Array[StringName]:
+	var ids: Array[StringName] = []
+
+	for entry in get_weapon_entries():
+		ids.append(entry["id"])
+
+	return ids
+
+
+static func get_weapon_name(weapon_id: StringName) -> String:
+	for entry in get_weapon_entries():
+		if entry["id"] == weapon_id:
+			return String(entry["name"])
+
+	return String(weapon_id)
+
+
 static func get_weapon_scene(weapon_id: StringName) -> PackedScene:
-	return WEAPON_SCENES.get(weapon_id) as PackedScene
+	for entry in get_weapon_entries():
+		if entry["id"] == weapon_id:
+			return entry["scene"] as PackedScene
+
+	return null
 
 
 func connect_weapon_signals(weapon: Weapon) -> void:

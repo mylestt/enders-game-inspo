@@ -48,6 +48,9 @@ var elapsed: float = 0.0
 var travel_time: float = 0.035
 var effect_end_time: float = 0.1
 var initialized: bool = false
+# Per-shot WIDTH multiplier (never length): a charge weapon passes its charge ratio so the beam
+# is thin on a tap, thick on a full charge. Baked into the one-time geometry build in play().
+var size_scale: float = 1.0
 
 # One material for every tracer instance in the game; per-instance uniforms carry all
 # animation state (same shared-material pattern as the death glow / team indicators).
@@ -74,7 +77,8 @@ func play(
 	start_position: Vector3,
 	end_position: Vector3,
 	did_hit: bool,
-	normal: Vector3
+	normal: Vector3,
+	width_scale: float = 1.0
 ) -> void:
 	ensure_visual_nodes()
 
@@ -84,6 +88,7 @@ func play(
 		queue_free()
 		return
 
+	size_scale = maxf(width_scale, 0.01)
 	hit_something = did_hit
 	shot_distance = shot_vector.length()
 	travel_time = clampf(
@@ -203,7 +208,7 @@ func build_strand_points(strand_index: int, point_count: int) -> Array[Vector3]:
 	var strand_center := Vector2(
 		cos(strand_phase * TAU),
 		sin(strand_phase * TAU)
-	) * tracer_width * 0.8
+	) * tracer_width * size_scale * 0.8
 
 	for point_index in range(point_count):
 		var ratio := float(point_index) / maxf(float(point_count - 1), 1.0)
@@ -214,7 +219,7 @@ func build_strand_points(strand_index: int, point_count: int) -> Array[Vector3]:
 		# exactly at the impact; middle points scatter for the jagged-energy look.
 		if point_index != 0 and point_index != point_count - 1:
 			offset += Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * (
-				sin(ratio * PI) * jagged_radius
+				sin(ratio * PI) * jagged_radius * size_scale
 			)
 
 		points.append(Vector3(offset.x, offset.y, z_distance))
@@ -269,8 +274,9 @@ func add_streak_vertex(surface_tool: SurfaceTool, vertex: Vector3) -> void:
 
 
 func get_width_at_ratio(ratio: float) -> float:
-	var tail_width := tracer_width * maxf(tail_width_multiplier, 0.01)
-	return lerpf(tail_width, tracer_width, ratio)
+	var scaled_width := tracer_width * size_scale
+	var tail_width := scaled_width * maxf(tail_width_multiplier, 0.01)
+	return lerpf(tail_width, scaled_width, ratio)
 
 
 # Sparks live in their OWN local space centred on the impact point (the node sits at
@@ -287,7 +293,7 @@ func build_impact_spark_mesh(hit_normal: Vector3) -> void:
 	var local_normal := global_transform.basis.inverse() * hit_normal
 
 	surface_tool.begin(Mesh.PRIMITIVE_TRIANGLES)
-	add_diamond(surface_tool, impact_spark_color, Vector3.ZERO, impact_spark_width * 4.0)
+	add_diamond(surface_tool, impact_spark_color, Vector3.ZERO, impact_spark_width * size_scale * 4.0)
 
 	for spark_index in range(maxi(impact_spark_count, 1)):
 		var scatter := Vector3(
@@ -313,13 +319,13 @@ func add_spark_shard(
 	local_normal: Vector3
 ) -> void:
 	var spark_direction := (spark_offset + local_normal * 0.45).normalized()
-	var spark_end := spark_direction * impact_spark_length
+	var spark_end := spark_direction * impact_spark_length * size_scale
 	var side_axis := spark_direction.cross(Vector3.FORWARD)
 
 	if side_axis.length() < 0.001:
 		side_axis = Vector3.RIGHT
 
-	side_axis = side_axis.normalized() * impact_spark_width
+	side_axis = side_axis.normalized() * impact_spark_width * size_scale
 
 	add_flat_triangle(surface_tool, impact_spark_color, side_axis, -side_axis, spark_end)
 

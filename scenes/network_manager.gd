@@ -12,8 +12,12 @@ signal connection_attempt_finished(success: bool, message: String)
 # rejects a mismatched peer cleanly instead. BUMP IT whenever any @rpc method is added,
 # removed, or renamed on any script — the smoke suite fingerprints the project's @rpc
 # surface and fails when it drifts without a bump (it prints the new hash to paste below).
-const NET_PROTOCOL_VERSION := 1
-const NET_RPC_FINGERPRINT := "919d2d753aa9692a9db36cab74bade51"
+# v2: the weapon-shot relay (server_relay_weapon_shot / client_play_weapon_shot) gained a
+# trailing tracer_scale arg for the charge railgun's variable-width beam. The @rpc NAMES are
+# unchanged (fingerprint is name-based, so it stays put) but the argument COUNT changed, which
+# is wire-incompatible with a v1 build — hence the version bump so stale builds are rejected.
+const NET_PROTOCOL_VERSION := 2
+const NET_RPC_FINGERPRINT := "70be130b6cf8442a918cd869ee124150"
 # Distinguishes our version payload from garbage/foreign auth data.
 const NET_AUTH_MAGIC := 0x5A47_4653  # "ZGFS"
 
@@ -1156,7 +1160,7 @@ func _pick_ffa_weapon(allowed: Array) -> StringName:
 			pool.append(weapon_id)
 
 	if pool.is_empty():
-		pool = WeaponInventory.SLOT_IDS.duplicate()
+		pool = WeaponInventory.get_weapon_ids()
 
 	return pool[randi() % pool.size()]
 
@@ -2335,15 +2339,16 @@ func broadcast_weapon_shot(
 	shot_end: Vector3,
 	did_hit: bool,
 	normal: Vector3,
-	weapon_id: String
+	weapon_id: String,
+	tracer_scale: float = 1.0
 ) -> void:
 	if multiplayer.multiplayer_peer == null:
 		return
 
 	if multiplayer.is_server():
-		_relay_weapon_shot(shooter_peer_id, origin, shot_end, did_hit, normal, weapon_id)
+		_relay_weapon_shot(shooter_peer_id, origin, shot_end, did_hit, normal, weapon_id, tracer_scale)
 	else:
-		rpc_id(1, "server_relay_weapon_shot", origin, shot_end, did_hit, normal, weapon_id)
+		rpc_id(1, "server_relay_weapon_shot", origin, shot_end, did_hit, normal, weapon_id, tracer_scale)
 
 
 @rpc("any_peer", "unreliable")
@@ -2352,12 +2357,13 @@ func server_relay_weapon_shot(
 	shot_end: Vector3,
 	did_hit: bool,
 	normal: Vector3,
-	weapon_id: String
+	weapon_id: String,
+	tracer_scale: float = 1.0
 ) -> void:
 	if not multiplayer.is_server():
 		return
 
-	_relay_weapon_shot(multiplayer.get_remote_sender_id(), origin, shot_end, did_hit, normal, weapon_id)
+	_relay_weapon_shot(multiplayer.get_remote_sender_id(), origin, shot_end, did_hit, normal, weapon_id, tracer_scale)
 
 
 # True when the server machine itself should also PLAY a relayed cosmetic effect: a listen
@@ -2381,7 +2387,8 @@ func _relay_weapon_shot(
 	shot_end: Vector3,
 	did_hit: bool,
 	normal: Vector3,
-	weapon_id: String
+	weapon_id: String,
+	tracer_scale: float = 1.0
 ) -> void:
 	# Only spawned players get their effects relayed (a connected-but-unspawned peer in
 	# lobby mode has nothing to shoot with).
@@ -2395,11 +2402,11 @@ func _relay_weapon_shot(
 		round_telemetry.call("record_weapon_fired", shooter_peer_id, origin, did_hit)
 
 	if _server_views_relayed_effects(shooter_peer_id):
-		client_play_weapon_shot(origin, shot_end, did_hit, normal, weapon_id)
+		client_play_weapon_shot(origin, shot_end, did_hit, normal, weapon_id, tracer_scale)
 
 	for peer_id in _lobby_client_peers_for(shooter_peer_id):
 		if int(peer_id) != shooter_peer_id:
-			rpc_id(int(peer_id), "client_play_weapon_shot", origin, shot_end, did_hit, normal, weapon_id)
+			rpc_id(int(peer_id), "client_play_weapon_shot", origin, shot_end, did_hit, normal, weapon_id, tracer_scale)
 
 
 @rpc("authority", "unreliable")
@@ -2408,7 +2415,8 @@ func client_play_weapon_shot(
 	shot_end: Vector3,
 	did_hit: bool,
 	normal: Vector3,
-	weapon_id: String
+	weapon_id: String,
+	tracer_scale: float = 1.0
 ) -> void:
 	var parent := get_world_effect_parent()
 	var tracer_scene := get_tracer_scene_for_weapon(weapon_id)
@@ -2420,7 +2428,9 @@ func client_play_weapon_shot(
 	parent.add_child(tracer)
 
 	if tracer.has_method("play"):
-		tracer.call("play", origin, shot_end, did_hit, normal)
+		# tracer_scale is the charge weapon's per-shot width multiplier (1.0 for normal guns),
+		# so bystanders see the same-sized beam the shooter fired.
+		tracer.call("play", origin, shot_end, did_hit, normal, tracer_scale)
 
 
 # Where relayed shot effects live: the current scene's WeaponEffects node, or the scene
