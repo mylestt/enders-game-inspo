@@ -38,8 +38,6 @@ grappleController = NodePath("../GrappleController")
 [node name="MovementController" type="Node" parent="." unique_id=294609104]
 script = ExtResource("2_1jxqw")
 surface_walk_slope_align_speed = 9.0
-surface_walk_entry_max_angle_degrees = 40.0
-surface_walk_lock_sweet_spot = 2.0
 
 [node name="SuitBoosters" type="Node" parent="." unique_id=2126445202]
 script = ExtResource("3_dw050")

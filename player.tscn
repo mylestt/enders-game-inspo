@@ -13,6 +13,7 @@
 [ext_resource type="Script" uid="uid://cg7trh76w3qq3" path="res://scripts/grapple_controller.gd" id="11_grapple"]
 
 [sub_resource type="Curve" id="Curve_nvl01"]
+max_value = 3.0
 _data = [Vector2(0, 0.52808994), 0.0, 0.0, 0, 0, Vector2(0.505, 0.7415731), 0.0, 0.0, 0, 0, Vector2(0.995, 1), 0.0, 0.0, 0, 0]
 point_count = 3
 
@@ -37,8 +38,6 @@ walk_speed_curve = SubResource("Curve_nvl01")
 sprint_speed_curve = SubResource("Curve_ivps1")
 surface_walk_pitch_stabilize_recenter = 10.215
 surface_walk_slope_align_speed = 9.0
-surface_walk_entry_max_angle_degrees = 40.0
-surface_walk_lock_sweet_spot = 2.0
 
 [node name="SuitBoosters" type="Node" parent="." unique_id=2126445202]
 script = ExtResource("3_dw050")

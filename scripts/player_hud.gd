@@ -16,7 +16,6 @@ var limb_push_label: Label
 var ammo_label: Label
 
 var reticle: Panel
-var weapon_aim_reticle: Panel
 var ctrl_push_arrow: Label
 
 var death_screen: ColorRect
@@ -36,10 +35,7 @@ const HITMARKER_DURATION := 0.18
 var current_jump_force: float = 10.0
 
 var _last_viewport_size: Vector2 = Vector2.ZERO
-var weapon_aim_reticle_screen_position: Vector2 = Vector2.ZERO
-var has_weapon_aim_reticle_screen_position: bool = false
 
-@export var weapon_aim_reticle_follow_speed: float = 45.0
 @export var hurt_effect_fade_speed: float = 7.0
 @export var hurt_flash_alpha: float = 0.34
 @export var hurt_shadow_alpha: float = 0.24
@@ -171,7 +167,6 @@ func build_hud() -> void:
 	build_damage_state_effects()
 	build_top_left_stats()
 	build_center_reticle()
-	build_weapon_aim_reticle()
 	build_ctrl_push_arrow()
 	build_impact_effects()
 	build_hitmarker()
@@ -285,29 +280,6 @@ func build_center_reticle() -> void:
 	center_control(reticle)
 
 
-func build_weapon_aim_reticle() -> void:
-	weapon_aim_reticle = Panel.new()
-	weapon_aim_reticle.name = "WeaponAimReticle"
-	root.add_child(weapon_aim_reticle)
-	weapon_aim_reticle.size = Vector2(24.0, 24.0)
-	weapon_aim_reticle.pivot_offset = weapon_aim_reticle.size * 0.5
-	weapon_aim_reticle.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	weapon_aim_reticle.visible = false
-	
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.0, 0.0, 0.0, 0.0)
-	style.border_color = Color(0.85, 0.95, 1.0, 0.82)
-	style.border_width_left = 2
-	style.border_width_right = 2
-	style.border_width_top = 2
-	style.border_width_bottom = 2
-	style.corner_radius_top_left = 100
-	style.corner_radius_top_right = 100
-	style.corner_radius_bottom_left = 100
-	style.corner_radius_bottom_right = 100
-	weapon_aim_reticle.add_theme_stylebox_override("panel", style)
-
-
 func build_ctrl_push_arrow() -> void:
 	ctrl_push_arrow = Label.new()
 	ctrl_push_arrow.name = "CtrlPushArrow"
@@ -368,10 +340,7 @@ func layout_dynamic_controls() -> void:
 	
 	if reticle != null:
 		center_control(reticle)
-	
-	if weapon_aim_reticle != null and not weapon_aim_reticle.visible:
-		center_control(weapon_aim_reticle)
-	
+
 	if impact_value_label != null:
 		center_control(impact_value_label)
 		impact_value_label.position.y += 120.0
@@ -564,38 +533,6 @@ func update_push_direction_arrow(
 	var screen_position := camera.unproject_position(point)
 	ctrl_push_arrow.position = screen_position - ctrl_push_arrow.size * 0.5
 	ctrl_push_arrow.visible = true
-
-
-func update_weapon_aim_reticle(
-	delta: float,
-	camera: Camera3D,
-	world_point: Vector3,
-	hidden: bool
-) -> void:
-	if weapon_aim_reticle == null:
-		return
-	
-	if hidden or camera == null:
-		weapon_aim_reticle.visible = false
-		has_weapon_aim_reticle_screen_position = false
-		return
-	
-	if camera.is_position_behind(world_point):
-		weapon_aim_reticle.visible = false
-		has_weapon_aim_reticle_screen_position = false
-		return
-	
-	var screen_position := camera.unproject_position(world_point)
-	
-	if not has_weapon_aim_reticle_screen_position:
-		weapon_aim_reticle_screen_position = screen_position
-		has_weapon_aim_reticle_screen_position = true
-	else:
-		var follow_weight := 1.0 - exp(-weapon_aim_reticle_follow_speed * delta)
-		weapon_aim_reticle_screen_position = weapon_aim_reticle_screen_position.lerp(screen_position, follow_weight)
-	
-	weapon_aim_reticle.position = weapon_aim_reticle_screen_position - weapon_aim_reticle.size * 0.5
-	weapon_aim_reticle.visible = true
 
 
 func update_booster_ui(

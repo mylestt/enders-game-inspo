@@ -35,7 +35,6 @@ enum MovementMode {
 @export var min_jump_force: float = 2.0
 @export var max_jump_force: float = 30.0
 @export var jump_force_scroll_step: float = 1.0
-@export var surface_walk_jump_momentum_carry: float = 1.35  # run speed kept (and boosted) on jump-off
 
 @export var max_grab_speed: float = 10.0
 
@@ -56,112 +55,46 @@ enum MovementMode {
 @export var grabbed_linear_damp: float = 12.0
 @export var grabbed_angular_damp: float = 4.0
 
-# Walk / sprint speed as CURVES instead of a pile of scalars. Each curve is speed (Y, m/s)
-# over seconds-since-you-started-moving (X, the curve's DOMAIN). Three control points do the
-# whole job: bottom-left = start/creep speed, middle = shapes the acceleration ramp (drag it
-# around, use the tangent handles to ease), top-right = top speed. The curve's SLOPE *is* the
-# acceleration, so there's no separate accel/time/multiplier knob. Sprint just swaps in the
-# sprint curve; a shared ramp timer keeps walk<->sprint smooth. Leave them null and setup()
-# builds sensible defaults (walk 0->3, sprint 0->6 m/s); edit in the inspector's curve editor.
+# --- Surface walk: the essentials --------------------------------------------------------
+# Walk / sprint speed as CURVES. Y = speed; the curve's MAX VALUE *is* your top speed in m/s
+# (the shape is normalised to its own highest point, so wherever your highest point sits, it
+# runs at exactly Max Value m/s — set Max Value 20, you move at 20). X = seconds since you
+# started moving (Max Domain = seconds to reach top speed); the shape between is your
+# acceleration. Null = sensible defaults are built at runtime (walk 3, sprint 6 m/s).
 @export var walk_speed_curve: Curve
 @export var sprint_speed_curve: Curve
 
-@export var surface_walk_body_offset: float = 0.85
-@export var surface_walk_snap_strength: float = 10.0
-@export var surface_walk_max_snap_speed: float = 8.0
-@export var surface_walk_mouse_sensitivity: float = 0.0025
-@export var surface_walk_pitch_limit_degrees: float = 82.0
-# View-pitch stabilizer ("gimbal"): the camera pitch you set with the mouse is held steady
-# against the body's own pitch nod as it re-orients to follow the surface — walking over bumps,
-# seams and curves no longer rocks your aim up/down; only the mouse (and recoil) pitch the view.
-# It works by measuring the pitch the alignment adds to the body each frame and cancelling it on
-# the camera, then washing that cancellation out at this per-second rate so a SUSTAINED
-# reorientation (deliberately climbing onto a wall/ceiling) still settles the view onto the new
-# surface instead of leaving you looking the wrong way. LOWER = more locked / gimbaled (quick
-# nods held out harder, big transitions settle slower); HIGHER = looser (follows the surface
-# sooner). Keep it > 0 so transitions always settle. 0 disables the stabilizer entirely.
+@export var surface_walk_body_offset: float = 0.85           # standing height off the surface
+@export var surface_walk_pitch_limit_degrees: float = 82.0   # look up/down clamp
+# View-pitch gimbal: cancels the body's alignment nod on the camera so terrain never rocks
+# your aim; washes out at this per-second rate so climbing onto a wall still settles the
+# view. LOWER = more locked, HIGHER = follows the surface sooner, 0 = off.
 @export var surface_walk_pitch_stabilize_recenter: float = 3.0
-@export var surface_walk_space_launches_off: bool = true
-
-@export var surface_walk_transition_duration: float = 0.14
-@export var surface_walk_entry_shake_duration: float = 0.18
-@export var surface_walk_entry_shake_strength: float = 0.07
-@export var surface_walk_entry_shake_frequency: float = 52.0
-
-# Spawn ground-lock: how far to search around a spawn point for a surface to stand on. It
-# always snaps to the NEAREST surface found (instant, no slide), so a generous radius only
-# widens coverage — a capsule resting ~1 m off a floor still lands on that floor. If nothing
-# is within range the player just spawns free-floating (zero-G) instead.
-@export var surface_walk_spawn_probe_distance: float = 8.0
-
-@export var surface_walk_edge_check_extra_distance: float = 0.35
-
-# Edge traversal: a surface ahead in the walk direction takes over as the walked surface once
-# it's within stand range (concave seam), and forward-down rays carry the body over a convex
-# crest. Only REASONABLE seams are walkable: candidates angled further than max_edge_angle
-# from the current surface are ignored — sharp rims are a drop-off, steep walls a jam.surface_walk_max_concave_angle_degrees
-@export var surface_walk_wrap_probe: bool = true
-@export var surface_walk_max_edge_angle_degrees: float = 70.0
-# Concave handover limit for the FEELER ray only (walking INTO a surface). Kept a bit
-# above max_edge_angle so a deliberate walk-in still climbs steep-but-walkable seams (the
-# Diamond arena's ~70.5° interior seams must keep working at speed), but BELOW vertical:
-# a face ~90° off the one you stand on is a WALL — it blocks you like a wall instead of
-# rotating you onto it. Raise back toward 120 to restore walk-up-any-wall traversal;
-# lower toward max_edge_angle for stricter walls.
-@export var surface_walk_max_concave_angle_degrees: float = 95.0
-# What happens when you WALK INTO a face too steep to climb (steeper than the concave limit
-# above). OFF (default): you stop dead against it and slide along its base, staying grounded
-# — a wall behaves like a wall. ON: you detach into zero-G instead. Either way the wall is
-# never auto-aligned to. This exists because, without it, physics depenetration off a
-# rejected steep face randomly LIFTS you off some walls (inward-leaning/curved ones) but not
-# others, which reads as "sometimes I leave ground mode against a wall, sometimes I don't".
-@export var surface_walk_wall_forces_zero_g: bool = false
-# The ground orientation target is BLENDED from several probes (down ray + four foot rays
-# + the crest sweeps), weighted by hit distance, instead of one winner-takes-all ray.
-# Crossing a seam the weight hands over gradually — no face-to-face flip-flopping — and on
-# curved colliders (SphereShape3D etc.) the target varies continuously. This is the spacing
-# of the foot probes around the body (metres).
-@export var surface_walk_probe_foot_offset: float = 0.28
-# Anchor hysteresis: standing exactly ON an edge, the nearest-hit ray alternates faces every
-# physics frame. The anchored face (snap plane / movement tangent / gate reference) only
-# SWITCHES once a different face has been the dominant support for this long — alternation
-# never persists, so the anchor can't flip-flop. Curved surfaces drift a fraction of
-# same_face_degrees per frame, so they track continuously and never engage the timer.
-@export var surface_walk_anchor_switch_time: float = 0.12
-@export var surface_walk_anchor_same_face_degrees: float = 15.0
-# Sticky blending: hits on faces OTHER than the anchored one contribute at most this weight
-# fraction, scaled further down toward 0 at standstill — standing on a corner the body hugs
-# the anchored face (no rocking, no averaged 45° lean), while at walk speed the new face
-# blends in for a smooth handover.
-@export var surface_walk_foreign_face_weight: float = 0.35
-# Low-pass on the orientation target (per-second rate): absorbs the residual per-frame ray
-# alternation right on an edge; the align tween below handles the rest.
-@export var surface_walk_target_smoothing: float = 22.0
-
-# Slope alignment: while ground-walking, ease the body's (and camera's) orientation onto the
-# surface under it. Full ease-in/ease-out tween: the turn rate ramps up (align_accel), is
-# capped (max_turn_speed), and decays exponentially (align_speed) — never a linear snap.
+# THE walkable-angle gate: a surface angled further than this from the one you stand on is a
+# WALL — it stops you (velocity into it is stripped); anything within it is ground you walk
+# onto and reorient across. One number for probes, seam handover and wall blocking.
+@export var surface_walk_max_edge_angle_degrees: float = 80.0
+# Transition speed: how eagerly the body banks onto new surface orientations (per second).
 @export var surface_walk_slope_align_speed: float = 10.0
-@export var surface_walk_slope_align_max_turn_speed_degrees: float = 175.0
-@export var surface_walk_align_accel: float = 6.5
-@export var surface_walk_friction: float = 0.0
 
-# Ground-lock timing: angle your body so your feet face a surface, then press C to lock onto
-# it. You can lock from up to `max_distance` metres away (measured straight off your feet);
-# locking exactly at `sweet_spot` metres is clean. Missing the sweet spot — too far (toward
-# max) OR too close (toward the surface) — temporarily "dazes" the first-person camera with
-# look-inertia that scales with how far off the timing was. Hit the sweet spot: no daze.
-# Entry ALIGNMENT gate: C only accepts a surface whose normal is within
-# `entry_max_angle_degrees` of the body's own up — your feet must genuinely face it. Spawn
-# grounding (round start / respawn) is exempt and still snaps to the nearest surface.
-@export var surface_walk_entry_max_angle_degrees: float = 20.0
-@export var surface_walk_lock_max_distance: float = 4.0          # metres: farthest you can lock from
-@export var surface_walk_lock_sweet_spot: float = 1.5            # metres: perfect-timing distance
-@export var surface_walk_lock_daze_max_strength: float = 0.85    # 0..1: worst-case look sluggishness
-@export var surface_walk_lock_daze_max_duration: float = 1.1     # seconds the worst-case daze lasts
-@export var surface_walk_lock_daze_curve: float = 1.5            # >1 = forgiving near the sweet spot
-@export var surface_walk_look_responsiveness: float = 60.0       # un-dazed look response (per second)
-@export var surface_walk_lock_daze_min_responsiveness: float = 8.0  # most-dazed look response
+# Internal surface-walk tuning (deliberately NOT exported — edit here if the feel needs it).
+const SURFACE_WALK_SNAP_STRENGTH := 10.0            # hover-height spring stiffness
+const SURFACE_WALK_MAX_SNAP_SPEED := 8.0            # spring speed cap
+const SURFACE_WALK_TRANSITION_DURATION := 0.14      # entry slide-in seconds
+const SURFACE_WALK_ENTRY_SHAKE_DURATION := 0.18
+const SURFACE_WALK_ENTRY_SHAKE_STRENGTH := 0.07
+const SURFACE_WALK_ENTRY_SHAKE_FREQUENCY := 52.0
+const SURFACE_WALK_SPAWN_PROBE_DISTANCE := 8.0      # spawn ground-search radius
+const SURFACE_WALK_LOCK_MAX_DISTANCE := 4.0         # C-lock reach off the feet
+const SURFACE_WALK_EDGE_CHECK_EXTRA_DISTANCE := 0.35
+const SURFACE_WALK_PROBE_FOOT_OFFSET := 0.28        # foot-ray spread
+const SURFACE_WALK_ANCHOR_SWITCH_TIME := 0.12       # edge anti-flicker hysteresis
+const SURFACE_WALK_ANCHOR_SAME_FACE_DEGREES := 15.0
+const SURFACE_WALK_FOREIGN_FACE_WEIGHT := 0.35      # corner blend stickiness
+const SURFACE_WALK_TARGET_SMOOTHING := 22.0         # orientation-target low-pass
+const SURFACE_WALK_MAX_TURN_SPEED_DEGREES := 175.0  # reorientation rate cap
+const SURFACE_WALK_ALIGN_ACCEL := 6.5               # reorientation ease-in
+const SURFACE_WALK_JUMP_MOMENTUM_CARRY := 1.35      # run speed kept (boosted) on jump-off
 
 var player: RigidBody3D
 var camera: Camera3D
@@ -200,7 +133,7 @@ var surface_walk_pitch: float = 0.0
 # surface_walk_pitch_stabilize_recenter). Added to surface_walk_pitch only when writing the
 # camera; the aim value itself stays mouse/recoil-driven. Washes toward 0 each frame.
 var surface_walk_pitch_stabilize: float = 0.0
-# Low-passed orientation target (see surface_walk_target_smoothing) and how long a face
+# Low-passed orientation target (see SURFACE_WALK_TARGET_SMOOTHING) and how long a face
 # OTHER than the anchored one has been the nearest support (drives the anchor switch).
 var surface_walk_smoothed_target: Vector3 = Vector3.UP
 var surface_walk_anchor_foreign_time: float = 0.0
@@ -212,6 +145,10 @@ var surface_walk_accel_time: float = 0.0
 var surface_walk_last_move_dir: Vector3 = Vector3.ZERO
 var _walk_curve_max_slope: float = 60.0
 var _sprint_curve_max_slope: float = 60.0
+# Peak-normalisation: sample * scale makes the curve's HIGHEST point equal its Max Value, so
+# the inspector's Max Value field literally is the top speed in m/s whatever the shape.
+var _walk_curve_scale: float = 1.0
+var _sprint_curve_scale: float = 1.0
 
 var surface_walk_transition_active: bool = false
 var surface_walk_transition_timer: float = 0.0
@@ -220,16 +157,8 @@ var surface_walk_transition_target_transform: Transform3D
 
 var camera_base_position: Vector3 = Vector3.ZERO
 var surface_walk_shake_timer: float = 0.0
-var surface_walk_align_rate: float = 0.0   # rad/s, eased by surface_walk_align_accel
+var surface_walk_align_rate: float = 0.0   # rad/s, eased by SURFACE_WALK_ALIGN_ACCEL
 var _pre_surface_walk_material: PhysicsMaterial = null
-
-# Ground-lock daze state: how much/long the camera is sluggish after a mistimed lock, plus
-# the low-passed look deltas that produce the inertia feel.
-var surface_walk_daze_timer: float = 0.0
-var surface_walk_daze_duration: float = 0.0
-var surface_walk_daze_strength: float = 0.0
-var surface_walk_look_yaw_vel: float = 0.0
-var surface_walk_look_pitch_vel: float = 0.0
 
 var last_surface_result: Dictionary = {}
 var last_ctrl_push_result: Dictionary = {}
@@ -372,7 +301,7 @@ func physics_update(
 		return
 
 	# A fresh spawn requested ground mode; resolve it now that we're in a physics frame (the
-	# surface raycasts need it). Runs even while input_locked so the daze/immobilize on spawn
+	# surface raycasts need it). Runs even while input_locked so the immobilize on spawn
 	# doesn't leave the player floating. Retries a few frames, then gives up (stays zero-G).
 	if pending_spawn_ground_mode:
 		if enter_spawn_surface_walk() or pending_spawn_ground_frames <= 0:
@@ -477,10 +406,6 @@ func physics_update_zero_g(delta: float, free_look_active: bool) -> void:
 func physics_update_surface_walk(delta: float) -> void:
 	release_grab()
 
-	# Tick down the mistimed-lock daze for the whole time we're in ground mode.
-	if surface_walk_daze_timer > 0.0:
-		surface_walk_daze_timer = maxf(surface_walk_daze_timer - delta, 0.0)
-
 	if surface_walk_transition_active:
 		update_surface_walk_transition(delta)
 		return
@@ -512,28 +437,21 @@ func try_enter_surface_walk_mode() -> void:
 	var result := get_ground_lock_probe()
 
 	if result.is_empty():
-		print(
-			"Ground lock failed: no surface within ", surface_walk_lock_max_distance,
-			" m aligned with your feet (within ", surface_walk_entry_max_angle_degrees, " degrees)."
-		)
+		print("Ground lock failed: no surface within ", SURFACE_WALK_LOCK_MAX_DISTANCE, " m.")
 		return
 
 	var surface_normal: Vector3 = result.get("normal", Vector3.ZERO)
 	var hit_position: Vector3 = result.get("position", player.global_position)
-	var distance: float = result.get("distance", surface_walk_lock_sweet_spot)
 
 	if surface_normal.length() < 0.01:
 		print("Ground lock failed: invalid surface normal.")
 		return
 
-	# Timing penalty: how far the lock distance was from the sweet spot decides the daze.
-	apply_ground_lock_daze(distance)
-
 	enter_surface_walk_mode(hit_position, surface_normal.normalized())
 
 
 # Called on (re)spawn: find the nearest surface around the spawn point and drop straight into
-# ground mode on it (no transition, no daze). Returns true if a surface was found; if not, the
+# ground mode on it (no transition). Returns true if a surface was found; if not, the
 # player is left free-floating in zero-G. Facing comes from the spawn transform's forward.
 func request_spawn_ground_mode() -> void:
 	pending_spawn_ground_mode = true
@@ -541,15 +459,10 @@ func request_spawn_ground_mode() -> void:
 
 
 func enter_spawn_surface_walk() -> bool:
-	var surface := find_spawn_surface(surface_walk_spawn_probe_distance)
+	var surface := find_spawn_surface(SURFACE_WALK_SPAWN_PROBE_DISTANCE)
 
 	if surface.is_empty():
 		return false
-
-	# Fresh spawn: no leftover mistimed-lock daze.
-	surface_walk_daze_timer = 0.0
-	surface_walk_daze_duration = 0.0
-	surface_walk_daze_strength = 0.0
 
 	enter_surface_walk_mode(surface["position"], (surface["normal"] as Vector3).normalized(), true)
 	return true
@@ -608,9 +521,8 @@ func find_spawn_surface(max_distance: float, max_normal_angle_degrees: float = -
 	return best
 
 
-# Probes straight off the player's feet (body -Y) for a lockable surface within the max lock
-# distance. Returns {position, normal, distance(metres)} or {} if nothing is in range. You must
-# first angle your body so your feet face the surface, then time the press as you approach.
+# Probes straight off the player's feet (body -Y) for a lockable surface within reach,
+# falling back to the nearest surface around the body. Returns {position, normal} or {}.
 func get_ground_lock_probe() -> Dictionary:
 	if player == null:
 		return {}
@@ -620,39 +532,26 @@ func get_ground_lock_probe() -> Dictionary:
 
 	if direction.length() >= 0.01:
 		direction = direction.normalized()
-		var end := origin + direction * surface_walk_lock_max_distance
+		var end := origin + direction * SURFACE_WALK_LOCK_MAX_DISTANCE
 		var result := raycast_from_player(origin, end)
 
 		if not result.is_empty():
 			var hit_normal: Vector3 = result.get("normal", Vector3.ZERO)
 
-			# Alignment gate: the surface's normal must match the body's up within
-			# surface_walk_entry_max_angle_degrees — feet pointing AT a surface isn't
-			# enough if the body is tilted across it (e.g. feet ray clipping a wall edge).
-			if hit_normal.length() >= 0.01 and rad_to_deg(
-				player.global_transform.basis.y.angle_to(hit_normal.normalized())
-			) <= surface_walk_entry_max_angle_degrees:
-				var hit_position: Vector3 = result.get("position", end)
+			if hit_normal.length() >= 0.01:
 				return {
-					"position": hit_position,
+					"position": result.get("position", end),
 					"normal": hit_normal.normalized(),
-					"distance": origin.distance_to(hit_position),
 				}
 
 	# 6DOF fallback: the feet ray can miss a surface the body is nonetheless hovering over
-	# (uneven ground, edges). Same alignment gate — only surfaces the body's up already
-	# agrees with within the entry angle qualify, so you can't lock onto a wall beside you.
-	var nearest := find_spawn_surface(surface_walk_lock_max_distance, surface_walk_entry_max_angle_degrees)
+	# (uneven ground, edges) — take the nearest surface around the body instead.
+	var nearest := find_spawn_surface(SURFACE_WALK_LOCK_MAX_DISTANCE)
 
 	if nearest.is_empty():
 		return {}
 
-	var nearest_position: Vector3 = nearest["position"]
-	return {
-		"position": nearest_position,
-		"normal": nearest["normal"],
-		"distance": origin.distance_to(nearest_position),
-	}
+	return {"position": nearest["position"], "normal": nearest["normal"]}
 
 
 func get_ground_lock_probe_direction() -> Vector3:
@@ -663,51 +562,6 @@ func get_ground_lock_probe_direction() -> Vector3:
 		return -player.global_transform.basis.y
 
 	return Vector3.ZERO
-
-
-# 0.0 at the sweet spot, ramping to 1.0 at either extreme (touching the surface, or out at the
-# max lock distance). Each side is normalised by its own range so both extremes max out.
-func ground_lock_error_ratio(distance: float) -> float:
-	var sweet := surface_walk_lock_sweet_spot
-
-	if distance >= sweet:
-		var far_range := maxf(surface_walk_lock_max_distance - sweet, 0.001)
-		return clampf((distance - sweet) / far_range, 0.0, 1.0)
-
-	var near_range := maxf(sweet, 0.001)
-	return clampf((sweet - distance) / near_range, 0.0, 1.0)
-
-
-# Sets the camera daze from how badly the lock distance missed the sweet spot. A perfect lock
-# clears the daze entirely; worse misses give stronger, longer-lasting look-inertia.
-func apply_ground_lock_daze(distance: float) -> void:
-	surface_walk_look_yaw_vel = 0.0
-	surface_walk_look_pitch_vel = 0.0
-
-	var ratio := ground_lock_error_ratio(distance)
-
-	if ratio <= 0.0:
-		surface_walk_daze_timer = 0.0
-		surface_walk_daze_duration = 0.0
-		surface_walk_daze_strength = 0.0
-		return
-
-	var curved := pow(ratio, maxf(surface_walk_lock_daze_curve, 0.01))
-	surface_walk_daze_strength = curved * surface_walk_lock_daze_max_strength
-	surface_walk_daze_duration = curved * surface_walk_lock_daze_max_duration
-	surface_walk_daze_timer = surface_walk_daze_duration
-
-	print("Ground lock: ", snappedf(distance, 0.01), " m (sweet ", surface_walk_lock_sweet_spot,
-		" m) -> daze ", snappedf(surface_walk_daze_strength, 0.01),
-		" for ", snappedf(surface_walk_daze_duration, 0.01), " s.")
-
-
-# Current daze amount (0..1), fading out linearly over the daze duration.
-func current_surface_walk_daze() -> float:
-	if surface_walk_daze_timer <= 0.0 or surface_walk_daze_duration <= 0.0:
-		return 0.0
-
-	return surface_walk_daze_strength * clampf(surface_walk_daze_timer / surface_walk_daze_duration, 0.0, 1.0)
 
 
 func update_surface_walk_entry_cache() -> void:
@@ -732,7 +586,7 @@ func enter_surface_walk_mode(hit_position: Vector3, surface_normal: Vector3, ins
 	# higher accel hides it). Suspend friction while walking, restore it on exit.
 	_pre_surface_walk_material = player.physics_material_override
 	var walk_material := PhysicsMaterial.new()
-	walk_material.friction = surface_walk_friction
+	walk_material.friction = 0.0
 	player.physics_material_override = walk_material
 
 	surface_walk_normal = surface_normal.normalized()
@@ -790,7 +644,7 @@ func start_surface_walk_transition(target_transform: Transform3D) -> void:
 	surface_walk_transition_start_transform = player.global_transform
 	surface_walk_transition_target_transform = target_transform
 	
-	if surface_walk_transition_duration <= 0.0:
+	if SURFACE_WALK_TRANSITION_DURATION <= 0.0:
 		player.global_transform = surface_walk_transition_target_transform
 		surface_walk_transition_active = false
 
@@ -803,7 +657,7 @@ func update_surface_walk_transition(delta: float) -> void:
 	surface_walk_transition_timer += delta
 	
 	var raw_t := clampf(
-		surface_walk_transition_timer / maxf(surface_walk_transition_duration, 0.001),
+		surface_walk_transition_timer / maxf(SURFACE_WALK_TRANSITION_DURATION, 0.001),
 		0.0,
 		1.0
 	)
@@ -828,7 +682,7 @@ func update_surface_walk_transition(delta: float) -> void:
 
 
 func start_surface_walk_entry_shake() -> void:
-	surface_walk_shake_timer = surface_walk_entry_shake_duration
+	surface_walk_shake_timer = SURFACE_WALK_ENTRY_SHAKE_DURATION
 
 
 func update_surface_walk_entry_shake(delta: float) -> void:
@@ -841,16 +695,16 @@ func update_surface_walk_entry_shake(delta: float) -> void:
 	surface_walk_shake_timer -= delta
 	
 	var remaining_ratio := clampf(
-		surface_walk_shake_timer / maxf(surface_walk_entry_shake_duration, 0.001),
+		surface_walk_shake_timer / maxf(SURFACE_WALK_ENTRY_SHAKE_DURATION, 0.001),
 		0.0,
 		1.0
 	)
 	
 	var time := Time.get_ticks_msec() / 1000.0
-	var shake_amount := surface_walk_entry_shake_strength * remaining_ratio
+	var shake_amount := SURFACE_WALK_ENTRY_SHAKE_STRENGTH * remaining_ratio
 	
-	var x_offset := sin(time * surface_walk_entry_shake_frequency) * shake_amount
-	var y_offset := cos(time * surface_walk_entry_shake_frequency * 1.37) * shake_amount * 0.65
+	var x_offset := sin(time * SURFACE_WALK_ENTRY_SHAKE_FREQUENCY) * shake_amount
+	var y_offset := cos(time * SURFACE_WALK_ENTRY_SHAKE_FREQUENCY * 1.37) * shake_amount * 0.65
 	
 	camera.position = camera_base_position + Vector3(x_offset, y_offset, 0.0)
 	
@@ -879,7 +733,7 @@ func update_surface_walk_edge_check(delta: float) -> bool:
 	# vectors, which degenerates into float noise when they're near-identical (the common
 	# case here) and spams "axis must be normalized". At these tiny per-frame steps
 	# lerp+normalize is equivalent.
-	var smooth_weight := clampf(1.0 - exp(-surface_walk_target_smoothing * delta), 0.0, 1.0)
+	var smooth_weight := clampf(1.0 - exp(-SURFACE_WALK_TARGET_SMOOTHING * delta), 0.0, 1.0)
 	var smoothed := surface_walk_smoothed_target.lerp(target_normal, smooth_weight)
 	surface_walk_smoothed_target = smoothed.normalized() if smoothed.length() > 0.01 else target_normal
 	align_surface_walk_normal_toward(surface_walk_smoothed_target, delta)
@@ -890,14 +744,14 @@ func update_surface_walk_edge_check(delta: float) -> bool:
 	# its own face through the same-face hit (curves drift a fraction of the same-face angle
 	# per frame, so they track continuously and never engage the timer). A feeler handover
 	# has no same-face hit and switches immediately (deliberate walk-in).
-	if rad_to_deg(raw_normal.angle_to(surface_walk_anchor_normal)) <= surface_walk_anchor_same_face_degrees:
+	if rad_to_deg(raw_normal.angle_to(surface_walk_anchor_normal)) <= SURFACE_WALK_ANCHOR_SAME_FACE_DEGREES:
 		surface_walk_anchor_foreign_time = 0.0
 		surface_walk_anchor_point = result["position"]
 		surface_walk_anchor_normal = raw_normal
 	else:
 		surface_walk_anchor_foreign_time += delta
 
-		if result.has("same_face_normal") and surface_walk_anchor_foreign_time < surface_walk_anchor_switch_time:
+		if result.has("same_face_normal") and surface_walk_anchor_foreign_time < SURFACE_WALK_ANCHOR_SWITCH_TIME:
 			surface_walk_anchor_point = result["same_face_position"]
 			surface_walk_anchor_normal = (result["same_face_normal"] as Vector3).normalized()
 		else:
@@ -923,14 +777,14 @@ func align_surface_walk_normal_toward(target_normal: Vector3, delta: float) -> v
 		return
 
 	var exp_weight := 1.0 - exp(-surface_walk_slope_align_speed * delta)
-	var max_step := deg_to_rad(surface_walk_slope_align_max_turn_speed_degrees) * delta
+	var max_step := deg_to_rad(SURFACE_WALK_MAX_TURN_SPEED_DEGREES) * delta
 	var desired_step := minf(full_angle * exp_weight, max_step)
 	# Ease the turn rate toward the desired rate: soft onset; the exponential tail above
 	# already softens the stop.
 	surface_walk_align_rate = lerpf(
 		surface_walk_align_rate,
 		desired_step / delta,
-		clampf(1.0 - exp(-surface_walk_align_accel * delta), 0.0, 1.0)
+		clampf(1.0 - exp(-SURFACE_WALK_ALIGN_ACCEL * delta), 0.0, 1.0)
 	)
 	var step_angle := minf(desired_step, surface_walk_align_rate * delta)
 	var t := clampf(step_angle / full_angle, 0.0, 1.0)
@@ -971,11 +825,11 @@ func get_surface_walk_ground_result() -> Dictionary:
 		return {}
 
 	var origin := player.global_position
-	var probe_length := surface_walk_body_offset + surface_walk_edge_check_extra_distance + 0.08
+	var probe_length := surface_walk_body_offset + SURFACE_WALK_EDGE_CHECK_EXTRA_DISTANCE + 0.08
 	var move_dir := get_surface_walk_probe_move_direction()
 
 	if move_dir != Vector3.ZERO:
-		var feeler := probe_surface_walk_ray(origin, move_dir, probe_length, surface_walk_max_concave_angle_degrees)
+		var feeler := probe_surface_walk_ray(origin, move_dir, probe_length, surface_walk_max_edge_angle_degrees)
 
 		if not feeler.is_empty():
 			feeler["target_normal"] = feeler["normal"]
@@ -1005,10 +859,10 @@ func get_surface_walk_ground_result() -> Dictionary:
 		if axis == Vector3.ZERO:
 			continue
 
-		probes.append([lifted + axis * surface_walk_probe_foot_offset, -surface_walk_normal])
-		probes.append([lifted - axis * surface_walk_probe_foot_offset, -surface_walk_normal])
+		probes.append([lifted + axis * SURFACE_WALK_PROBE_FOOT_OFFSET, -surface_walk_normal])
+		probes.append([lifted - axis * SURFACE_WALK_PROBE_FOOT_OFFSET, -surface_walk_normal])
 
-	if surface_walk_wrap_probe and move_dir != Vector3.ZERO:
+	if move_dir != Vector3.ZERO:
 		var wrap_right := move_dir.cross(surface_walk_normal)
 
 		if wrap_right.length() > 0.01:
@@ -1025,8 +879,8 @@ func get_surface_walk_ground_result() -> Dictionary:
 		0.0,
 		1.0
 	)
-	var foreign_weight := surface_walk_foreign_face_weight * lerpf(0.1, 1.0, speed_ratio)
-	var same_face_cos := cos(deg_to_rad(surface_walk_anchor_same_face_degrees))
+	var foreign_weight := SURFACE_WALK_FOREIGN_FACE_WEIGHT * lerpf(0.1, 1.0, speed_ratio)
+	var same_face_cos := cos(deg_to_rad(SURFACE_WALK_ANCHOR_SAME_FACE_DEGREES))
 
 	var best: Dictionary = {}
 	var best_distance := INF
@@ -1140,11 +994,6 @@ func exit_surface_walk_mode() -> void:
 	surface_walk_align_rate = 0.0
 	surface_walk_pitch_stabilize = 0.0
 
-	surface_walk_daze_timer = 0.0
-	surface_walk_daze_duration = 0.0
-	surface_walk_daze_strength = 0.0
-	surface_walk_look_yaw_vel = 0.0
-	surface_walk_look_pitch_vel = 0.0
 	# The fold below keeps the current view (recoil included) as the new body basis; zero the
 	# offset so it isn't applied a second time on top.
 	recoil_pending = Vector2.ZERO
@@ -1168,28 +1017,8 @@ func exit_surface_walk_mode() -> void:
 
 
 func update_surface_walk_mouse_look(delta: float) -> void:
-	var raw_yaw := -mouse_motion.x * surface_walk_mouse_sensitivity
-	var raw_pitch := -mouse_motion.y * surface_walk_mouse_sensitivity
-
-	var yaw_delta := raw_yaw
-	var pitch_delta := raw_pitch
-
-	var daze := current_surface_walk_daze()
-
-	if daze > 0.001:
-		# A mistimed lock makes the view feel heavy: low-pass the look so it lags the input
-		# (slow to start, drifts on stop) — i.e. camera inertia. The laggier the response, the
-		# stronger the daze. Fades to 1:1 as the daze runs out.
-		var response := lerpf(surface_walk_look_responsiveness, surface_walk_lock_daze_min_responsiveness, daze)
-		var smooth := clampf(1.0 - exp(-response * delta), 0.0, 1.0)
-		surface_walk_look_yaw_vel = lerpf(surface_walk_look_yaw_vel, raw_yaw, smooth)
-		surface_walk_look_pitch_vel = lerpf(surface_walk_look_pitch_vel, raw_pitch, smooth)
-		yaw_delta = surface_walk_look_yaw_vel
-		pitch_delta = surface_walk_look_pitch_vel
-	else:
-		# No daze: 1:1 look, identical to the original feel.
-		surface_walk_look_yaw_vel = raw_yaw
-		surface_walk_look_pitch_vel = raw_pitch
+	var yaw_delta := -mouse_motion.x * mouse_sensitivity
+	var pitch_delta := -mouse_motion.y * mouse_sensitivity
 
 	if absf(yaw_delta) > 0.0000001:
 		surface_walk_forward = surface_walk_forward.rotated(surface_walk_normal, yaw_delta).normalized()
@@ -1279,19 +1108,12 @@ func handle_surface_walk_movement(delta: float) -> void:
 	if move_dir != Vector3.ZERO:
 		desired_tangent_velocity = move_dir * target_speed
 
-	# A face directly ahead that's too steep to climb (steeper than the concave handover
-	# limit) is a WALL. Handle it deterministically here instead of leaving it to physics
-	# depenetration (which lifts you off some walls and not others). ON -> detach to zero-G;
-	# OFF -> strip the into-wall part of the walk so you stop against it and stay grounded.
+	# A face directly ahead that's too steep to climb (past the walkable angle) is a WALL:
+	# strip the into-wall part of the walk deterministically so you stop against it and stay
+	# grounded (physics depenetration alone lifts you off some walls and not others).
 	var wall_normal := get_surface_walk_wall_block_normal()
 
 	if wall_normal != Vector3.ZERO:
-		if surface_walk_wall_forces_zero_g:
-			var carried := player.linear_velocity
-			exit_surface_walk_mode()
-			player.linear_velocity = carried
-			return
-
 		var wall_tangent := wall_normal.slide(surface_walk_anchor_normal)
 
 		if wall_tangent.length() > 0.001:
@@ -1308,7 +1130,7 @@ func handle_surface_walk_movement(delta: float) -> void:
 
 	# Also strip any pre-existing into-wall momentum so a fast run-up can't punch through the
 	# wall in one frame before move_toward finishes decelerating it.
-	if wall_normal != Vector3.ZERO and not surface_walk_wall_forces_zero_g:
+	if wall_normal != Vector3.ZERO:
 		var wall_tangent := wall_normal.slide(surface_walk_anchor_normal)
 
 		if wall_tangent.length() > 0.001:
@@ -1344,7 +1166,7 @@ func get_surface_walk_wall_block_normal() -> Vector3:
 		return Vector3.ZERO
 
 	var origin := player.global_position + surface_walk_normal * 0.08
-	var probe_length := surface_walk_body_offset + surface_walk_edge_check_extra_distance + 0.08
+	var probe_length := surface_walk_body_offset + SURFACE_WALK_EDGE_CHECK_EXTRA_DISTANCE + 0.08
 	var result := raycast_from_player(origin, origin + move_dir * probe_length)
 
 	if result.is_empty():
@@ -1358,7 +1180,7 @@ func get_surface_walk_wall_block_normal() -> Vector3:
 	hit_normal = hit_normal.normalized()
 
 	# <= concave limit is a walkable seam the feeler hands you over to; only STEEPER blocks.
-	if rad_to_deg(surface_walk_anchor_normal.angle_to(hit_normal)) <= surface_walk_max_concave_angle_degrees:
+	if rad_to_deg(surface_walk_anchor_normal.angle_to(hit_normal)) <= surface_walk_max_edge_angle_degrees:
 		return Vector3.ZERO
 
 	return hit_normal
@@ -1374,8 +1196,33 @@ func init_surface_walk_speed_curves() -> void:
 	if sprint_speed_curve == null:
 		sprint_speed_curve = _default_speed_curve(0.8, 6.0, 0.18)
 
-	_walk_curve_max_slope = _curve_max_slope(walk_speed_curve)
-	_sprint_curve_max_slope = _curve_max_slope(sprint_speed_curve)
+	_walk_curve_scale = _curve_peak_scale(walk_speed_curve)
+	_sprint_curve_scale = _curve_peak_scale(sprint_speed_curve)
+	_walk_curve_max_slope = _curve_max_slope(walk_speed_curve) * _walk_curve_scale
+	_sprint_curve_max_slope = _curve_max_slope(sprint_speed_curve) * _sprint_curve_scale
+
+
+# max_value / highest-sampled-point: multiplying samples by this makes the curve's peak hit
+# exactly max_value — the "Max Value = top speed" contract.
+func _curve_peak_scale(curve: Curve) -> float:
+	if curve == null:
+		return 1.0
+
+	var span := curve.max_domain - curve.min_domain
+
+	if span <= 0.0001:
+		return 1.0
+
+	var peak := 0.0
+	var steps := 24
+
+	for i in range(steps + 1):
+		peak = maxf(peak, curve.sample(curve.min_domain + span * (float(i) / float(steps))))
+
+	if peak <= 0.0001:
+		return 1.0
+
+	return curve.max_value / peak
 
 
 # Three-point speed-vs-time curve: (0, start), an ease-out mid (most of the speed early, then
@@ -1420,8 +1267,7 @@ func get_surface_walk_speed_curve(sprinting: bool) -> Curve:
 	return sprint_speed_curve if sprinting else walk_speed_curve
 
 
-# Top speed of a curve (its highest point = the top-right control point value). Used by the
-# sensor to normalise walk speed and as a fallback if a curve is somehow missing.
+# Top speed in m/s = the curve's Max Value (the peak-normalised contract).
 func get_surface_walk_top_speed(sprinting: bool) -> float:
 	var curve := get_surface_walk_speed_curve(sprinting)
 
@@ -1431,15 +1277,16 @@ func get_surface_walk_top_speed(sprinting: bool) -> float:
 	return curve.max_value
 
 
-# Target speed = the speed curve sampled at the shared ramp timer (seconds moving). The curve's
-# SLOPE is the acceleration, so no separate acceleration parameter exists.
+# Target speed = the speed curve sampled at the shared ramp timer (seconds moving), scaled so
+# the curve's peak = Max Value m/s. The curve's SLOPE is the acceleration.
 func get_surface_walk_target_speed(sprinting: bool) -> float:
 	var curve := get_surface_walk_speed_curve(sprinting)
 
 	if curve == null:
 		return get_surface_walk_top_speed(sprinting)
 
-	return curve.sample(clampf(surface_walk_accel_time, curve.min_domain, curve.max_domain))
+	var scale := _sprint_curve_scale if sprinting else _walk_curve_scale
+	return curve.sample(clampf(surface_walk_accel_time, curve.min_domain, curve.max_domain)) * scale
 
 
 # move_toward rate: the active curve's steepest slope (see _curve_max_slope).
@@ -1453,9 +1300,9 @@ func get_surface_walk_snap_velocity() -> Vector3:
 	var offset_error := surface_walk_body_offset - distance_from_plane
 
 	var snap_speed := clampf(
-		offset_error * surface_walk_snap_strength,
-		-surface_walk_max_snap_speed,
-		surface_walk_max_snap_speed
+		offset_error * SURFACE_WALK_SNAP_STRENGTH,
+		-SURFACE_WALK_MAX_SNAP_SPEED,
+		SURFACE_WALK_MAX_SNAP_SPEED
 	)
 
 	# Fade the snap in with alignment: a freshly acquired seam face (body not rotated onto it
@@ -1474,17 +1321,14 @@ func is_surface_walk_sprinting() -> bool:
 
 
 func handle_surface_walk_jump() -> void:
-	if not surface_walk_space_launches_off:
-		return
-	
 	if not is_action_just_pressed_if_exists("push"):
 		return
-	
+
 	var launch_direction := surface_walk_normal.normalized()
 	# Carry the run into the jump: keep the tangential velocity (snap component stripped so
 	# jump height stays consistent), boosted a touch, with the launch added on top — never a
 	# separate straight-up pop.
-	var carried := player.linear_velocity.slide(launch_direction) * surface_walk_jump_momentum_carry
+	var carried := player.linear_velocity.slide(launch_direction) * SURFACE_WALK_JUMP_MOMENTUM_CARRY
 	exit_surface_walk_mode()
 
 	player.linear_velocity = carried
@@ -1622,7 +1466,7 @@ func consume_recoil_compensation() -> void:
 	if recoil_offset == Vector2.ZERO or mouse_motion == Vector2.ZERO:
 		return
 
-	var sens := surface_walk_mouse_sensitivity if is_surface_walk_active() else mouse_sensitivity
+	var sens := mouse_sensitivity
 
 	if sens <= 0.0:
 		return
