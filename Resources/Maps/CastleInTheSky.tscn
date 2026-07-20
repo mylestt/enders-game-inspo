@@ -23,15 +23,22 @@ background_mode = 2
 sky = SubResource("Sky_t0wg1")
 glow_enabled = true
 glow_bloom = 0.2
+fog_enabled = true
+fog_mode = 1
+fog_light_color = Color(0, 0, 0, 1)
+fog_density = 1.0
+fog_depth_end = 500.0
+volumetric_fog_enabled = true
+volumetric_fog_density = 0.002
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_enx61"]
-radius = 148.0
+radius = 151.0
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_xtbh1"]
-radius = 57.75
+radius = 47.5
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_stsjn"]
-radius = 14.5
+radius = 11.5
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_ohdjg"]
 render_priority = 0
@@ -64,25 +71,31 @@ environment = SubResource("Environment_lkmil")
 
 [node name="CITS_Castle" parent="." unique_id=538640883 instance=ExtResource("1_lkmil")]
 
-[node name="CITS_Castle2" parent="." unique_id=1581840505 instance=ExtResource("1_lkmil")]
+[node name="CITS_Castle2" parent="." unique_id=1736673963 instance=ExtResource("1_lkmil")]
 transform = Transform3D(0.8660254, 0.5, -8.742278e-08, 0.5, -0.8660254, 0, 7.5710346e-08, 4.371139e-08, 1, -42.5, 159, 0)
 
-[node name="OmniLight3D2" parent="CITS_Castle2" index="53" unique_id=1758637931]
+[node name="OmniLight3D2" parent="CITS_Castle2" index="57" unique_id=1758637931]
 light_color = Color(0.42270073, 0.025425997, 0, 1)
 
-[node name="OmniLight3D8" parent="CITS_Castle2" index="54" unique_id=320383416]
+[node name="OmniLight3D8" parent="CITS_Castle2" index="58" unique_id=320383416]
 light_color = Color(0.42270073, 0.025425997, 0, 1)
 
-[node name="OmniLight3D3" parent="CITS_Castle2" index="56" unique_id=1293909175]
+[node name="OmniLight3D11" parent="CITS_Castle2" index="59" unique_id=2132991314]
 light_color = Color(0.42270073, 0.025425997, 0, 1)
 
-[node name="OmniLight3D9" parent="CITS_Castle2" index="57" unique_id=587347084]
+[node name="OmniLight3D12" parent="CITS_Castle2" index="60" unique_id=818403863]
 light_color = Color(0.42270073, 0.025425997, 0, 1)
 
-[node name="OmniLight3D10" parent="CITS_Castle2" index="58" unique_id=546795374]
+[node name="OmniLight3D3" parent="CITS_Castle2" index="61" unique_id=1293909175]
 light_color = Color(0.42270073, 0.025425997, 0, 1)
 
-[node name="OmniLight3D4" parent="CITS_Castle2" index="59" unique_id=492308488]
+[node name="OmniLight3D9" parent="CITS_Castle2" index="62" unique_id=587347084]
+light_color = Color(0.42270073, 0.025425997, 0, 1)
+
+[node name="OmniLight3D10" parent="CITS_Castle2" index="63" unique_id=546795374]
+light_color = Color(0.42270073, 0.025425997, 0, 1)
+
+[node name="OmniLight3D4" parent="CITS_Castle2" index="64" unique_id=492308488]
 light_color = Color(0.42270073, 0.025425997, 0, 1)
 
 [node name="Bevels" type="Node3D" parent="CITS_Castle2" unique_id=1659134162]
@@ -171,9 +184,8 @@ shape = SubResource("SphereShape3D_enx61")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 88.5, 0)
 collision_mask = 257
 script = ExtResource("5_xtbh1")
-gravityStrength = 10000.0
+gravityStrength = 8000.0
 maxPullSpeed = 40000.0
-minFalloffDistance = 1.0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="GravityWell" unique_id=2042946385]
 shape = SubResource("SphereShape3D_xtbh1")
@@ -184,10 +196,11 @@ collision_mask = 257
 script = ExtResource("6_enx61")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="KillOrb" unique_id=1940272748]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5, 0, 0)
 shape = SubResource("SphereShape3D_stsjn")
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=667475508]
-transform = Transform3D(8.28221, -30.909626, 0, 30.909626, 8.28221, 0, 0, 0, 32, 15.5, 88.5, 0)
+transform = Transform3D(6.4704766, -24.148146, 0, 24.148146, 6.4704766, 0, 0, 0, 25, 15.5, 88.5, 0)
 material_override = SubResource("ShaderMaterial_ohdjg")
 mesh = SubResource("SphereMesh_wx5mg")
 

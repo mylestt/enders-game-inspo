@@ -1,0 +1,11 @@
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://1g33aosrog67"]
+
+[ext_resource type="Texture2D" uid="uid://cachnhxf1p87a" path="res://Resources/Materials/Level/Mud/brown_mud_03_diff_1k.jpg" id="1_4asn4"]
+
+[resource]
+specular_mode = 2
+disable_specular_occlusion = true
+albedo_texture = ExtResource("1_4asn4")
+metallic_specular = 0.0
+uv1_scale = Vector3(10, 10, 10)
+texture_filter = 2

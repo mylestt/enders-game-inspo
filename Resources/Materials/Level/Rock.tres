@@ -1,0 +1,11 @@
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://caylycu7ce0gv"]
+
+[ext_resource type="Texture2D" uid="uid://c4cn2ge0yawih" path="res://Resources/Materials/Level/Rock/rocky_terrain_03_diff_1k.jpg" id="1_tb0gt"]
+
+[resource]
+specular_mode = 2
+disable_specular_occlusion = true
+albedo_texture = ExtResource("1_tb0gt")
+metallic_specular = 0.0
+uv1_scale = Vector3(10, 10, 10)
+texture_filter = 2

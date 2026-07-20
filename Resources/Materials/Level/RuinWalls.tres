@@ -1,0 +1,11 @@
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://dwfeittmfkoow"]
+
+[ext_resource type="Texture2D" uid="uid://bhtjpk2ii0l4w" path="res://Resources/Materials/Level/RuinWalls/rabdentse_ruins_wall_diff_1k.jpg" id="1_myobl"]
+
+[resource]
+specular_mode = 2
+disable_specular_occlusion = true
+albedo_texture = ExtResource("1_myobl")
+metallic_specular = 0.0
+uv1_scale = Vector3(10, 10, 10)
+texture_filter = 2
