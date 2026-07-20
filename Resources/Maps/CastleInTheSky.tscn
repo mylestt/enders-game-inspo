@@ -2,7 +2,9 @@
 
 [ext_resource type="PackedScene" uid="uid://0jf5ak884hmg" path="res://scenes/spawn_point.tscn" id="1_k66gf"]
 [ext_resource type="PackedScene" uid="uid://dogwa1i6o25k1" path="res://Resources/Objects/cits_castle.tscn" id="1_lkmil"]
+[ext_resource type="Material" uid="uid://dkr58dr03qoar" path="res://Resources/Materials/MatBlue.tres" id="4_enx61"]
 [ext_resource type="PackedScene" uid="uid://bv863scax14op" path="res://Resources/Objects/flags.tscn" id="4_mmdha"]
+[ext_resource type="Material" uid="uid://ca0uuhsuxts63" path="res://Resources/Materials/MatRed.tres" id="4_stsjn"]
 [ext_resource type="Shader" uid="uid://bd7pwahd6p47d" path="res://Resources/Materials/Shaders/Blackhole.gdshader" id="4_wx5mg"]
 [ext_resource type="Script" uid="uid://b2035ijkuruvj" path="res://Resources/Scripts/GravityWell.cs" id="5_xtbh1"]
 [ext_resource type="Script" uid="uid://cowgnckwku2cn" path="res://Resources/Scripts/KillZone.cs" id="6_enx61"]
@@ -71,7 +73,7 @@ environment = SubResource("Environment_lkmil")
 
 [node name="CITS_Castle" parent="." unique_id=538640883 instance=ExtResource("1_lkmil")]
 
-[node name="CITS_Castle2" parent="." unique_id=1736673963 instance=ExtResource("1_lkmil")]
+[node name="CITS_Castle2" parent="." unique_id=989088657 instance=ExtResource("1_lkmil")]
 transform = Transform3D(0.8660254, 0.5, -8.742278e-08, 0.5, -0.8660254, 0, 7.5710346e-08, 4.371139e-08, 1, -42.5, 159, 0)
 
 [node name="OmniLight3D2" parent="CITS_Castle2" index="57" unique_id=1758637931]
@@ -142,9 +144,10 @@ team = 1
 
 [node name="OmniLight3D" type="OmniLight3D" parent="." unique_id=1397984358]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16.5, 89, 0)
-light_color = Color(0.8610322, 0.48909158, 1, 1)
-light_energy = 10.0
-light_indirect_energy = 10.0
+light_color = Color(0.8341112, 0.74372715, 1, 1)
+light_energy = 15.0
+light_indirect_energy = 15.0
+light_volumetric_fog_energy = 0.5
 light_size = 5555.0
 shadow_enabled = true
 shadow_blur = 0.001
@@ -156,6 +159,9 @@ omni_shadow_mode = 0
 [node name="CtfCapturePoint" parent="Flags" index="0" unique_id=1261550584]
 transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, -56.5, 150.136, -26.5)
 
+[node name="MeshInstance3D" parent="Flags/CtfCapturePoint" index="1" unique_id=1606494904]
+material_override = ExtResource("4_stsjn")
+
 [node name="CtfFlag" parent="Flags/CtfCapturePoint" index="2" unique_id=882118888]
 flagTeam = "b"
 
@@ -164,6 +170,9 @@ light_color = Color(1, 0, 0, 1)
 
 [node name="CtfCapturePoint2" parent="Flags" index="1" unique_id=1964966274]
 transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, -16, -1.3639984, -26.5)
+
+[node name="MeshInstance3D" parent="Flags/CtfCapturePoint2" index="1" unique_id=1606494904]
+material_override = ExtResource("4_enx61")
 
 [node name="CtfFlag" parent="Flags/CtfCapturePoint2" index="2" unique_id=882118888]
 flagTeam = "a"
@@ -199,12 +208,12 @@ script = ExtResource("6_enx61")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5, 0, 0)
 shape = SubResource("SphereShape3D_stsjn")
 
-[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=667475508]
+[node name="Blackhole" type="MeshInstance3D" parent="." unique_id=667475508]
 transform = Transform3D(6.4704766, -24.148146, 0, 24.148146, 6.4704766, 0, 0, 0, 25, 15.5, 88.5, 0)
 material_override = SubResource("ShaderMaterial_ohdjg")
 mesh = SubResource("SphereMesh_wx5mg")
 
-[node name="MeshInstance3D" type="MeshInstance3D" parent="MeshInstance3D" unique_id=518718700]
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Blackhole" unique_id=518718700]
 transform = Transform3D(-0.08382685, 0.7393631, -0.435, 0.24671759, 0.3052914, 1.0434422, 1.1303556, -0.011803567, -0.26000702, 0, 0, 0)
 material_override = SubResource("ShaderMaterial_fug0c")
 transparency = 1.0

@@ -1,0 +1,16 @@
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://q6egw6vqiswf"]
+
+[sub_resource type="CompressedTexture2D" id="CompressedTexture2D_8qsu7"]
+
+[resource]
+transparency = 1
+albedo_color = Color(1, 1, 1, 0.78431374)
+metallic = 0.3
+metallic_specular = 1.0
+emission_enabled = true
+emission = Color(1.353, 1.353, 1.353, 0.78431374)
+emission_energy_multiplier = 2.5
+rim_tint = 0.65
+backlight = Color(0.23744476, 0.5039496, 1, 1)
+refraction_scale = 1.0
+refraction_texture = SubResource("CompressedTexture2D_8qsu7")

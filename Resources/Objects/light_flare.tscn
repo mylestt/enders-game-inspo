@@ -1,0 +1,21 @@
+[gd_scene format=3 uid="uid://gyc1085pap6i"]
+
+[ext_resource type="Shader" uid="uid://babcs6pujxk76" path="res://Resources/Maps/Flare.gdshader" id="1_x1ls1"]
+[ext_resource type="Texture2D" uid="uid://bmeh4sakpt3q4" path="res://Resources/Materials/flare_01_0.png" id="2_8lumd"]
+[ext_resource type="Script" uid="uid://chrxmojahsmp5" path="res://Resources/Scripts/CoronaOcclusion.cs" id="3_2hbhr"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_2lcpb"]
+render_priority = 0
+shader = ExtResource("1_x1ls1")
+shader_parameter/texture_albedo = ExtResource("2_8lumd")
+shader_parameter/tint_color = Color(1, 1, 1, 1)
+shader_parameter/use_luminance_alpha = false
+
+[node name="LightFlare" type="Sprite3D" unique_id=950851267]
+transform = Transform3D(4, 0, 0, 0, 4, 0, 0, 0, 4, 0, 0, 0)
+material_override = SubResource("ShaderMaterial_2lcpb")
+billboard = 1
+no_depth_test = true
+texture_filter = 2
+texture = ExtResource("2_8lumd")
+script = ExtResource("3_2hbhr")
