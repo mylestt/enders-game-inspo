@@ -184,6 +184,7 @@ light_color = Color(0.0333333, 0, 1, 1)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 88.5, 0)
 collision_mask = 257
 script = ExtResource("6_fug0c")
+pushStrength = 100.0
 maxPushSpeed = 99.0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="LevelBounds" unique_id=2038984225]
