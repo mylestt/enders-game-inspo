@@ -148,6 +148,14 @@ enum MovementMode {
 # alternation right on an edge; the align tween below handles the rest.
 @export var surface_walk_target_smoothing: float = 22.0
 
+# GRAPH-DRIVEN ground sensing (prototype): when the loaded map carries a baked SurfaceGraph
+# (a SurfaceGraphBaker node in the "surface_graph" group), surface walk reads the ground
+# from the GRAPH — exact baked normals, walkable/wall seams as precomputed facts — instead
+# of the raycast probe fan; walls AND ledges collapse into one ahead-cell check against the
+# baker's walkable angle. Everything downstream (align easing, snap, movement, jump) is
+# unchanged, and maps without a graph fall back to the raycast sensor automatically.
+@export var use_surface_graph: bool = true
+
 # Slope alignment: while ground-walking, ease the body's (and camera's) orientation onto the
 # surface under it. Full ease-in/ease-out tween: the turn rate ramps up (align_accel), is
 # capped (max_turn_speed), and decays exponentially (align_speed) — never a linear snap.
@@ -214,6 +222,14 @@ var surface_walk_pitch_stabilize: float = 0.0
 # OTHER than the anchored one has been the nearest support (drives the anchor switch).
 var surface_walk_smoothed_target: Vector3 = Vector3.UP
 var surface_walk_anchor_foreign_time: float = 0.0
+
+# Graph-walk runtime state: the active map's baked graph (found via the "surface_graph"
+# group, re-looked-up on each ground-mode entry so map switches are picked up), the baker's
+# walkable angle, and the cell currently stood on (-1 = not yet located).
+var surface_graph: SurfaceGraph = null
+var surface_graph_walkable_angle: float = 80.0
+var surface_graph_checked: bool = false
+var graph_cell: int = -1
 
 # Curve-driven speed: shared ramp timer (seconds spent moving, drives the X of the speed
 # curve), the last move direction (to detect a sharp reversal), and each curve's cached
@@ -759,6 +775,9 @@ func enter_surface_walk_mode(hit_position: Vector3, surface_normal: Vector3, ins
 	surface_walk_align_rate = 0.0
 	surface_walk_accel_time = 0.0
 	surface_walk_last_move_dir = Vector3.ZERO
+	# Re-find the map's graph on every entry (map switches between rounds) and re-locate.
+	surface_graph_checked = false
+	graph_cell = -1
 
 	var look_forward := (-player.global_transform.basis.z).normalized()
 	var projected_forward := look_forward.slide(surface_walk_normal)
@@ -877,7 +896,9 @@ func update_surface_walk_entry_shake(delta: float) -> void:
 
 
 func update_surface_walk_edge_check(delta: float) -> bool:
-	var result := get_surface_walk_ground_result()
+	# Baked graph when the map has one; raycast probe fan otherwise. Same result shape, so
+	# the smoothing/align/anchor pipeline below is identical either way.
+	var result := get_graph_ground_result() if is_graph_walk_available() else get_surface_walk_ground_result()
 
 	if result.is_empty():
 		# No ground under us. Surface walk NEVER auto-exits — you leave only by jumping or
@@ -1153,6 +1174,111 @@ func get_surface_walk_probe_move_direction() -> Vector3:
 	return desired.normalized()
 
 
+# --- Graph-driven ground sensing (see use_surface_graph) -------------------------------
+
+
+# The active map's baked SurfaceGraph, or null (no baker in the scene / toggle off / not in
+# tree). Looked up lazily and re-checked on each ground-mode entry.
+func get_active_surface_graph() -> SurfaceGraph:
+	if not use_surface_graph or not is_inside_tree():
+		return null
+
+	if not surface_graph_checked:
+		surface_graph_checked = true
+		surface_graph = null
+		var baker := get_tree().get_first_node_in_group("surface_graph")
+
+		if baker != null:
+			var graph_value = baker.get("surface_graph")
+
+			if graph_value is SurfaceGraph and (graph_value as SurfaceGraph).cell_count() > 0:
+				surface_graph = graph_value
+				surface_graph.build_lookup()   # pre-warm during entry, not mid-walk
+
+				var angle_value = baker.get("max_walkable_angle_degrees")
+
+				if angle_value is float:
+					surface_graph_walkable_angle = angle_value
+
+	return surface_graph
+
+
+func is_graph_walk_available() -> bool:
+	return get_active_surface_graph() != null
+
+
+# Graph replacement for the raycast ground sensor: the nearest SAME-SIDE cell (normal in the
+# hemisphere of the current up — a thin wall's far side never qualifies) anchors and orients
+# the body, exactly like a ray hit would. A candidate cell angled past the walkable limit
+# from the one we stand on is a WALL FACE — we stay anchored to the current cell and the
+# ahead-block strips the approach. Returns {position, normal, target_normal} or {}.
+func get_graph_ground_result() -> Dictionary:
+	var graph := get_active_surface_graph()
+
+	if graph == null or player == null:
+		return {}
+
+	var radius := surface_walk_body_offset + 1.0
+	var found := graph.find_nearest_cell_aligned(
+		player.global_position, radius, surface_walk_normal, 0.0
+	)
+
+	if found < 0:
+		graph_cell = -1
+		return {}
+
+	if graph_cell >= 0 and found != graph_cell:
+		var step_angle := rad_to_deg(
+			(graph.cell_normals[graph_cell] as Vector3).angle_to(graph.cell_normals[found])
+		)
+
+		if step_angle > surface_graph_walkable_angle:
+			found = graph_cell
+
+	graph_cell = found
+	var cell_normal: Vector3 = graph.cell_normals[found]
+	return {
+		"position": graph.cell_positions[found],
+		"normal": cell_normal,
+		"target_normal": cell_normal,
+	}
+
+
+# Walls and ledges as ONE graph rule: look up the cell near the point a step ahead in the
+# walk direction. No cell there = a void (stop at the lip); a cell angled past the walkable
+# limit = a wall (stop against it); otherwise free. Returns the block normal to strip
+# against (pointing back toward the player), or ZERO.
+func get_graph_ahead_block_normal() -> Vector3:
+	var graph := get_active_surface_graph()
+
+	if graph == null:
+		return Vector3.ZERO
+
+	var move_dir := get_surface_walk_probe_move_direction()
+
+	if move_dir == Vector3.ZERO:
+		return Vector3.ZERO
+
+	var ahead := player.global_position + move_dir * maxf(surface_walk_ledge_look_ahead, 0.3)
+	var radius := surface_walk_body_offset + 1.0
+	# Slightly-below-hemisphere filter (-0.35) so a steep wall face ahead is FOUND (and then
+	# classified as blocking) instead of filtered out and mistaken for a void.
+	var found := graph.find_nearest_cell_aligned(ahead, radius, surface_walk_normal, -0.35)
+
+	if found < 0:
+		return -move_dir   # nothing ahead at all: a drop-off — block motion toward it
+
+	var reference := surface_walk_anchor_normal
+
+	if graph_cell >= 0:
+		reference = graph.cell_normals[graph_cell]
+
+	if rad_to_deg(reference.angle_to(graph.cell_normals[found])) > surface_graph_walkable_angle:
+		return (graph.cell_normals[found] as Vector3)
+
+	return Vector3.ZERO
+
+
 func exit_surface_walk_mode() -> void:
 	if movement_mode != MovementMode.SURFACE_WALK:
 		return
@@ -1162,6 +1288,7 @@ func exit_surface_walk_mode() -> void:
 	surface_walk_ground_lost = false
 	surface_walk_align_rate = 0.0
 	surface_walk_pitch_stabilize = 0.0
+	graph_cell = -1
 
 	surface_walk_daze_timer = 0.0
 	surface_walk_daze_duration = 0.0
@@ -1386,6 +1513,9 @@ static func strip_into_wall_component(velocity: Vector3, wall_tangent: Vector3) 
 # its normal. Walkable seams (<= the concave limit) return ZERO: the ground probe's feeler
 # already hands those over. ZERO when idle (no walk direction) or nothing ahead.
 func get_surface_walk_wall_block_normal() -> Vector3:
+	if is_graph_walk_available():
+		return get_graph_ahead_block_normal()
+
 	var move_dir := get_surface_walk_probe_move_direction()
 
 	if move_dir == Vector3.ZERO:
@@ -1424,6 +1554,10 @@ func get_surface_walk_wall_block_normal() -> Vector3:
 # walk from floating you off the edge of a surface. Anything steeper than the concave limit is a
 # wall, already handled by get_surface_walk_wall_block_normal.
 func get_surface_walk_ledge_block_normal() -> Vector3:
+	# Graph mode folds ledges into the same ahead-cell check as walls (no cell = void).
+	if is_graph_walk_available():
+		return Vector3.ZERO
+
 	var move_dir := get_surface_walk_probe_move_direction()
 
 	if move_dir == Vector3.ZERO:

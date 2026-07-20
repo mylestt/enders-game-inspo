@@ -100,9 +100,23 @@ func world_to_voxel(world_position: Vector3) -> Vector3i:
 # (converted to voxel rings internally), so callers are independent of the bake resolution.
 # Returns -1 if none within range.
 func find_nearest_cell(world_position: Vector3, max_radius_m: float = 2.0) -> int:
+	return find_nearest_cell_aligned(world_position, max_radius_m, Vector3.ZERO, -2.0)
+
+
+# Like find_nearest_cell, but only cells whose normal agrees with `up` (dot >= min_dot)
+# qualify — the runtime's side filter: standing over a thin wall, the cell on YOUR side wins
+# and the far side's cell (opposite normal) is never grabbed. Pass min_dot <= -1 (or up =
+# ZERO) to accept every cell.
+func find_nearest_cell_aligned(
+	world_position: Vector3,
+	max_radius_m: float,
+	up: Vector3,
+	min_dot: float = 0.0
+) -> int:
 	if not _lookup_built:
 		build_lookup()
 
+	var filter_active := min_dot > -1.5 and up.length_squared() > 0.0001
 	var max_radius_voxels := maxi(ceili(max_radius_m / maxf(voxel_size, 0.0001)), 1)
 	var centre := world_to_voxel(world_position)
 	var best := -1
@@ -121,6 +135,9 @@ func find_nearest_cell(world_position: Vector3, max_radius_m: float = 2.0) -> in
 						continue
 
 					for idx in bucket:
+						if filter_active and cell_normals[idx].dot(up) < min_dot:
+							continue
+
 						var d := cell_positions[idx].distance_squared_to(world_position)
 
 						if d < best_distance:
@@ -128,7 +145,7 @@ func find_nearest_cell(world_position: Vector3, max_radius_m: float = 2.0) -> in
 							best = idx
 
 		# A hit in this ring can't be beaten badly enough by outer rings to matter for a
-		# spawn/ground lookup — stop at the first ring that found anything.
+		# ground lookup — stop at the first ring that found anything.
 		if best >= 0:
 			return best
 

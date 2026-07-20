@@ -83,6 +83,10 @@ var _solid_dist: Dictionary = {}
 
 
 func _ready() -> void:
+	# Runtime discovery: the player's movement controller finds the active map's graph
+	# through this group (first member wins — one baker per map).
+	add_to_group("surface_graph")
+
 	if Engine.is_editor_hint() or debug_draw_in_game:
 		_rebuild_debug_view()
 
