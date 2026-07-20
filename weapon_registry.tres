@@ -1,11 +1,11 @@
 [gd_resource type="Resource" script_class="WeaponRegistry" format=3 uid="uid://bwk3n7p2qxr8f"]
 
-[ext_resource type="Script" uid="uid://bh6apfb23qm5" path="res://scripts/weapons/weapon_listing.gd" id="1_listing"]
+[ext_resource type="Script" path="res://scripts/weapons/weapon_listing.gd" id="1_listing"]
 [ext_resource type="PackedScene" uid="uid://bax85hqv3qwbm" path="res://scenes/minigun.tscn" id="2_minigun"]
 [ext_resource type="PackedScene" uid="uid://brg7w2laxq3ny" path="res://scenes/railgun.tscn" id="3_railgun"]
 [ext_resource type="PackedScene" uid="uid://cu36rp4qulbk" path="res://scenes/rifle.tscn" id="4_rifle"]
 [ext_resource type="PackedScene" uid="uid://dt4qr1yprma4w" path="res://scenes/plasma_cannon.tscn" id="5_plasma"]
-[ext_resource type="Script" uid="uid://r7sydyilshxa" path="res://scripts/weapons/weapon_registry.gd" id="6_registry"]
+[ext_resource type="Script" path="res://scripts/weapons/weapon_registry.gd" id="6_registry"]
 
 [sub_resource type="Resource" id="Resource_minigun"]
 script = ExtResource("1_listing")

@@ -12,6 +12,15 @@
 [ext_resource type="Script" uid="uid://dh4s3fn0hi3ur" path="res://scripts/player_health.gd" id="10_health"]
 [ext_resource type="Script" uid="uid://cg7trh76w3qq3" path="res://scripts/grapple_controller.gd" id="11_grapple"]
 
+[sub_resource type="Curve" id="Curve_nvl01"]
+_data = [Vector2(0, 0.52808994), 0.0, 0.0, 0, 0, Vector2(0.505, 0.7415731), 0.0, 0.0, 0, 0, Vector2(0.995, 1), 0.0, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="Curve" id="Curve_ivps1"]
+_limits = [0.0, 20.88, 0.0, 1.0]
+_data = [Vector2(0.010000005, 0.08988774), 0.0, 0.0, 0, 0, Vector2(0.47499996, 0.52808994), 0.0, 0.0, 0, 0, Vector2(0.88, 1), 0.0, 0.0, 0, 0]
+point_count = 3
+
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_g2els"]
 
 [sub_resource type="CapsuleMesh" id="CapsuleMesh_qhqgy"]
@@ -24,6 +33,8 @@ linear_damp_value = 0.01
 
 [node name="MovementController" type="Node" parent="." unique_id=294609104]
 script = ExtResource("2_1jxqw")
+walk_speed_curve = SubResource("Curve_nvl01")
+sprint_speed_curve = SubResource("Curve_ivps1")
 surface_walk_pitch_stabilize_recenter = 10.215
 surface_walk_slope_align_speed = 9.0
 surface_walk_entry_max_angle_degrees = 40.0
