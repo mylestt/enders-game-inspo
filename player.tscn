@@ -24,10 +24,8 @@ linear_damp_value = 0.01
 
 [node name="MovementController" type="Node" parent="." unique_id=294609104]
 script = ExtResource("2_1jxqw")
-surface_walk_sprint_multiplier = 2.0
 surface_walk_pitch_stabilize_recenter = 10.215
 surface_walk_slope_align_speed = 9.0
-surface_walk_foot_check_distance = 1.8
 surface_walk_entry_max_angle_degrees = 40.0
 surface_walk_lock_sweet_spot = 2.0
 

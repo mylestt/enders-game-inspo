@@ -4,6 +4,8 @@
 [ext_resource type="Texture2D" uid="uid://cx6g2bygli807" path="res://textures/GreyGrid.png" id="2_mvqfr"]
 [ext_resource type="PackedScene" uid="uid://0jf5ak884hmg" path="res://scenes/spawn_point.tscn" id="3_spawnpt"]
 [ext_resource type="PackedScene" uid="uid://bv863scax14op" path="res://Resources/Objects/flags.tscn" id="4_syhf0"]
+[ext_resource type="Script" uid="uid://bpdtws42raekc" path="res://scripts/surface_graph/surface_graph_baker.gd" id="5_sgbaker"]
+[ext_resource type="Resource" path="res://Resources/Maps/DiamondArena_surface_graph.res" id="6_sgraph"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_tkpfl"]
 albedo_texture = ExtResource("2_mvqfr")
@@ -364,3 +366,10 @@ shadow_bias = 1.09
 omni_range = 131.9982
 
 [node name="Flags" parent="." index="31" unique_id=757648796 instance=ExtResource("4_syhf0")]
+
+[node name="SurfaceGraphBaker" type="Node3D" parent="." index="32"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.665, 0)
+script = ExtResource("5_sgbaker")
+voxel_size = 0.6
+bake_bounds_size = Vector3(164, 164, 164)
+surface_graph = ExtResource("6_sgraph")

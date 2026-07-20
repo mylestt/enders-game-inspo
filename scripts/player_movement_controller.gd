@@ -56,13 +56,15 @@ enum MovementMode {
 @export var grabbed_linear_damp: float = 12.0
 @export var grabbed_angular_damp: float = 4.0
 
-@export var surface_walk_speed: float = 3.0
-@export var surface_walk_sprint_multiplier: float = 1.6
-
-@export var surface_walk_use_auto_acceleration: bool = true
-@export var surface_walk_time_to_full_speed: float = 0.18
-@export var surface_walk_acceleration: float = 60.0
-@export var surface_walk_sprint_acceleration_multiplier: float = 1.25
+# Walk / sprint speed as CURVES instead of a pile of scalars. Each curve is speed (Y, m/s)
+# over seconds-since-you-started-moving (X, the curve's DOMAIN). Three control points do the
+# whole job: bottom-left = start/creep speed, middle = shapes the acceleration ramp (drag it
+# around, use the tangent handles to ease), top-right = top speed. The curve's SLOPE *is* the
+# acceleration, so there's no separate accel/time/multiplier knob. Sprint just swaps in the
+# sprint curve; a shared ramp timer keeps walk<->sprint smooth. Leave them null and setup()
+# builds sensible defaults (walk 0->3, sprint 0->6 m/s); edit in the inspector's curve editor.
+@export var walk_speed_curve: Curve
+@export var sprint_speed_curve: Curve
 
 @export var surface_walk_body_offset: float = 0.85
 @export var surface_walk_snap_strength: float = 10.0
@@ -93,7 +95,6 @@ enum MovementMode {
 @export var surface_walk_spawn_probe_distance: float = 8.0
 
 @export var surface_walk_edge_check_extra_distance: float = 0.35
-@export var surface_walk_surface_normal_min_dot: float = 0.65
 
 # Edge traversal: a surface ahead in the walk direction takes over as the walked surface once
 # it's within stand range (concave seam), and forward-down rays carry the body over a convex
@@ -153,9 +154,6 @@ enum MovementMode {
 @export var surface_walk_slope_align_speed: float = 10.0
 @export var surface_walk_slope_align_max_turn_speed_degrees: float = 175.0
 @export var surface_walk_align_accel: float = 6.5
-@export var surface_walk_foot_check_distance: float = 0.4
-@export var surface_walk_required_foot_count: int = 2
-@export var surface_walk_foot_surface_normal_min_dot: float = 0.75
 @export var surface_walk_friction: float = 0.0
 
 # Ground-lock timing: angle your body so your feet face a surface, then press C to lock onto
@@ -217,6 +215,14 @@ var surface_walk_pitch_stabilize: float = 0.0
 var surface_walk_smoothed_target: Vector3 = Vector3.UP
 var surface_walk_anchor_foreign_time: float = 0.0
 
+# Curve-driven speed: shared ramp timer (seconds spent moving, drives the X of the speed
+# curve), the last move direction (to detect a sharp reversal), and each curve's cached
+# steepest slope (the move_toward rate, so velocity tracks the curve with no accel knob).
+var surface_walk_accel_time: float = 0.0
+var surface_walk_last_move_dir: Vector3 = Vector3.ZERO
+var _walk_curve_max_slope: float = 60.0
+var _sprint_curve_max_slope: float = 60.0
+
 var surface_walk_transition_active: bool = false
 var surface_walk_transition_timer: float = 0.0
 var surface_walk_transition_start_transform: Transform3D
@@ -275,7 +281,8 @@ func setup(owner_player: RigidBody3D, owner_hud_controller: PlayerHUDController)
 		mouse_sensitivity = GameSettings.mouse_sensitivity
 
 	setup_limb_push_controller()
-	
+	init_surface_walk_speed_curves()
+
 	jump_force = clampf(jump_force, min_jump_force, max_jump_force)
 	
 	if hud_controller != null:
@@ -750,6 +757,8 @@ func enter_surface_walk_mode(hit_position: Vector3, surface_normal: Vector3, ins
 	surface_walk_anchor_foreign_time = 0.0
 	surface_walk_ground_lost = false
 	surface_walk_align_rate = 0.0
+	surface_walk_accel_time = 0.0
+	surface_walk_last_move_dir = Vector3.ZERO
 
 	var look_forward := (-player.global_transform.basis.z).normalized()
 	var projected_forward := look_forward.slide(surface_walk_normal)
@@ -1034,7 +1043,7 @@ func get_surface_walk_ground_result() -> Dictionary:
 	# at low speed — standing still the body hugs the anchored face instead of averaging
 	# across a corner; at walk speed the next face blends in for the handover.
 	var speed_ratio := clampf(
-		player.linear_velocity.slide(surface_walk_anchor_normal).length() / maxf(surface_walk_speed, 0.01),
+		player.linear_velocity.slide(surface_walk_anchor_normal).length() / maxf(get_surface_walk_top_speed(false), 0.01),
 		0.0,
 		1.0
 	)
@@ -1250,26 +1259,48 @@ func update_surface_walk_orientation() -> void:
 func handle_surface_walk_movement(delta: float) -> void:
 	var input_vector := get_surface_walk_input_vector()
 	var sprinting := is_surface_walk_sprinting()
-	
-	var target_speed := get_surface_walk_target_speed(sprinting)
-	var current_acceleration := get_surface_walk_current_acceleration(sprinting)
-	
+
 	var forward := (-player.global_transform.basis.z).slide(surface_walk_normal).normalized()
 	var right := player.global_transform.basis.x.slide(surface_walk_normal).normalized()
-	
+
 	if forward.length() < 0.01:
 		forward = surface_walk_forward.normalized()
-	
+
 	if right.length() < 0.01:
 		right = forward.cross(surface_walk_normal).normalized()
-	
+
+	# Ramp timer drives the speed curve. It winds UP while a direction is held (reset to 0 on a
+	# sharp reversal so you re-accelerate through zero instead of snapping to full speed the
+	# other way), and snaps to 0 when idle so the next start ramps from the bottom of the curve;
+	# the stop itself is the move_toward-to-zero below. Clamped to the active curve's domain.
+	var has_input := input_vector.length() > 0.01
+	var move_dir := Vector3.ZERO
+
+	if has_input:
+		move_dir = right * input_vector.x + forward * input_vector.y
+		move_dir = move_dir.normalized() if move_dir.length() > 0.01 else Vector3.ZERO
+
+	if move_dir != Vector3.ZERO:
+		if surface_walk_last_move_dir != Vector3.ZERO and move_dir.dot(surface_walk_last_move_dir) < 0.0:
+			surface_walk_accel_time = 0.0
+		surface_walk_accel_time += delta
+		surface_walk_last_move_dir = move_dir
+	else:
+		surface_walk_accel_time = 0.0
+		surface_walk_last_move_dir = Vector3.ZERO
+
+	var active_curve := get_surface_walk_speed_curve(sprinting)
+
+	if active_curve != null:
+		surface_walk_accel_time = clampf(surface_walk_accel_time, 0.0, active_curve.max_domain)
+
+	var target_speed := get_surface_walk_target_speed(sprinting)
+	var current_acceleration := get_surface_walk_current_acceleration(sprinting)
+
 	var desired_tangent_velocity := Vector3.ZERO
 
-	if input_vector.length() > 0.01:
-		desired_tangent_velocity = (
-			right * input_vector.x +
-			forward * input_vector.y
-		).normalized() * target_speed
+	if move_dir != Vector3.ZERO:
+		desired_tangent_velocity = move_dir * target_speed
 
 	# Ground lost this frame (shoved off / clipped past a lip): don't drive into the void. Kill
 	# walk input; move_toward + the snap below arrest drift and tow us back toward the last
@@ -1425,32 +1456,88 @@ func get_surface_walk_ledge_block_normal() -> Vector3:
 	return move_dir
 
 
+# Build sensible default speed curves if none were assigned in the inspector, then cache each
+# curve's steepest slope (used as the move_toward acceleration). Walk 0.6->3, sprint 0.8->6 m/s
+# to match the old scalar feel (base 3, the scenes' 2x sprint).
+func init_surface_walk_speed_curves() -> void:
+	if walk_speed_curve == null:
+		walk_speed_curve = _default_speed_curve(0.6, 3.0, 0.18)
+
+	if sprint_speed_curve == null:
+		sprint_speed_curve = _default_speed_curve(0.8, 6.0, 0.18)
+
+	_walk_curve_max_slope = _curve_max_slope(walk_speed_curve)
+	_sprint_curve_max_slope = _curve_max_slope(sprint_speed_curve)
+
+
+# Three-point speed-vs-time curve: (0, start), an ease-out mid (most of the speed early, then
+# settle), and (ramp, top). Domain (X) = seconds; value range (Y) = m/s.
+func _default_speed_curve(start_speed: float, top_speed: float, ramp_seconds: float) -> Curve:
+	var curve := Curve.new()
+	curve.min_value = 0.0
+	curve.max_value = top_speed
+	curve.min_domain = 0.0
+	curve.max_domain = ramp_seconds
+	curve.add_point(Vector2(0.0, start_speed))
+	curve.add_point(Vector2(ramp_seconds * 0.45, lerpf(start_speed, top_speed, 0.75)))
+	curve.add_point(Vector2(ramp_seconds, top_speed))
+	return curve
+
+
+# The steepest rise/run over the curve's domain, so move_toward can track the curve on a
+# straight-line start (never bottlenecking below the curve's own rate) while still easing
+# through zero on a reversal or a stop.
+func _curve_max_slope(curve: Curve) -> float:
+	if curve == null:
+		return 60.0
+
+	var span := curve.max_domain - curve.min_domain
+
+	if span <= 0.0001:
+		return 60.0
+
+	var steepest := 0.0
+	var steps := 24
+
+	for i in range(steps):
+		var t0 := curve.min_domain + span * (float(i) / float(steps))
+		var t1 := curve.min_domain + span * (float(i + 1) / float(steps))
+		var slope := absf(curve.sample(t1) - curve.sample(t0)) / maxf(t1 - t0, 0.0001)
+		steepest = maxf(steepest, slope)
+
+	return maxf(steepest, 1.0)
+
+
+func get_surface_walk_speed_curve(sprinting: bool) -> Curve:
+	return sprint_speed_curve if sprinting else walk_speed_curve
+
+
+# Top speed of a curve (its highest point = the top-right control point value). Used by the
+# sensor to normalise walk speed and as a fallback if a curve is somehow missing.
+func get_surface_walk_top_speed(sprinting: bool) -> float:
+	var curve := get_surface_walk_speed_curve(sprinting)
+
+	if curve == null:
+		return 6.0 if sprinting else 3.0
+
+	return curve.max_value
+
+
+# Target speed = the speed curve sampled at the shared ramp timer (seconds moving). The curve's
+# SLOPE is the acceleration, so no separate acceleration parameter exists.
 func get_surface_walk_target_speed(sprinting: bool) -> float:
-	var target_speed := surface_walk_speed
-	
-	if sprinting:
-		target_speed *= surface_walk_sprint_multiplier
-	
-	return target_speed
+	var curve := get_surface_walk_speed_curve(sprinting)
+
+	if curve == null:
+		return get_surface_walk_top_speed(sprinting)
+
+	return curve.sample(clampf(surface_walk_accel_time, curve.min_domain, curve.max_domain))
 
 
+# move_toward rate: the active curve's steepest slope (see _curve_max_slope).
 func get_surface_walk_current_acceleration(sprinting: bool) -> float:
-	if not surface_walk_use_auto_acceleration:
-		var manual_acceleration := surface_walk_acceleration
-		
-		if sprinting:
-			manual_acceleration *= surface_walk_sprint_acceleration_multiplier
-		
-		return manual_acceleration
-	
-	var target_speed := get_surface_walk_target_speed(sprinting)
-	var time_to_speed := maxf(surface_walk_time_to_full_speed, 0.01)
-	var auto_acceleration := target_speed / time_to_speed
-	
-	if sprinting:
-		auto_acceleration *= surface_walk_sprint_acceleration_multiplier
-	
-	return auto_acceleration
+	var slope := _sprint_curve_max_slope if sprinting else _walk_curve_max_slope
+	return maxf(slope, 0.01)
 
 
 func get_surface_walk_snap_velocity() -> Vector3:
