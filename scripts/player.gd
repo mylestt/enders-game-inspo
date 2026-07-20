@@ -1139,17 +1139,7 @@ func is_input_locked() -> bool:
 	if external_menu_open:
 		return true
 
-	if is_surface_walk_mode_active():
-		return false
-	
-	return is_immobilized()
-
-
-func is_immobilized() -> bool:
-	if impact_controller == null:
-		return false
-	
-	return impact_controller.is_immobilized()
+	return false
 
 
 func is_surface_walk_mode_active() -> bool:

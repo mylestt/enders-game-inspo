@@ -23,10 +23,6 @@ var hurt_shadow: ColorRect
 var hurt_flash: ColorRect
 var hurt_effect_strength: float = 0.0
 
-var impact_flash: ColorRect
-var impact_shadow: ColorRect
-var impact_value_label: Label
-
 var hitmarker_label: Label
 var hitmarker_time: float = 0.0
 var hitmarker_color: Color = Color(1.0, 1.0, 1.0)
@@ -131,18 +127,6 @@ func set_dead_screen_active(active: bool) -> void:
 
 	hurt_effect_strength = 0.0
 	update_hurt_effect(0.0)
-	clear_impact_effect()
-
-
-func clear_impact_effect() -> void:
-	if impact_shadow != null:
-		impact_shadow.color = Color(0.0, 0.0, 0.0, 0.0)
-
-	if impact_flash != null:
-		impact_flash.color = Color(1.0, 1.0, 1.0, 0.0)
-
-	if impact_value_label != null:
-		impact_value_label.visible = false
 
 
 func build_hud() -> void:
@@ -168,7 +152,6 @@ func build_hud() -> void:
 	build_top_left_stats()
 	build_center_reticle()
 	build_ctrl_push_arrow()
-	build_impact_effects()
 	build_hitmarker()
 
 
@@ -295,56 +278,13 @@ func build_ctrl_push_arrow() -> void:
 	ctrl_push_arrow.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
-func build_impact_effects() -> void:
-	impact_shadow = ColorRect.new()
-	impact_shadow.name = "ImpactShadow"
-	root.add_child(impact_shadow)
-	impact_shadow.set_anchors_preset(Control.PRESET_FULL_RECT)
-	impact_shadow.offset_left = 0.0
-	impact_shadow.offset_top = 0.0
-	impact_shadow.offset_right = 0.0
-	impact_shadow.offset_bottom = 0.0
-	impact_shadow.color = Color(0.0, 0.0, 0.0, 0.0)
-	impact_shadow.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	
-	impact_flash = ColorRect.new()
-	impact_flash.name = "ImpactFlash"
-	root.add_child(impact_flash)
-	impact_flash.set_anchors_preset(Control.PRESET_FULL_RECT)
-	impact_flash.offset_left = 0.0
-	impact_flash.offset_top = 0.0
-	impact_flash.offset_right = 0.0
-	impact_flash.offset_bottom = 0.0
-	impact_flash.color = Color(1.0, 1.0, 1.0, 0.0)
-	impact_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	
-	impact_value_label = Label.new()
-	impact_value_label.name = "ImpactValueLabel"
-	root.add_child(impact_value_label)
-	impact_value_label.text = ""
-	impact_value_label.visible = false
-	impact_value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	impact_value_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	impact_value_label.size = Vector2(500.0, 90.0)
-	impact_value_label.add_theme_font_size_override("font_size", 32)
-	impact_value_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.95))
-	impact_value_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	
-	center_control(impact_value_label)
-	impact_value_label.position.y += 120.0
-
-
 func layout_dynamic_controls() -> void:
 	if root == null:
 		return
-	
+
 	if reticle != null:
 		center_control(reticle)
 
-	if impact_value_label != null:
-		center_control(impact_value_label)
-		impact_value_label.position.y += 120.0
-	
 
 func center_control(control: Control) -> void:
 	if control == null:
@@ -571,31 +511,6 @@ func update_ammo(current_ammo: int, reserve_ammo: int, reloading: bool) -> void:
 		ammo_label.text = "Ammo: reloading…"
 	else:
 		ammo_label.text = "Ammo: " + str(current_ammo) + " / " + str(reserve_ammo)
-
-
-func update_impact_effect(
-	_delta: float,
-	strength: float,
-	impact_value: float,
-	immobilize_time_remaining: float
-) -> void:
-	strength = clampf(strength, 0.0, 1.0)
-	
-	if impact_shadow != null:
-		impact_shadow.color = Color(0.0, 0.0, 0.0, strength * 0.42)
-	
-	if impact_flash != null:
-		impact_flash.color = Color(1.0, 1.0, 1.0, strength * 0.18)
-	
-	if impact_value_label != null:
-		if strength > 0.05 or immobilize_time_remaining > 0.0:
-			impact_value_label.visible = true
-			impact_value_label.text = (
-				"IMPACT " + str(roundi(impact_value)) +
-				"\nLOCK " + format_number(immobilize_time_remaining) + "s"
-			)
-		else:
-			impact_value_label.visible = false
 
 
 func format_number(value: float) -> String:
