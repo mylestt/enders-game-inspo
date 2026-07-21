@@ -13,12 +13,11 @@
 [ext_resource type="Script" uid="uid://cg7trh76w3qq3" path="res://scripts/grapple_controller.gd" id="11_grapple"]
 
 [sub_resource type="Curve" id="Curve_nvl01"]
-max_value = 3.0
-_data = [Vector2(0, 0.52808994), 0.0, 0.0, 0, 0, Vector2(0.505, 0.7415731), 0.0, 0.0, 0, 0, Vector2(0.995, 1), 0.0, 0.0, 0, 0]
+_limits = [0.52808994, 477.99, 0.0, 1.0]
+_data = [Vector2(0, 0.52808994), 0.0, 0.0, 0, 0, Vector2(0.059180573, 413.0489), 0.0, 0.0, 0, 0, Vector2(0.96661603, 477.99), 0.0, 0.0, 0, 0]
 point_count = 3
 
 [sub_resource type="Curve" id="Curve_ivps1"]
-_limits = [0.0, 20.88, 0.0, 1.0]
 _data = [Vector2(0.010000005, 0.08988774), 0.0, 0.0, 0, 0, Vector2(0.47499996, 0.52808994), 0.0, 0.0, 0, 0, Vector2(0.88, 1), 0.0, 0.0, 0, 0]
 point_count = 3
 
