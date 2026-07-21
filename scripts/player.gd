@@ -26,8 +26,6 @@ extends RigidBody3D
 @export var body_slam_impulse_multiplier: float = 1.35
 @export var body_slam_max_impulse: float = 18.0
 @export var body_slam_local_cooldown: float = 0.2
-@export var weapon_aim_reticle_range: float = 200.0
-@export var weapon_aim_reticle_use_world_raycast: bool = false
 
 var buy_menu_open: bool = false
 # True while the pause/settings/admin menu is open. Locks input the same way the buy menu
@@ -445,16 +443,8 @@ func _input(event: InputEvent) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
-func _process(delta: float) -> void:
-	if not is_local_player:
-		return
-	
-	if is_dead:
-		if hud_controller != null:
-			hud_controller.update_weapon_aim_reticle(delta, camera, Vector3.ZERO, true)
-		return
-
-	update_weapon_aim_reticle(delta)
+func _process(_delta: float) -> void:
+	pass
 
 
 func _physics_process(delta: float) -> void:
@@ -1132,50 +1122,6 @@ func update_network_send(delta: float) -> void:
 		)
 
 
-func update_weapon_aim_reticle(delta: float) -> void:
-	if hud_controller == null:
-		return
-	
-	if camera == null or weapon_inventory == null:
-		hud_controller.update_weapon_aim_reticle(delta, camera, Vector3.ZERO, true)
-		return
-	
-	if buy_menu_open or not weapon_inventory.has_equipped_weapon():
-		hud_controller.update_weapon_aim_reticle(delta, camera, Vector3.ZERO, true)
-		return
-	
-	var origin := weapon_inventory.get_weapon_aim_origin()
-	var direction := weapon_inventory.get_weapon_aim_direction()
-	
-	if direction.length() < 0.001:
-		hud_controller.update_weapon_aim_reticle(delta, camera, Vector3.ZERO, true)
-		return
-	
-	var aim_point := get_weapon_aim_visual_point(origin, direction.normalized())
-	hud_controller.update_weapon_aim_reticle(delta, camera, aim_point, false)
-
-
-func get_weapon_aim_visual_point(origin: Vector3, direction: Vector3) -> Vector3:
-	var end := origin + direction * weapon_aim_reticle_range
-	
-	if not weapon_aim_reticle_use_world_raycast:
-		return end
-	
-	var query := PhysicsRayQueryParameters3D.create(origin, end)
-	query.collide_with_bodies = true
-	query.collide_with_areas = true
-	
-	if self is CollisionObject3D:
-		query.exclude = [get_rid()]
-	
-	var result: Dictionary = get_world_3d().direct_space_state.intersect_ray(query)
-	
-	if result.is_empty():
-		return end
-	
-	return result["position"]
-
-
 func is_free_look_active() -> bool:
 	if is_input_locked():
 		return false
@@ -1193,17 +1139,7 @@ func is_input_locked() -> bool:
 	if external_menu_open:
 		return true
 
-	if is_surface_walk_mode_active():
-		return false
-	
-	return is_immobilized()
-
-
-func is_immobilized() -> bool:
-	if impact_controller == null:
-		return false
-	
-	return impact_controller.is_immobilized()
+	return false
 
 
 func is_surface_walk_mode_active() -> bool:

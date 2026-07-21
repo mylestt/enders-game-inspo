@@ -125,7 +125,16 @@ func get_weapon_weight() -> float:
 	return maxf(weapon_weight, 0.01)
 
 
+# Shots come from the CAMERA — origin at the eye, direction straight down the view centre —
+# so every weapon hits exactly where the player is looking, with zero gun-sway lag (the
+# swaying weapon model is purely cosmetic). Falls back to the gun's own barrel transform
+# only when no owner camera exists.
 func get_aim_origin() -> Vector3:
+	var view := _get_owner_camera()
+
+	if view != null:
+		return view.global_position
+
 	if String(aim_origin_node_path) != "":
 		var aim_origin_node := get_node_or_null(aim_origin_node_path) as Node3D
 
@@ -136,12 +145,44 @@ func get_aim_origin() -> Vector3:
 
 
 func get_aim_direction() -> Vector3:
+	var view := _get_owner_camera()
+
+	if view != null:
+		return (-view.global_transform.basis.z).normalized()
+
 	var local_direction := aim_local_direction
 
 	if local_direction.length() < 0.001:
 		local_direction = Vector3.FORWARD
 
 	return (global_transform.basis * local_direction.normalized()).normalized()
+
+
+# Where shot VISUALS start: the gun's barrel (aim_origin_node_path), never the camera — the
+# beam leaving your face reads wrong even though the damage ray is camera-true.
+func get_tracer_origin() -> Vector3:
+	if String(aim_origin_node_path) != "":
+		var aim_origin_node := get_node_or_null(aim_origin_node_path) as Node3D
+
+		if aim_origin_node != null:
+			return aim_origin_node.global_position
+
+	return global_position
+
+
+var _owner_camera: Camera3D = null
+
+
+func _get_owner_camera() -> Camera3D:
+	if _owner_camera != null and is_instance_valid(_owner_camera):
+		return _owner_camera
+
+	_owner_camera = null
+
+	if owner_player != null:
+		_owner_camera = owner_player.get_node_or_null("CameraRig/Camera3D") as Camera3D
+
+	return _owner_camera
 
 
 # ----- Ammo / reload -----
@@ -348,14 +389,17 @@ func fire_hitscan() -> Dictionary:
 
 	# Tracer width scale (1.0 for normal guns; a charge weapon returns its charge ratio). Sent
 	# to the local tracer AND relayed with the shot so bystanders see the same-sized beam.
+	# The tracer is drawn from the BARREL to the hit point (and relayed that way), while the
+	# damage ray itself came from the camera — hits land at the reticle, beams leave the gun.
 	var tracer_scale := get_tracer_size_scale()
-	spawn_hitscan_tracer(origin, hit_position, hit_something, hit_normal, tracer_scale)
+	var tracer_origin := get_tracer_origin()
+	spawn_hitscan_tracer(tracer_origin, hit_position, hit_something, hit_normal, tracer_scale)
 	trigger_muzzle_flash()
 
 	if owner_player != null and owner_player.has_method("report_weapon_shot"):
 		owner_player.call(
 			"report_weapon_shot",
-			origin,
+			tracer_origin,
 			hit_position,
 			hit_something,
 			hit_normal,

@@ -30,6 +30,25 @@ func fire_projectile() -> Node:
 	# Reuse the base spread model (hitscan_spread_degrees + ADS multiplier).
 	direction = get_hitscan_shot_direction(direction.normalized())
 
+	# The bolt SPAWNS at the barrel but flies toward the point the camera ray is actually
+	# aiming at (raycast from the eye), so it leaves the gun visually yet still lands where
+	# the player is looking — same eye-ray/barrel-visual split as the hitscan tracers.
+	var aim_target := origin + direction * hitscan_range
+	var aim_query := PhysicsRayQueryParameters3D.create(origin, aim_target)
+	aim_query.collision_mask = hitscan_collision_mask
+	aim_query.exclude = get_owner_collision_exclusions()
+	var aim_hit := get_world_3d().direct_space_state.intersect_ray(aim_query)
+
+	if not aim_hit.is_empty():
+		aim_target = aim_hit["position"]
+
+	var muzzle := get_tracer_origin()
+	var converge := aim_target - muzzle
+
+	if converge.length() > 0.05:
+		origin = muzzle
+		direction = converge.normalized()
+
 	if projectile_scene == null:
 		push_error("ProjectileWeapon has no projectile_scene assigned.")
 		return null
