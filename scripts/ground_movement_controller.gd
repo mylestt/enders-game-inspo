@@ -37,7 +37,12 @@ enum GroundState { GROUNDED, AIRBORNE }
 @export var air_move_speed := 500.0
 
 # --- Orientation / feel (migrated unchanged from the old surface walk) ---
-@export var surface_walk_body_offset: float = 0.85           # standing height off the surface
+# Standing height of the body CENTRE off the surface. MUST be >= the collision shape's own
+# rest height (capsule height/2 = 1.0 for the default capsule), or the physics contact
+# holds the body where the landing gate can never pass (jumps get stuck AIRBORNE until the
+# timeout dumps you to zero-G) and the snap spring endlessly fights depenetration while
+# walking. 1.02 = capsule rest + 2 cm skin, so the snap owns the height cleanly.
+@export var surface_walk_body_offset: float = 1.02
 @export var surface_walk_pitch_limit_degrees: float = 82.0   # look up/down clamp
 # View-pitch gimbal: cancels the body's alignment nod on the camera so terrain never rocks
 # your aim; washes out at this rate so climbing onto a wall still settles the view.
@@ -206,7 +211,7 @@ func physics_airborne(delta: float) -> void:
 		if not result.is_empty():
 			var hit_distance := (player.global_position - (result["position"] as Vector3)).dot(surface_walk_normal)
 
-			if hit_distance <= surface_walk_body_offset + 0.05:
+			if hit_distance <= surface_walk_body_offset + 0.1:
 				log_movement_event("LAND  dist=%.3f  air_t=%.2f  v=%s" % [
 					hit_distance, airborne_time, _fmt_v(player.linear_velocity)])
 				apply_ground_sensing(result, delta)
