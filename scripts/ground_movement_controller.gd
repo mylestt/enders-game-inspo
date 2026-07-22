@@ -10,9 +10,13 @@ class_name GroundMovementController
 # plane, and "up" is the surface normal:
 #  - GROUNDED: accelerate (add only the shortfall of velocity along the steer direction, up
 #    to move speed) then friction (multiplicative drop per tick) — crisp starts, soft stops.
-#  - Jump (push/space): velocity += normal * jump_velocity -> AIRBORNE, still in ground
-#    mode. Gravity pulls along -normal; the air-accelerate recipe gives Source air control
-#    (air-strafing); NO friction in the air, so auto_bhop chains hops preserving speed.
+#  - Jump (push/space, a DISCRETE press — holding does nothing): velocity += normal *
+#    jump_velocity -> AIRBORNE, still in ground mode. Gravity pulls along -normal; the
+#    air-accelerate recipe gives Source air control (air-strafing); NO friction in the air.
+#  - Orientation LOCK (hold shift / stabilize_rotation): freezes the body's up — no
+#    reorientation onto new faces. Ride seams and curves with your current orientation;
+#    faces too steep to read as ground drop you AIRBORNE where the graze-clip slides you
+#    along them — surfing.
 #  - Walking off a ledge also goes AIRBORNE (you fall like a normal FPS); if nothing
 #    catches you within AIRBORNE_MAX_TIME you hand off to zero-G with momentum.
 #  - ground_detach (Alt): the deliberate launch OUT of ground mode into zero-G (what space
@@ -26,13 +30,11 @@ class_name GroundMovementController
 enum GroundState { GROUNDED, AIRBORNE }
 
 # --- Source movement (near-verbatim from the reference controller) ---
-@export var walk_speed := 7.0
-@export var sprint_speed := 8.5
+@export var move_speed := 8.5             # THE ground speed — always at full pace, no sprint key
 @export var ground_accel := 11.0          # in units of move_speed per second
 @export var ground_decel := 7.0           # friction's minimum "control" speed
 @export var ground_friction := 3.5
 @export var jump_velocity := 6.0          # in-mode hop, along the surface normal
-@export var auto_bhop := true             # hold jump to chain hops (no friction between)
 @export var hop_gravity := 15.2           # pull along -normal while AIRBORNE (Source ~800u/s^2)
 @export var air_cap := 0.85               # max speed the air recipe adds along the steer dir
 @export var air_accel := 800.0
@@ -160,8 +162,8 @@ func physics_grounded(delta: float) -> void:
 	update_surface_walk_orientation()
 
 	# Jump: Source-style — set the normal-axis velocity and go AIRBORNE (still ground
-	# mode). No friction on the jump tick, which is what lets auto_bhop preserve speed.
-	if is_action_just_pressed_if_exists("push") or (auto_bhop and is_action_pressed_if_exists("push")):
+	# mode). A discrete press only; holding jump does nothing.
+	if is_action_just_pressed_if_exists("push"):
 		var tangent := player.linear_velocity.slide(surface_walk_anchor_normal)
 		player.linear_velocity = tangent + surface_walk_normal * jump_velocity
 		begin_airborne()
@@ -180,6 +182,28 @@ func physics_airborne(delta: float) -> void:
 	# Gravity along the surface's -normal, Source air control, no friction, no snap.
 	player.linear_velocity += -surface_walk_normal * hop_gravity * delta
 	handle_source_air_move(delta)
+
+	# Graze clip (Source clip_velocity): pressed against a surface mid-air — surfing a ramp
+	# with orientation locked, or grazing a wall mid-hop — remove the into-surface velocity
+	# component so you SLIDE along it instead of physics depenetration juddering you off.
+	var v := player.linear_velocity
+
+	if v.length() > 0.01:
+		var graze := raycast_from_player(
+			player.global_position,
+			player.global_position + v.normalized() * (surface_walk_body_offset + 0.1)
+		)
+
+		if not graze.is_empty():
+			var graze_normal: Vector3 = graze.get("normal", Vector3.ZERO)
+
+			if graze_normal.length() > 0.01:
+				graze_normal = graze_normal.normalized()
+				var into := v.dot(graze_normal)
+
+				if into < 0.0:
+					player.linear_velocity = v - graze_normal * into
+
 	update_surface_walk_orientation()
 
 	# Landing: falling toward the surface with ground in stand range.
@@ -214,6 +238,21 @@ func apply_ground_sensing(result: Dictionary, delta: float) -> void:
 	var raw_normal := (result["normal"] as Vector3).normalized()
 	var target_normal := (result.get("target_normal", raw_normal) as Vector3).normalized()
 
+	# Orientation LOCK (shift): the body's up is FROZEN — no re-alignment, no adoption of
+	# foreign faces. The anchor still tracks the current face (and drifts along curves, so
+	# you slide across them with your held orientation); a genuinely different face is
+	# ignored, and once nothing same-face supports you the grounded probe comes up empty
+	# and you go AIRBORNE — where the graze-clip surfs you along whatever you press into.
+	if is_orientation_locked():
+		surface_walk_smoothed_target = surface_walk_normal
+
+		if rad_to_deg(raw_normal.angle_to(surface_walk_anchor_normal)) <= SURFACE_WALK_ANCHOR_SAME_FACE_DEGREES:
+			surface_walk_anchor_point = result["position"]
+			surface_walk_anchor_normal = raw_normal
+
+		surface_walk_anchor_foreign_time = 0.0
+		return
+
 	# nlerp, NOT slerp: near-identical vectors degenerate slerp's axis into float noise.
 	var smooth_weight := clampf(1.0 - exp(-SURFACE_WALK_TARGET_SMOOTHING * delta), 0.0, 1.0)
 	var smoothed := surface_walk_smoothed_target.lerp(target_normal, smooth_weight)
@@ -242,7 +281,12 @@ func apply_ground_sensing(result: Dictionary, delta: float) -> void:
 
 
 func get_move_speed() -> float:
-	return sprint_speed if is_surface_walk_sprinting() else walk_speed
+	return move_speed
+
+
+# Hold shift: freeze orientation — the body's up never re-aligns while held (surf).
+func is_orientation_locked() -> bool:
+	return is_action_pressed_if_exists("stabilize_rotation")
 
 
 # Steer direction in the stood surface's tangent plane (the Source "wish_dir").
@@ -913,10 +957,6 @@ func get_surface_walk_input_vector() -> Vector2:
 		input_vector = input_vector.normalized()
 
 	return input_vector
-
-
-func is_surface_walk_sprinting() -> bool:
-	return is_action_pressed_if_exists("sprint") or is_action_pressed_if_exists("stabilize_rotation")
 
 
 func raycast_from_player(origin: Vector3, end: Vector3) -> Dictionary:
