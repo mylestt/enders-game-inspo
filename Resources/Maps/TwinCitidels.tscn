@@ -892,6 +892,66 @@ mesh = SubResource("ArrayMesh_15mty")
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Terrain/Castle2/Spawn/StaticBody3D" unique_id=941313623]
 shape = SubResource("ConcavePolygonShape3D_oq8o0")
 
+[node name="OmniLight3D" type="OmniLight3D" parent="Terrain/Castle2/Spawn" unique_id=548560333]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -9.545097, -2.3058777, 0)
+omni_range = 1198.465
+
+[node name="OmniLight3D2" type="OmniLight3D" parent="Terrain/Castle2/Spawn" unique_id=608057888]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -13.434929, 16.294556, 0)
+omni_range = 1198.465
+
+[node name="OmniLight3D3" type="OmniLight3D" parent="Terrain/Castle2/Spawn" unique_id=1515749653]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.614212, 53.171616, 0)
+omni_range = 1198.465
+
+[node name="OmniLight3D4" type="OmniLight3D" parent="Terrain/Castle2/Spawn" unique_id=1545400905]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 30.411518, 1.267273, 0)
+omni_range = 1823.27
+
+[node name="OmniLight3D5" type="OmniLight3D" parent="Terrain/Castle2/Spawn" unique_id=935507618]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 104.41223, 139.30196, 0)
+omni_range = 1823.27
+
+[node name="OmniLight3D6" type="OmniLight3D" parent="Terrain/Castle2/Spawn" unique_id=1439570899]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -68.473045, 97.53728, 61.278244)
+omni_range = 1823.27
+
+[node name="OmniLight3D7" type="OmniLight3D" parent="Terrain/Castle2/Spawn" unique_id=752423046]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.729292, 238.98679, 118.035965)
+omni_range = 1823.27
+
+[node name="OmniLight3D8" type="OmniLight3D" parent="Terrain/Castle2/Spawn" unique_id=1771181872]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 100.54004, 264.65875, 7.148239)
+omni_range = 1823.27
+
+[node name="OmniLight3D9" type="OmniLight3D" parent="Terrain/Castle2/Spawn" unique_id=100375505]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 11.66703, 103.65605, -64.90236)
+omni_range = 1823.27
+
+[node name="OmniLight3D10" type="OmniLight3D" parent="Terrain/Castle2/Spawn" unique_id=1106809317]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -128.72922, 205.9696, -117.703384)
+omni_range = 1823.27
+
+[node name="OmniLight3D11" type="OmniLight3D" parent="Terrain/Castle2/Spawn" unique_id=628716443]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -76.65857, 339.29416, -63.343327)
+omni_range = 1823.27
+
+[node name="OmniLight3D12" type="OmniLight3D" parent="Terrain/Castle2/Spawn" unique_id=1832099718]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -65.72447, 365.83194, -59.904636)
+omni_range = 11.29
+
+[node name="OmniLight3D13" type="OmniLight3D" parent="Terrain/Castle2/Spawn" unique_id=578149808]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -55.930756, 320.66672, -59.904636)
+omni_range = 11.29
+
+[node name="OmniLight3D14" type="OmniLight3D" parent="Terrain/Castle2/Spawn" unique_id=1850650859]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -103.67288, 350.45258, -59.904636)
+omni_range = 2649.195
+
+[node name="OmniLight3D15" type="OmniLight3D" parent="Terrain/Castle2/Spawn" unique_id=1833601168]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -103.67288, 350.45258, -59.904636)
+omni_range = 2649.195
+
 [node name="Terrain" type="MeshInstance3D" parent="Terrain/Castle2" unique_id=2097036182]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24.41029, -80.52464, -9)
 mesh = SubResource("ArrayMesh_ccmpq")
