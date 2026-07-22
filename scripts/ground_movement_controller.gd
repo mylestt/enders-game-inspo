@@ -149,11 +149,17 @@ func physics_update_ground(delta: float) -> void:
 
 
 func physics_grounded(delta: float) -> void:
-	var result := get_surface_walk_ground_result()
+	# While orientation-locked, the feeler (which exists to hand you onto NEW faces) is
+	# skipped, and only ground on YOUR face counts as support — a foreign face under you
+	# means the surface you were locked to has ended, so you go airborne (surf) rather
+	# than half-standing on a face you refuse to align to (physics depenetration would
+	# pop you off it — the "it jumps me" bug).
+	var locked := is_orientation_locked()
+	var result := get_surface_walk_ground_result(not locked)
 
-	if result.is_empty():
-		# Walked off a ledge: FALL (stay in ground mode, gravity along the old -normal).
-		# If nothing catches us the airborne timeout hands off to zero-G.
+	if result.is_empty() or (locked and is_foreign_face(result)):
+		# Walked off a ledge / lost the locked face: FALL (stay in ground mode, gravity
+		# along the old -normal). If nothing catches us the timeout hands off to zero-G.
 		begin_airborne()
 		physics_airborne(delta)
 		return
@@ -206,11 +212,14 @@ func physics_airborne(delta: float) -> void:
 
 	update_surface_walk_orientation()
 
-	# Landing: falling toward the surface with ground in stand range.
+	# Landing: falling toward the surface with ground in stand range. While locked, only
+	# same-face-ish ground lands you — landing ON a foreign ramp is rejected, so the
+	# graze-clip keeps you surfing along it instead.
 	if player.linear_velocity.dot(surface_walk_normal) <= 0.01:
-		var result := get_surface_walk_ground_result()
+		var locked := is_orientation_locked()
+		var result := get_surface_walk_ground_result(not locked)
 
-		if not result.is_empty():
+		if not result.is_empty() and not (locked and is_foreign_face(result)):
 			var hit_distance := (player.global_position - (result["position"] as Vector3)).dot(surface_walk_normal)
 
 			if hit_distance <= surface_walk_body_offset + 0.15:
@@ -636,7 +645,7 @@ func align_surface_walk_normal_toward(target_normal: Vector3, delta: float) -> v
 # Ground probe: feeler along the walk direction hands over an approaching seam; otherwise
 # the down ray + foot rays + crest sweeps blend a CONTINUOUS orientation target while the
 # nearest hit stays the physical anchor. Returns {position, normal, target_normal} or {}.
-func get_surface_walk_ground_result() -> Dictionary:
+func get_surface_walk_ground_result(allow_feeler: bool = true) -> Dictionary:
 	if player == null:
 		return {}
 
@@ -644,7 +653,7 @@ func get_surface_walk_ground_result() -> Dictionary:
 	var probe_length := surface_walk_body_offset + SURFACE_WALK_EDGE_CHECK_EXTRA_DISTANCE + 0.08
 	var move_dir := get_surface_walk_probe_move_direction()
 
-	if move_dir != Vector3.ZERO:
+	if allow_feeler and move_dir != Vector3.ZERO:
 		var feeler := probe_surface_walk_ray(origin, move_dir, probe_length)
 
 		if not feeler.is_empty():
@@ -807,10 +816,27 @@ func get_surface_walk_wall_block_normal() -> Vector3:
 
 	hit_normal = hit_normal.normalized()
 
-	if rad_to_deg(surface_walk_anchor_normal.angle_to(hit_normal)) <= surface_walk_max_edge_angle_degrees:
+	# Locked: ANY face that isn't your own is an obstacle (you refuse to align onto it, so
+	# it must block like a wall or depenetration pops you). Unlocked: only past the
+	# walkable gate blocks.
+	var block_limit := SURFACE_WALK_ANCHOR_SAME_FACE_DEGREES if is_orientation_locked() \
+		else surface_walk_max_edge_angle_degrees
+
+	if rad_to_deg(surface_walk_anchor_normal.angle_to(hit_normal)) <= block_limit:
 		return Vector3.ZERO
 
 	return hit_normal
+
+
+# The result's supporting face differs from the anchored one (beyond same-face tolerance).
+func is_foreign_face(result: Dictionary) -> bool:
+	var raw_normal: Vector3 = result.get("normal", Vector3.ZERO)
+
+	if raw_normal.length() < 0.01:
+		return true
+
+	return rad_to_deg(raw_normal.normalized().angle_to(surface_walk_anchor_normal)) \
+		> SURFACE_WALK_ANCHOR_SAME_FACE_DEGREES
 
 
 # Removes the part of `velocity` heading INTO a wall (wall_tangent = outward normal
