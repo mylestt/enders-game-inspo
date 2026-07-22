@@ -13,10 +13,6 @@ class_name GroundMovementController
 #  - Jump (push/space, a DISCRETE press — holding does nothing): velocity += normal *
 #    jump_velocity -> AIRBORNE, still in ground mode. Gravity pulls along -normal; the
 #    air-accelerate recipe gives Source air control (air-strafing); NO friction in the air.
-#  - Orientation LOCK (hold shift / stabilize_rotation): freezes the body's up — no
-#    reorientation onto new faces. Ride seams and curves with your current orientation;
-#    faces too steep to read as ground drop you AIRBORNE where the graze-clip slides you
-#    along them — surfing.
 #  - Walking off a ledge also goes AIRBORNE (you fall like a normal FPS); if nothing
 #    catches you within AIRBORNE_MAX_TIME you hand off to zero-G with momentum.
 #  - ground_detach (Alt): the deliberate launch OUT of ground mode into zero-G (what space
@@ -149,17 +145,11 @@ func physics_update_ground(delta: float) -> void:
 
 
 func physics_grounded(delta: float) -> void:
-	# While orientation-locked, the feeler (which exists to hand you onto NEW faces) is
-	# skipped, and only ground on YOUR face counts as support — a foreign face under you
-	# means the surface you were locked to has ended, so you go airborne (surf) rather
-	# than half-standing on a face you refuse to align to (physics depenetration would
-	# pop you off it — the "it jumps me" bug).
-	var locked := is_orientation_locked()
-	var result := get_surface_walk_ground_result(not locked)
+	var result := get_surface_walk_ground_result()
 
-	if result.is_empty() or (locked and is_foreign_face(result)):
-		# Walked off a ledge / lost the locked face: FALL (stay in ground mode, gravity
-		# along the old -normal). If nothing catches us the timeout hands off to zero-G.
+	if result.is_empty():
+		# Walked off a ledge: FALL (stay in ground mode, gravity along the old -normal).
+		# If nothing catches us the airborne timeout hands off to zero-G.
 		begin_airborne()
 		physics_airborne(delta)
 		return
@@ -188,41 +178,20 @@ func physics_airborne(delta: float) -> void:
 	# Gravity along the surface's -normal, Source air control, no friction, no snap.
 	player.linear_velocity += -surface_walk_normal * hop_gravity * delta
 	handle_source_air_move(delta)
-
-	# Graze clip (Source clip_velocity): pressed against a surface mid-air — surfing a ramp
-	# with orientation locked, or grazing a wall mid-hop — remove the into-surface velocity
-	# component so you SLIDE along it instead of physics depenetration juddering you off.
-	var v := player.linear_velocity
-
-	if v.length() > 0.01:
-		var graze := raycast_from_player(
-			player.global_position,
-			player.global_position + v.normalized() * (surface_walk_body_offset + 0.1)
-		)
-
-		if not graze.is_empty():
-			var graze_normal: Vector3 = graze.get("normal", Vector3.ZERO)
-
-			if graze_normal.length() > 0.01:
-				graze_normal = graze_normal.normalized()
-				var into := v.dot(graze_normal)
-
-				if into < 0.0:
-					player.linear_velocity = v - graze_normal * into
-
 	update_surface_walk_orientation()
 
-	# Landing: falling toward the surface with ground in stand range. While locked, only
-	# same-face-ish ground lands you — landing ON a foreign ramp is rejected, so the
-	# graze-clip keeps you surfing along it instead.
+	# Landing: falling toward the surface AND genuinely at stand height (within 5 cm) — a
+	# looser gate "lands" you early, deleting fall velocity while still visibly off the
+	# ground and handing the last stretch to the slow snap spring, which reads as hovering
+	# mid-jump. Fast falls that skip the window are caught by the physics contact (which
+	# zeroes approach velocity at the floor), landing them the next tick.
 	if player.linear_velocity.dot(surface_walk_normal) <= 0.01:
-		var locked := is_orientation_locked()
-		var result := get_surface_walk_ground_result(not locked)
+		var result := get_surface_walk_ground_result()
 
-		if not result.is_empty() and not (locked and is_foreign_face(result)):
+		if not result.is_empty():
 			var hit_distance := (player.global_position - (result["position"] as Vector3)).dot(surface_walk_normal)
 
-			if hit_distance <= surface_walk_body_offset + 0.15:
+			if hit_distance <= surface_walk_body_offset + 0.05:
 				apply_ground_sensing(result, delta)
 				ground_state = GroundState.GROUNDED
 
@@ -246,21 +215,6 @@ func begin_airborne() -> void:
 func apply_ground_sensing(result: Dictionary, delta: float) -> void:
 	var raw_normal := (result["normal"] as Vector3).normalized()
 	var target_normal := (result.get("target_normal", raw_normal) as Vector3).normalized()
-
-	# Orientation LOCK (shift): the body's up is FROZEN — no re-alignment, no adoption of
-	# foreign faces. The anchor still tracks the current face (and drifts along curves, so
-	# you slide across them with your held orientation); a genuinely different face is
-	# ignored, and once nothing same-face supports you the grounded probe comes up empty
-	# and you go AIRBORNE — where the graze-clip surfs you along whatever you press into.
-	if is_orientation_locked():
-		surface_walk_smoothed_target = surface_walk_normal
-
-		if rad_to_deg(raw_normal.angle_to(surface_walk_anchor_normal)) <= SURFACE_WALK_ANCHOR_SAME_FACE_DEGREES:
-			surface_walk_anchor_point = result["position"]
-			surface_walk_anchor_normal = raw_normal
-
-		surface_walk_anchor_foreign_time = 0.0
-		return
 
 	# nlerp, NOT slerp: near-identical vectors degenerate slerp's axis into float noise.
 	var smooth_weight := clampf(1.0 - exp(-SURFACE_WALK_TARGET_SMOOTHING * delta), 0.0, 1.0)
@@ -291,11 +245,6 @@ func apply_ground_sensing(result: Dictionary, delta: float) -> void:
 
 func get_move_speed() -> float:
 	return move_speed
-
-
-# Hold shift: freeze orientation — the body's up never re-aligns while held (surf).
-func is_orientation_locked() -> bool:
-	return is_action_pressed_if_exists("stabilize_rotation")
 
 
 # Steer direction in the stood surface's tangent plane (the Source "wish_dir").
@@ -645,7 +594,7 @@ func align_surface_walk_normal_toward(target_normal: Vector3, delta: float) -> v
 # Ground probe: feeler along the walk direction hands over an approaching seam; otherwise
 # the down ray + foot rays + crest sweeps blend a CONTINUOUS orientation target while the
 # nearest hit stays the physical anchor. Returns {position, normal, target_normal} or {}.
-func get_surface_walk_ground_result(allow_feeler: bool = true) -> Dictionary:
+func get_surface_walk_ground_result() -> Dictionary:
 	if player == null:
 		return {}
 
@@ -653,7 +602,7 @@ func get_surface_walk_ground_result(allow_feeler: bool = true) -> Dictionary:
 	var probe_length := surface_walk_body_offset + SURFACE_WALK_EDGE_CHECK_EXTRA_DISTANCE + 0.08
 	var move_dir := get_surface_walk_probe_move_direction()
 
-	if allow_feeler and move_dir != Vector3.ZERO:
+	if move_dir != Vector3.ZERO:
 		var feeler := probe_surface_walk_ray(origin, move_dir, probe_length)
 
 		if not feeler.is_empty():
@@ -816,27 +765,10 @@ func get_surface_walk_wall_block_normal() -> Vector3:
 
 	hit_normal = hit_normal.normalized()
 
-	# Locked: ANY face that isn't your own is an obstacle (you refuse to align onto it, so
-	# it must block like a wall or depenetration pops you). Unlocked: only past the
-	# walkable gate blocks.
-	var block_limit := SURFACE_WALK_ANCHOR_SAME_FACE_DEGREES if is_orientation_locked() \
-		else surface_walk_max_edge_angle_degrees
-
-	if rad_to_deg(surface_walk_anchor_normal.angle_to(hit_normal)) <= block_limit:
+	if rad_to_deg(surface_walk_anchor_normal.angle_to(hit_normal)) <= surface_walk_max_edge_angle_degrees:
 		return Vector3.ZERO
 
 	return hit_normal
-
-
-# The result's supporting face differs from the anchored one (beyond same-face tolerance).
-func is_foreign_face(result: Dictionary) -> bool:
-	var raw_normal: Vector3 = result.get("normal", Vector3.ZERO)
-
-	if raw_normal.length() < 0.01:
-		return true
-
-	return rad_to_deg(raw_normal.normalized().angle_to(surface_walk_anchor_normal)) \
-		> SURFACE_WALK_ANCHOR_SAME_FACE_DEGREES
 
 
 # Removes the part of `velocity` heading INTO a wall (wall_tangent = outward normal
