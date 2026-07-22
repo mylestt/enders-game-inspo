@@ -362,7 +362,7 @@ func test_network_state_hygiene() -> void:
 func test_surface_walk_wall_slide() -> void:
 	print("- movement: wall-slide velocity strip")
 
-	var mc := PlayerMovementController
+	var mc := GroundMovementController
 
 	# Wall on +X (its outward normal projected on the floor points -X toward the player).
 	var wall_tangent := Vector3(-1, 0, 0)
@@ -394,7 +394,7 @@ func test_surface_walk_wall_slide() -> void:
 func test_surface_walk_pitch_gimbal() -> void:
 	print("- movement: surface-walk pitch gimbal")
 
-	var mc := PlayerMovementController.new()
+	var mc := GroundMovementController.new()
 	mc.surface_walk_forward = Vector3(0, 0, -1)
 	mc.surface_walk_align_rate = 1000.0   # keep the step off the rate limiter so a nod accrues
 

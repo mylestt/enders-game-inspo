@@ -14,16 +14,7 @@
 [ext_resource type="Script" uid="uid://cg7trh76w3qq3" path="res://scripts/grapple_controller.gd" id="11_grapple"]
 [ext_resource type="Material" uid="uid://ictjshvmqobp" path="res://Resources/Materials/Mat1.tres" id="13_w4uxk"]
 [ext_resource type="Script" uid="uid://nid5ltl1bdyt" path="res://Resources/Scripts/PlayerNametag.cs" id="14_or2vr"]
-
-[sub_resource type="Curve" id="Curve_walkspeed"]
-_limits = [0.52808994, 6.0, 0.0, 1.0]
-_data = [Vector2(0, 0.52808994), 0.0, 0.0, 0, 0, Vector2(0.5022762, 2.0045414), 0.0, 0.0, 0, 0, Vector2(0.8634294, 4.0022707), 0.0, 0.0, 0, 0]
-point_count = 3
-
-[sub_resource type="Curve" id="Curve_sprintspeed"]
-_limits = [0.0, 179.89, 0.0, 1.0]
-_data = [Vector2(0.010000005, 0.08988774), 0.0, 0.0, 0, 0, Vector2(0.4855842, 92.966286), 0.0, 0.0, 0, 0, Vector2(0.88012135, 178.60225), 0.0, 0.0, 0, 0]
-point_count = 3
+[ext_resource type="Script" uid="uid://vwlticrgm8hx" path="res://scripts/ground_movement_controller.gd" id="15_ground"]
 
 [sub_resource type="CylinderMesh" id="CylinderMesh_or2vr"]
 
@@ -47,8 +38,9 @@ grappleController = NodePath("../GrappleController")
 
 [node name="MovementController" type="Node" parent="." unique_id=294609104]
 script = ExtResource("2_1jxqw")
-walk_speed_curve = SubResource("Curve_walkspeed")
-sprint_speed_curve = SubResource("Curve_sprintspeed")
+
+[node name="GroundMovementController" type="Node" parent="." unique_id=294609105]
+script = ExtResource("15_ground")
 surface_walk_pitch_stabilize_recenter = 10.215
 surface_walk_slope_align_speed = 9.0
 
