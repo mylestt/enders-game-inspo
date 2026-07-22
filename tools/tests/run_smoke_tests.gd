@@ -84,7 +84,7 @@ func check(condition: bool, label: String) -> void:
 # --- Scene integrity ---------------------------------------------------------------------
 
 const SCENE_PATHS := [
-	"res://player.tscn",
+	"res://Resources/Objects/player.tscn",
 	"res://scenes/main.tscn",
 	"res://scenes/start_menu.tscn",
 	"res://scenes/test_map.tscn",
@@ -338,7 +338,7 @@ func test_network_state_hygiene() -> void:
 	nm.free()
 
 	# Replica state receipt orthonormalizes hostile scale away.
-	var player_scene := load("res://player.tscn") as PackedScene
+	var player_scene := load("res://Resources/Objects/player.tscn") as PackedScene
 	var player = player_scene.instantiate()
 	var skewed := Transform3D(Basis.IDENTITY.scaled(Vector3(4.0, 0.5, 2.0)).rotated(Vector3.UP, 0.7), Vector3(5, 6, 7))
 	player.receive_network_state(skewed, Vector3.ZERO, Vector3.ZERO, 1)
