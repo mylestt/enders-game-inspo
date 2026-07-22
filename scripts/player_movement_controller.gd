@@ -414,6 +414,19 @@ func can_ground_lock() -> bool:
 	return movement_mode == MovementMode.ZERO_G and not last_surface_walk_entry_result.is_empty()
 
 
+# --- C# HUD contract (Hud.cs reads/calls these BY NAME on this node) ---------------------
+
+# Kept as a readable property mirroring the ground node's lock reach.
+var surface_walk_lock_max_distance: float = GroundMovementController.SURFACE_WALK_LOCK_MAX_DISTANCE
+
+
+func find_spawn_surface(max_distance: float, max_normal_angle_degrees: float = -1.0) -> Dictionary:
+	if ground == null:
+		return {}
+
+	return ground.find_spawn_surface(max_distance, max_normal_angle_degrees)
+
+
 func is_surface_walk_active() -> bool:
 	return movement_mode == MovementMode.SURFACE_WALK
 
