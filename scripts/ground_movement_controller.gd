@@ -703,6 +703,20 @@ func get_surface_walk_ground_result() -> Dictionary:
 	var foreign_weight := SURFACE_WALK_FOREIGN_FACE_WEIGHT * lerpf(0.1, 1.0, speed_ratio)
 	var same_face_cos := cos(deg_to_rad(SURFACE_WALK_ANCHOR_SAME_FACE_DEGREES))
 
+	# Thin-ledge stability: while the CENTRE down-probe still stands squarely on the
+	# anchored face, faces caught only by the outer foot/sweep probes (a narrow sill's side
+	# bevels — the probes are wider than the sill) barely steer orientation, so you cross
+	# thin beveled ledges upright instead of rolling around their corners and getting
+	# bunted off. On a true crest the centre probe LEAVES the old face, suppression lifts,
+	# and the blend wraps you over it exactly as before.
+	var centre_hit := probe_surface_walk_ray(lifted, -surface_walk_normal, probe_length)
+
+	if not centre_hit.is_empty():
+		var centre_normal := (centre_hit["normal"] as Vector3).normalized()
+
+		if centre_normal.dot(surface_walk_anchor_normal) >= same_face_cos:
+			foreign_weight *= 0.1
+
 	var best: Dictionary = {}
 	var best_distance := INF
 	var same_face_best: Dictionary = {}
