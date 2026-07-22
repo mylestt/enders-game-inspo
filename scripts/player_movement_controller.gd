@@ -154,6 +154,10 @@ var surface_walk_transition_active: bool = false
 var surface_walk_transition_timer: float = 0.0
 var surface_walk_transition_start_transform: Transform3D
 var surface_walk_transition_target_transform: Transform3D
+# Tangential momentum carried through ground-mode entry: captured on enter (the flight's
+# along-surface velocity), handed back when the slide-in transition completes — landing at
+# speed turns into a run/skid instead of a dead stop.
+var surface_walk_entry_carry: Vector3 = Vector3.ZERO
 
 var camera_base_position: Vector3 = Vector3.ZERO
 var surface_walk_shake_timer: float = 0.0
@@ -616,7 +620,12 @@ func enter_surface_walk_mode(hit_position: Vector3, surface_normal: Vector3, ins
 	var target_position := hit_position + surface_walk_normal * surface_walk_body_offset
 	var target_basis := make_surface_walk_basis(surface_walk_forward, surface_walk_normal)
 	var target_transform := Transform3D(target_basis, target_position)
-	
+
+	# Keep the flight's momentum along the surface: the tangential part of the incoming
+	# velocity survives entry (returned when the transition lands); the into-surface part
+	# is absorbed by the landing itself. Spawns enter stationary.
+	surface_walk_entry_carry = Vector3.ZERO if instant else player.linear_velocity.slide(surface_walk_normal)
+
 	player.linear_velocity = Vector3.ZERO
 	player.angular_velocity = Vector3.ZERO
 	player.sleeping = false
@@ -647,6 +656,7 @@ func start_surface_walk_transition(target_transform: Transform3D) -> void:
 	if SURFACE_WALK_TRANSITION_DURATION <= 0.0:
 		player.global_transform = surface_walk_transition_target_transform
 		surface_walk_transition_active = false
+		player.linear_velocity = surface_walk_entry_carry
 
 
 func update_surface_walk_transition(delta: float) -> void:
@@ -679,6 +689,8 @@ func update_surface_walk_transition(delta: float) -> void:
 	if raw_t >= 1.0:
 		player.global_transform = surface_walk_transition_target_transform
 		surface_walk_transition_active = false
+		# Hand the carried momentum back: land running, not frozen.
+		player.linear_velocity = surface_walk_entry_carry
 
 
 func start_surface_walk_entry_shake() -> void:
