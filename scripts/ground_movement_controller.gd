@@ -101,6 +101,17 @@ var camera_base_position: Vector3 = Vector3.ZERO
 var surface_walk_shake_timer: float = 0.0
 var _pre_surface_walk_material: PhysicsMaterial = null
 
+# --- Movement flight recorder -------------------------------------------------------------
+# Writes user://movement_log.txt (fresh file each launch): one line per physics tick while
+# in ground mode (inputs, state, velocities, orientation) plus EVENT lines for every
+# transition (ENTER/EXIT/JUMP/AIRBORNE/LAND/DETACH). Local player only — the ground tick
+# never runs for remotes or the server. Turn off once the movement feel is settled.
+@export var debug_movement_log := true
+@export var debug_log_every_n_frames := 1
+
+var _log_file: FileAccess = null
+var _log_tick_count := 0
+
 
 func setup(owner_coordinator: Node, owner_player: RigidBody3D, owner_camera: Camera3D) -> void:
 	coordinator = owner_coordinator
@@ -126,6 +137,8 @@ func is_active() -> bool:
 
 
 func physics_update_ground(delta: float) -> void:
+	log_movement_tick()
+
 	if surface_walk_transition_active:
 		update_surface_walk_transition(delta)
 		return
@@ -133,6 +146,7 @@ func physics_update_ground(delta: float) -> void:
 	update_surface_walk_mouse_look(delta)
 
 	if is_action_just_pressed_if_exists("ground_detach"):
+		log_movement_event("DETACH (alt)")
 		detach_to_zero_g()
 		return
 
@@ -162,6 +176,7 @@ func physics_grounded(delta: float) -> void:
 	if is_action_just_pressed_if_exists("push"):
 		var tangent := player.linear_velocity.slide(surface_walk_anchor_normal)
 		player.linear_velocity = tangent + surface_walk_normal * jump_velocity
+		log_movement_event("JUMP  v=%s  |v|=%.2f" % [_fmt_v(player.linear_velocity), player.linear_velocity.length()])
 		begin_airborne()
 
 		if player.has_method("suppress_launch_impact"):
@@ -192,6 +207,8 @@ func physics_airborne(delta: float) -> void:
 			var hit_distance := (player.global_position - (result["position"] as Vector3)).dot(surface_walk_normal)
 
 			if hit_distance <= surface_walk_body_offset + 0.05:
+				log_movement_event("LAND  dist=%.3f  air_t=%.2f  v=%s" % [
+					hit_distance, airborne_time, _fmt_v(player.linear_velocity)])
 				apply_ground_sensing(result, delta)
 				ground_state = GroundState.GROUNDED
 
@@ -202,10 +219,14 @@ func physics_airborne(delta: float) -> void:
 
 	# Nothing caught us: float off into zero-G with momentum (walking off into the void).
 	if airborne_time > AIRBORNE_MAX_TIME:
+		log_movement_event("AIRBORNE TIMEOUT -> zero-G")
 		exit_surface_walk_mode()
 
 
 func begin_airborne() -> void:
+	if ground_state != GroundState.AIRBORNE:
+		log_movement_event("AIRBORNE begins  v=%s" % _fmt_v(player.linear_velocity))
+
 	ground_state = GroundState.AIRBORNE
 	airborne_time = 0.0
 
@@ -397,6 +418,9 @@ func enter_surface_walk_mode(hit_position: Vector3, surface_normal: Vector3, ins
 	if camera != null:
 		camera.rotation = Vector3.ZERO
 
+	log_movement_event("ENTER mode  instant=%s  normal=%s  carry=%s" % [
+		instant, _fmt_v(surface_walk_normal), _fmt_v(surface_walk_entry_carry)])
+
 	if instant:
 		surface_walk_transition_active = false
 		player.global_transform = target_transform
@@ -413,6 +437,7 @@ func exit_surface_walk_mode() -> void:
 	if not is_active():
 		return
 
+	log_movement_event("EXIT mode  v=%s" % _fmt_v(player.linear_velocity))
 	surface_walk_transition_active = false
 	surface_walk_shake_timer = 0.0
 	surface_walk_align_rate = 0.0
@@ -921,6 +946,87 @@ func raycast_from_player(origin: Vector3, end: Vector3) -> Dictionary:
 	_ray_query.from = origin
 	_ray_query.to = end
 	return player.get_world_3d().direct_space_state.intersect_ray(_ray_query)
+
+
+# ---------------------------------------------------------------- flight recorder
+
+
+func _log_open() -> void:
+	if _log_file != null:
+		return
+
+	_log_file = FileAccess.open("user://movement_log.txt", FileAccess.WRITE)
+
+	if _log_file == null:
+		return
+
+	print("Movement log -> ", ProjectSettings.globalize_path("user://movement_log.txt"))
+	_log_file.store_line(
+		"# time | frame | state airT | in=(fwd,strafe) J=just/held D=detach | " +
+		"|v| vTan vNorm | ang(up,anchor)deg standDist | pos | up"
+	)
+	_log_file.flush()
+
+
+func log_movement_event(tag: String) -> void:
+	if not debug_movement_log:
+		return
+
+	_log_open()
+
+	if _log_file == null:
+		return
+
+	_log_file.store_line("%8.3f  ===== %s" % [Time.get_ticks_msec() / 1000.0, tag])
+	_log_file.flush()
+
+
+func log_movement_tick() -> void:
+	if not debug_movement_log or player == null:
+		return
+
+	_log_tick_count += 1
+
+	if debug_log_every_n_frames > 1 and _log_tick_count % debug_log_every_n_frames != 0:
+		return
+
+	_log_open()
+
+	if _log_file == null:
+		return
+
+	var input_vector := get_surface_walk_input_vector()
+	var velocity := player.linear_velocity
+	var tangent_speed := velocity.slide(surface_walk_anchor_normal).length()
+	var normal_speed := velocity.dot(surface_walk_normal)
+	var stand_distance := surface_walk_anchor_normal.dot(player.global_position - surface_walk_anchor_point)
+	var state_name := "TRANSIT" if surface_walk_transition_active \
+		else ("GROUND" if ground_state == GroundState.GROUNDED else "AIR")
+
+	_log_file.store_line(
+		"%8.3f  f%-7d %-7s a=%.2f  in=(%+.1f,%+.1f) J=%d/%d D=%d  |v|=%6.2f t=%6.2f n=%+6.2f  ang=%5.1f d=%5.2f  p=%s  up=%s" % [
+			Time.get_ticks_msec() / 1000.0,
+			Engine.get_physics_frames(),
+			state_name,
+			airborne_time,
+			input_vector.y, input_vector.x,
+			int(is_action_just_pressed_if_exists("push")), int(is_action_pressed_if_exists("push")),
+			int(is_action_pressed_if_exists("ground_detach")),
+			velocity.length(), tangent_speed, normal_speed,
+			rad_to_deg(surface_walk_normal.angle_to(surface_walk_anchor_normal)),
+			stand_distance,
+			_fmt_v(player.global_position),
+			_fmt_v(surface_walk_normal),
+		]
+	)
+
+	# Flush periodically so a crash or force-quit still leaves a usable log.
+	if _log_tick_count % 30 == 0:
+		_log_file.flush()
+
+
+static func _fmt_v(v: Vector3) -> String:
+	return "(%.2f, %.2f, %.2f)" % [v.x, v.y, v.z]
 
 
 func is_action_pressed_if_exists(action_name: String) -> bool:
