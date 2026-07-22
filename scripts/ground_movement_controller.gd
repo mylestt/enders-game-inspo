@@ -420,10 +420,12 @@ func enter_surface_walk_mode(hit_position: Vector3, surface_normal: Vector3, ins
 	var target_basis := make_surface_walk_basis(surface_walk_forward, surface_walk_normal)
 	var target_transform := Transform3D(target_basis, target_position)
 
-	# Keep the flight's momentum along the surface (spawns enter stationary).
+	# Keep the flight's momentum along the surface (spawns enter stationary). Velocity stays
+	# LIVE through the whole entry — the transition eases rotation and closes the stand
+	# height, so entering at speed is a continuous glide-in, never stop-then-pop.
 	surface_walk_entry_carry = Vector3.ZERO if instant else player.linear_velocity.slide(surface_walk_normal)
 
-	player.linear_velocity = Vector3.ZERO
+	player.linear_velocity = surface_walk_entry_carry
 	player.angular_velocity = Vector3.ZERO
 	player.sleeping = false
 
@@ -495,8 +497,12 @@ func start_surface_walk_transition(target_transform: Transform3D) -> void:
 		player.linear_velocity = surface_walk_entry_carry
 
 
+# Entry transition: ROTATION eases onto the surface while momentum keeps flowing. (The old
+# version zeroed velocity and lerped the whole transform — a dead stop for 0.14 s, then the
+# carried momentum popping back in one lump. Jarring.) Tangential velocity runs
+# uninterrupted from the first frame; the stand-height gap closes as a velocity along the
+# anchor normal over the remaining transition time.
 func update_surface_walk_transition(delta: float) -> void:
-	player.linear_velocity = Vector3.ZERO
 	player.angular_velocity = Vector3.ZERO
 	player.sleeping = false
 
@@ -505,19 +511,22 @@ func update_surface_walk_transition(delta: float) -> void:
 	var raw_t := clampf(surface_walk_transition_timer / maxf(SURFACE_WALK_TRANSITION_DURATION, 0.001), 0.0, 1.0)
 	var smooth_t := raw_t * raw_t * (3.0 - 2.0 * raw_t)
 
-	var new_position := surface_walk_transition_start_transform.origin.lerp(
-		surface_walk_transition_target_transform.origin, smooth_t
-	)
 	var new_basis := surface_walk_transition_start_transform.basis.slerp(
 		surface_walk_transition_target_transform.basis, smooth_t
 	).orthonormalized()
+	player.global_transform.basis = new_basis
 
-	player.global_transform = Transform3D(new_basis, new_position)
+	# Close the remaining stand-height gap over the time left, riding on top of the carry.
+	var stand_error := surface_walk_body_offset - surface_walk_anchor_normal.dot(
+		player.global_position - surface_walk_anchor_point
+	)
+	var remaining := maxf(SURFACE_WALK_TRANSITION_DURATION - surface_walk_transition_timer, delta)
+	var approach := clampf(stand_error / remaining, -40.0, 40.0)
+	player.linear_velocity = surface_walk_entry_carry + surface_walk_anchor_normal * approach
 
 	if raw_t >= 1.0:
-		player.global_transform = surface_walk_transition_target_transform
+		player.global_transform.basis = surface_walk_transition_target_transform.basis
 		surface_walk_transition_active = false
-		# Hand the carried momentum back: land running, not frozen.
 		player.linear_velocity = surface_walk_entry_carry
 
 
