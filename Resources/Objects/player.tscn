@@ -15,6 +15,18 @@
 [ext_resource type="Material" uid="uid://ictjshvmqobp" path="res://Resources/Materials/Mat1.tres" id="13_w4uxk"]
 [ext_resource type="Script" uid="uid://nid5ltl1bdyt" path="res://Resources/Scripts/PlayerNametag.cs" id="14_or2vr"]
 
+[sub_resource type="Curve" id="Curve_walkspeed"]
+max_value = 6.0
+max_domain = 0.25
+_data = [Vector2(0, 0.9), 0.0, 0.0, 0, 0, Vector2(0.1, 4.8), 0.0, 0.0, 0, 0, Vector2(0.25, 6.0), 0.0, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="Curve" id="Curve_sprintspeed"]
+max_value = 12.0
+max_domain = 0.3
+_data = [Vector2(0, 1.2), 0.0, 0.0, 0, 0, Vector2(0.12, 9.6), 0.0, 0.0, 0, 0, Vector2(0.3, 12.0), 0.0, 0.0, 0, 0]
+point_count = 3
+
 [sub_resource type="CylinderMesh" id="CylinderMesh_or2vr"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_g2els"]
@@ -37,6 +49,9 @@ grappleController = NodePath("../GrappleController")
 
 [node name="MovementController" type="Node" parent="." unique_id=294609104]
 script = ExtResource("2_1jxqw")
+walk_speed_curve = SubResource("Curve_walkspeed")
+sprint_speed_curve = SubResource("Curve_sprintspeed")
+surface_walk_pitch_stabilize_recenter = 10.215
 surface_walk_slope_align_speed = 9.0
 
 [node name="SuitBoosters" type="Node" parent="." unique_id=2126445202]
