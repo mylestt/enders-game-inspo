@@ -72,6 +72,10 @@ const SURFACE_WALK_MAX_TURN_SPEED_DEGREES := 175.0
 const SURFACE_WALK_ALIGN_ACCEL := 6.5
 const DETACH_MOMENTUM_CARRY := 1.35       # run speed kept (boosted) on Alt-detach
 const AIRBORNE_MAX_TIME := 2.0            # falling with no landing this long -> zero-G
+# Fall gravity is heavier than rise gravity (the classic anti-float trick): symmetric
+# gravity hangs ~0.25 s of near-weightlessness at the apex, which reads as floaty/"a second
+# push". Rise keeps hop_gravity; descent uses hop_gravity * this.
+const FALL_GRAVITY_MULTIPLIER := 1.6
 
 var coordinator: Node = null              # PlayerMovementController (mode owner, shared look)
 var player: RigidBody3D
@@ -195,8 +199,11 @@ func physics_grounded(delta: float) -> void:
 func physics_airborne(delta: float) -> void:
 	airborne_time += delta
 
-	# Gravity along the surface's -normal, Source air control, no friction, no snap.
-	player.linear_velocity += -surface_walk_normal * hop_gravity * delta
+	# Gravity along the surface's -normal (heavier on the way down — see
+	# FALL_GRAVITY_MULTIPLIER), Source air control, no friction, no snap.
+	var rising := player.linear_velocity.dot(surface_walk_normal) > 0.0
+	var gravity := hop_gravity if rising else hop_gravity * FALL_GRAVITY_MULTIPLIER
+	player.linear_velocity += -surface_walk_normal * gravity * delta
 	handle_source_air_move(delta)
 	update_surface_walk_orientation()
 

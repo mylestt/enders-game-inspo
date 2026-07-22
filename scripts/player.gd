@@ -1149,6 +1149,20 @@ func is_surface_walk_mode_active() -> bool:
 	return movement_controller.is_surface_walk_active()
 
 
+# True only when actually STANDING (ground mode and not mid-hop) — the camera rig keys
+# headbob/lean/landing-dip off this, so a jump doesn't keep bobbing the view mid-air.
+func is_surface_grounded() -> bool:
+	if not is_surface_walk_mode_active():
+		return false
+
+	var ground = movement_controller.ground
+
+	if ground == null:
+		return false
+
+	return ground.ground_state == GroundMovementController.GroundState.GROUNDED
+
+
 # Braced = recoil should kick the weapon (normal FPS), not the body. True when
 # standing on a surface or gripping a wall; false while free-floating in zero-G.
 func is_recoil_braced() -> bool:

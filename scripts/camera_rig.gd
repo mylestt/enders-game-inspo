@@ -246,6 +246,11 @@ func is_surface_walking() -> bool:
 	if player == null:
 		return false
 
+	# Prefer the true standing check (excludes mid-hop) so bob/lean stop in the air and the
+	# landing dip fires on every hop touchdown.
+	if player.has_method("is_surface_grounded"):
+		return bool(player.call("is_surface_grounded"))
+
 	if player.has_method("is_surface_walk_mode_active"):
 		return bool(player.call("is_surface_walk_mode_active"))
 
