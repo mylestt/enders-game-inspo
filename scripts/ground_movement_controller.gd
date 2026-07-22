@@ -155,8 +155,15 @@ func physics_update_ground(delta: float) -> void:
 	update_surface_walk_mouse_look(delta)
 
 	if is_action_just_pressed_if_exists("ground_detach"):
-		log_movement_event("DETACH (alt)")
-		detach_to_zero_g()
+		if ground_state == GroundState.AIRBORNE:
+			# Mid-air Alt: passive release into zero-G (same as C) — you already spent your
+			# jump; no extra launch stacks on top of it. Momentum carries as-is.
+			log_movement_event("DETACH (alt, airborne -> passive release)")
+			exit_surface_walk_mode()
+		else:
+			log_movement_event("DETACH (alt, grounded -> boosted launch)")
+			detach_to_zero_g()
+
 		return
 
 	match ground_state:
