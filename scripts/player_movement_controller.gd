@@ -76,6 +76,11 @@ enum MovementMode {
 @export var surface_walk_max_edge_angle_degrees: float = 80.0
 # Transition speed: how eagerly the body banks onto new surface orientations (per second).
 @export var surface_walk_slope_align_speed: float = 10.0
+# THE momentum-retention feel knob. Landing with more speed than the walk target keeps the
+# excess as a skid that bleeds off at this rate (m/s^2) — LOWER = icier, longer glides
+# (2-4: space-ice), HIGHER = grippier, faster stops (15+: sticky boots). Without this
+# regime the walk acceleration would crush a fast landing back to walk speed in a frame.
+@export var surface_walk_skid_deceleration: float = 6.0
 
 # Internal surface-walk tuning (deliberately NOT exported — edit here if the feel needs it).
 const SURFACE_WALK_SNAP_STRENGTH := 10.0            # hover-height spring stiffness
@@ -1135,9 +1140,15 @@ func handle_surface_walk_movement(delta: float) -> void:
 	# before the fresh one is added — sliding on the smoothed normal lets snap velocity
 	# accumulate into walk speed when the two diverge at a seam (launches the player).
 	var current_tangent_velocity := player.linear_velocity.slide(surface_walk_anchor_normal)
+
+	# SKID regime: moving faster than the walk target (carried landing momentum) bleeds off
+	# at the gentle skid rate, steering softly toward the held direction; at or below target
+	# speed the normal walk acceleration takes over — a seamless handoff mid-slide.
+	var over_speed := current_tangent_velocity.length() > target_speed + 0.1
+	var approach_rate := surface_walk_skid_deceleration if over_speed else current_acceleration
 	var new_tangent_velocity := current_tangent_velocity.move_toward(
 		desired_tangent_velocity,
-		current_acceleration * delta
+		approach_rate * delta
 	)
 
 	# Also strip any pre-existing into-wall momentum so a fast run-up can't punch through the
