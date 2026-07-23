@@ -43,7 +43,7 @@ script = ExtResource("2_1jxqw")
 script = ExtResource("15_ground")
 move_speed = 6.0
 airborne_max_time = 0.0
-surface_walk_pitch_stabilize_recenter = 0.5
+surface_walk_pitch_stabilize_recenter = 10.215
 surface_walk_slope_align_speed = 9.0
 
 [node name="SuitBoosters" type="Node" parent="." unique_id=2126445202]
