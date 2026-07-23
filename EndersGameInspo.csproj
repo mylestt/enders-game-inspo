@@ -4,4 +4,9 @@
     <TargetFramework Condition=" '$(GodotTargetPlatform)' == 'android' ">net9.0</TargetFramework>
     <EnableDynamicLoading>true</EnableDynamicLoading>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- The server-manager desktop tool is its own project (WPF, net10) — its sources
+         must never be swept into the game assembly by the SDK's default glob. -->
+    <Compile Remove="tools\server_manager\**\*.cs" />
+  </ItemGroup>
 </Project>

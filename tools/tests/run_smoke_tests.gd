@@ -412,14 +412,15 @@ func test_surface_walk_pitch_gimbal() -> void:
 	mc.align_surface_walk_normal_toward(Vector3.UP.rotated(Vector3.RIGHT, deg_to_rad(-10.0)), 0.1)
 	check(mc.surface_walk_pitch_stabilize > 0.0001, "nose-down nod is cancelled by a positive pitch offset")
 
-	# recenter <= 0 disables the stabilizer: no offset accrues from alignment.
+	# pitch_gimbal_strength = 0 disables the stabilizer: no offset accrues from alignment.
+	# (recenter = 0 means "never wash out" — an absolute hold — not "off".)
 	mc.surface_walk_normal = Vector3.UP
 	mc.surface_walk_forward = Vector3(0, 0, -1)
 	mc.surface_walk_align_rate = 1000.0
 	mc.surface_walk_pitch_stabilize = 0.0
-	mc.surface_walk_pitch_stabilize_recenter = 0.0
+	mc.pitch_gimbal_strength = 0.0
 	mc.align_surface_walk_normal_toward(Vector3.UP.rotated(Vector3.RIGHT, deg_to_rad(10.0)), 0.1)
-	check(is_equal_approx(mc.surface_walk_pitch_stabilize, 0.0), "recenter = 0 disables the stabilizer")
+	check(is_equal_approx(mc.surface_walk_pitch_stabilize, 0.0), "gimbal strength 0 disables the stabilizer")
 
 	# Applied pitch (aim + offset) is clamped to the pitch limit so it can't invert the view.
 	mc.surface_walk_pitch = 0.0

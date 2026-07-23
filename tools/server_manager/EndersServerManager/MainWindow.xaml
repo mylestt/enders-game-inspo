@@ -1,0 +1,259 @@
+<Window x:Class="EndersServerManager.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Enders Server Manager"
+        Width="1120" Height="720" MinWidth="980" MinHeight="620"
+        WindowStartupLocation="CenterScreen"
+        Background="#FF15161B" FontFamily="Segoe UI" Foreground="#FFE8EAF0">
+
+  <Window.Resources>
+    <SolidColorBrush x:Key="Panel" Color="#FF1E2027"/>
+    <SolidColorBrush x:Key="PanelBorder" Color="#FF2B2E39"/>
+    <SolidColorBrush x:Key="Accent" Color="#FF4F8CFF"/>
+    <SolidColorBrush x:Key="Ok" Color="#FF3DDC84"/>
+    <SolidColorBrush x:Key="Danger" Color="#FFFF5470"/>
+    <SolidColorBrush x:Key="Sub" Color="#FF9AA1B0"/>
+    <SolidColorBrush x:Key="InputBg" Color="#FF12131A"/>
+
+    <Style x:Key="Card" TargetType="Border">
+      <Setter Property="Background" Value="{StaticResource Panel}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource PanelBorder}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="10"/>
+      <Setter Property="Padding" Value="14"/>
+    </Style>
+
+    <Style x:Key="CardTitle" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+      <Setter Property="Foreground" Value="{StaticResource Sub}"/>
+    </Style>
+
+    <Style x:Key="ActionButton" TargetType="Button">
+      <Setter Property="Background" Value="{StaticResource Accent}"/>
+      <Setter Property="Foreground" Value="White"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Padding" Value="14,9"/>
+      <Setter Property="Margin" Value="0,0,8,8"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="BorderBrush" Value="{StaticResource PanelBorder}"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="8" Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="Opacity" Value="0.85"/>
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="Bd" Property="Opacity" Value="0.35"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="GhostButton" TargetType="Button" BasedOn="{StaticResource ActionButton}">
+      <Setter Property="Background" Value="#FF262933"/>
+      <Setter Property="Foreground" Value="#FFE8EAF0"/>
+      <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+
+    <Style x:Key="Input" TargetType="TextBox">
+      <Setter Property="Background" Value="{StaticResource InputBg}"/>
+      <Setter Property="Foreground" Value="#FFE8EAF0"/>
+      <Setter Property="BorderBrush" Value="{StaticResource PanelBorder}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Padding" Value="8,6"/>
+      <Setter Property="CaretBrush" Value="White"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+
+    <Style x:Key="FieldLabel" TargetType="TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource Sub}"/>
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="Margin" Value="1,10,0,4"/>
+    </Style>
+
+    <Style x:Key="Bar" TargetType="ProgressBar">
+      <Setter Property="Height" Value="14"/>
+      <Setter Property="Maximum" Value="100"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ProgressBar">
+            <Grid>
+              <Border x:Name="PART_Track" Background="{StaticResource InputBg}"
+                      BorderBrush="{StaticResource PanelBorder}" BorderThickness="1" CornerRadius="7"/>
+              <Border x:Name="PART_Indicator" Background="{StaticResource Accent}"
+                      CornerRadius="7" HorizontalAlignment="Left"/>
+            </Grid>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+  </Window.Resources>
+
+  <Grid Margin="18">
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="*"/>
+      <ColumnDefinition Width="330"/>
+    </Grid.ColumnDefinitions>
+
+    <!-- ============================== LEFT ============================== -->
+    <Grid Grid.Column="0" Margin="0,0,14,0">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="*"/>
+      </Grid.RowDefinitions>
+
+      <!-- Header -->
+      <Grid Grid.Row="0" Margin="2,0,2,12">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <StackPanel Grid.Column="0">
+          <TextBlock Text="ENDERS SERVER MANAGER" FontSize="19" FontWeight="Bold"/>
+          <TextBlock x:Name="HeaderHost" Text="" Foreground="{StaticResource Sub}" FontSize="12" Margin="1,2,0,0"/>
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+          <Ellipse x:Name="StatusDot" Width="11" Height="11" Fill="#FF6B7280" Margin="0,0,7,0" VerticalAlignment="Center"/>
+          <TextBlock x:Name="StatusText" Text="status unknown" VerticalAlignment="Center" Foreground="{StaticResource Sub}"/>
+          <Button x:Name="StatusBtn" Content="Check" Style="{StaticResource GhostButton}"
+                  Margin="12,0,0,0" Padding="10,5" Click="StatusClicked"/>
+        </StackPanel>
+      </Grid>
+
+      <!-- Binary picker -->
+      <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0,0,0,12">
+        <StackPanel>
+          <TextBlock Text="SERVER BINARY (UPLOAD SOURCE)" Style="{StaticResource CardTitle}"/>
+          <Grid Margin="0,9,0,0">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBox x:Name="PathBox" Style="{StaticResource Input}" TextChanged="PathChanged"/>
+            <Button x:Name="BrowseBtn" Grid.Column="1" Content="Browse…" Style="{StaticResource GhostButton}"
+                    Margin="8,0,0,0" Click="BrowseClicked"/>
+          </Grid>
+          <TextBlock x:Name="FileInfoText" Text="" FontSize="12" Margin="1,7,0,0"/>
+          <TextBlock Text="Re-export the Linux build from Godot after any code change — this app uploads whatever file sits at this path."
+                     Foreground="{StaticResource Sub}" FontSize="11" TextWrapping="Wrap" Margin="1,5,0,0"/>
+        </StackPanel>
+      </Border>
+
+      <!-- Actions -->
+      <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0,0,0,12">
+        <StackPanel>
+          <TextBlock Text="ACTIONS" Style="{StaticResource CardTitle}" Margin="0,0,0,9"/>
+          <WrapPanel>
+            <Button x:Name="DeployBtn" Content="Deploy   (stop → upload → verify → start)"
+                    Style="{StaticResource ActionButton}" Click="DeployClicked"/>
+            <Button x:Name="ReuploadBtn" Content="Reupload only" Style="{StaticResource GhostButton}" Click="ReuploadClicked"/>
+            <Button x:Name="StartBtn" Content="Start server" Style="{StaticResource GhostButton}"
+                    Foreground="{StaticResource Ok}" Click="StartClicked"/>
+            <Button x:Name="StopBtn" Content="Stop server" Style="{StaticResource GhostButton}"
+                    Foreground="{StaticResource Danger}" Click="StopClicked"/>
+            <Button x:Name="LogBtn" Content="Fetch server log" Style="{StaticResource GhostButton}" Click="FetchLogClicked"/>
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- Progress -->
+      <Border Grid.Row="3" Style="{StaticResource Card}" Margin="0,0,0,12">
+        <StackPanel>
+          <Grid>
+            <TextBlock x:Name="StepText" Text="Idle." Foreground="{StaticResource Sub}" FontSize="12"/>
+            <TextBlock x:Name="ProgressPct" Text="" HorizontalAlignment="Right" FontWeight="SemiBold" FontSize="12"/>
+          </Grid>
+          <ProgressBar x:Name="UploadBar" Style="{StaticResource Bar}" Value="0" Margin="0,8,0,0"/>
+          <TextBlock x:Name="TransferText" Text="" Foreground="{StaticResource Sub}" FontSize="11" Margin="1,6,0,0"/>
+        </StackPanel>
+      </Border>
+
+      <!-- Log -->
+      <Border Grid.Row="4" Style="{StaticResource Card}" Padding="14,12,14,14">
+        <Grid>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+          </Grid.RowDefinitions>
+          <Grid Grid.Row="0" Margin="0,0,0,8">
+            <TextBlock Text="ACTIVITY LOG" Style="{StaticResource CardTitle}" VerticalAlignment="Center"/>
+            <Button x:Name="ClearBtn" Content="Clear" Style="{StaticResource GhostButton}"
+                    HorizontalAlignment="Right" Padding="10,4" Margin="0" Click="ClearLogClicked"/>
+          </Grid>
+          <TextBox x:Name="LogBox" Grid.Row="1" IsReadOnly="True" AcceptsReturn="True"
+                   Background="#FF0F1015" Foreground="#FFD7DBE4" BorderThickness="0"
+                   FontFamily="Consolas" FontSize="12" Padding="10"
+                   TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
+        </Grid>
+      </Border>
+    </Grid>
+
+    <!-- ============================== RIGHT: SETTINGS ============================== -->
+    <Border Grid.Column="1" Style="{StaticResource Card}" VerticalAlignment="Stretch">
+      <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel>
+          <TextBlock Text="SETTINGS" Style="{StaticResource CardTitle}"/>
+
+          <TextBlock Text="Server address" Style="{StaticResource FieldLabel}"/>
+          <TextBox x:Name="HostBox" Style="{StaticResource Input}"/>
+
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="12"/>
+              <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0">
+              <TextBlock Text="SSH port" Style="{StaticResource FieldLabel}"/>
+              <TextBox x:Name="PortBox" Style="{StaticResource Input}"/>
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+              <TextBlock Text="Game port" Style="{StaticResource FieldLabel}"/>
+              <TextBox x:Name="GamePortBox" Style="{StaticResource Input}"/>
+            </StackPanel>
+          </Grid>
+
+          <TextBlock Text="SSH user" Style="{StaticResource FieldLabel}"/>
+          <TextBox x:Name="UserBox" Style="{StaticResource Input}"/>
+
+          <TextBlock Text="SSH password" Style="{StaticResource FieldLabel}"/>
+          <PasswordBox x:Name="PwdBox" Background="{StaticResource InputBg}" Foreground="#FFE8EAF0"
+                       BorderBrush="{StaticResource PanelBorder}" BorderThickness="1"
+                       Padding="8,6" CaretBrush="White" VerticalContentAlignment="Center"/>
+          <TextBlock x:Name="PwdSavedText" Text="" FontSize="11" Margin="1,5,0,0"/>
+
+          <TextBlock Text="Remote directory" Style="{StaticResource FieldLabel}"/>
+          <TextBox x:Name="RemoteDirBox" Style="{StaticResource Input}"/>
+
+          <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
+            <Button x:Name="SaveBtn" Content="Save settings" Style="{StaticResource ActionButton}" Click="SaveSettingsClicked"/>
+            <Button x:Name="TestBtn" Content="Test connection" Style="{StaticResource GhostButton}" Click="TestConnectionClicked"/>
+          </StackPanel>
+
+          <TextBlock TextWrapping="Wrap" Foreground="{StaticResource Sub}" FontSize="11" Margin="1,10,0,0"
+                     Text="The password is stored encrypted with Windows DPAPI — only your Windows account can read it, and it never leaves this machine except to log in to the server. Leaving the password box blank keeps the one already saved."/>
+
+          <Border Background="#FF191B22" BorderBrush="{StaticResource PanelBorder}" BorderThickness="1"
+                  CornerRadius="8" Padding="10" Margin="0,16,0,0">
+            <TextBlock TextWrapping="Wrap" Foreground="{StaticResource Sub}" FontSize="11"
+                       Text="Deploy runs the full runbook in order: kill the tmux session and any server process (a running binary silently keeps the OLD build), upload over SFTP with progress, verify the remote size matches the local file byte-for-byte, then chmod +x and run_server.sh on the game port. 'Fetch server log' shows the tmux pane, replacing 'tmux attach'."/>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+    </Border>
+  </Grid>
+</Window>

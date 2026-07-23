@@ -55,10 +55,20 @@ enum GroundState { GROUNDED, AIRBORNE }
 # timeout dumps you to zero-G) and the snap spring endlessly fights depenetration while
 # walking. 1.02 = capsule rest + 2 cm skin, so the snap owns the height cleanly.
 @export var surface_walk_body_offset: float = 1.02
-@export var surface_walk_pitch_limit_degrees: float = 82.0   # look up/down clamp
-# View-pitch gimbal: cancels the body's alignment nod on the camera so terrain never rocks
-# your aim; washes out at this rate so climbing onto a wall still settles the view.
-@export var surface_walk_pitch_stabilize_recenter: float = 3.0
+@export var surface_walk_pitch_limit_degrees: float = 90.0   # hard look clamp (full up/down)
+# View-pitch gimbal wash-out rate: how fast a held camera offset settles onto the surface
+# after the body reorients. 0 = NEVER (absolute hold — the view stays where you put it
+# until the mouse moves it); higher = the view follows big transitions sooner. The gimbal
+# itself is switched by pitch_gimbal_strength below.
+@export var surface_walk_pitch_stabilize_recenter: float = 0.5
+# How much of the body's alignment nod the gimbal cancels each frame: 1 = camera pitch
+# fully decoupled from the body (your view holds where you put it until the MOUSE moves
+# it), 0 = camera rigidly bolted to the body like a helmet cam. Pairs with the recenter
+# rate above. (There is deliberately NO look-angle release — that false-fired on downhill
+# faces; leaving ground mode by looking is not a thing.)
+@export_range(0.0, 1.0) var pitch_gimbal_strength := 1.0
+# Entering ground mode auto-releases an attached grapple wire.
+@export var release_grapple_on_entry := true
 # THE walkable-angle gate: surfaces angled further than this from the one you stand on are
 # WALLS (stop you); within it they're ground you reorient across.
 @export var surface_walk_max_edge_angle_degrees: float = 80.0
@@ -438,12 +448,23 @@ func enter_spawn_surface_walk() -> bool:
 
 
 func enter_surface_walk_mode(hit_position: Vector3, surface_normal: Vector3, instant: bool = false) -> void:
+	# Capture the actual view direction BEFORE anything realigns, so the entry can keep the
+	# player looking at exactly what they were looking at.
+	var entry_view_dir: Vector3 = -coordinator.get_control_look_basis().z
+
 	coordinator.begin_surface_walk_mode()
 
 	# Entering at speed (auto-lock mid-flight, C-lock on approach): the mode absorbs the
 	# arrival — no impact shake from the touchdown contact.
 	if player.has_method("suppress_launch_impact"):
 		player.call("suppress_launch_impact")
+
+	# An attached grapple wire makes no sense while standing — let it go on entry.
+	if release_grapple_on_entry:
+		var grapple = player.get("grapple_controller")
+
+		if grapple != null and grapple.get("attached"):
+			grapple.release()
 
 	# Surface-walk drives velocity directly; contact friction would fight it.
 	_pre_surface_walk_material = player.physics_material_override
@@ -470,7 +491,13 @@ func enter_surface_walk_mode(hit_position: Vector3, surface_normal: Vector3, ins
 		projected_forward = get_fallback_surface_forward(surface_walk_normal)
 
 	surface_walk_forward = projected_forward.normalized()
-	surface_walk_pitch = 0.0
+
+	# Preserve the ENTRY view pitch: whatever you were looking at when ground mode engaged
+	# stays on screen — the aim seeds from the view's angle to the new surface plane
+	# instead of snapping to the horizon (clamped just inside the hard stop).
+	var seed_pitch := asin(clampf(entry_view_dir.dot(surface_walk_normal), -1.0, 1.0))
+	var seed_cap := deg_to_rad(surface_walk_pitch_limit_degrees - 2.0)
+	surface_walk_pitch = clampf(seed_pitch, -seed_cap, seed_cap)
 	surface_walk_pitch_stabilize = 0.0
 	coordinator.reset_recoil()
 
@@ -488,7 +515,7 @@ func enter_surface_walk_mode(hit_position: Vector3, surface_normal: Vector3, ins
 	player.sleeping = false
 
 	if camera != null:
-		camera.rotation = Vector3.ZERO
+		camera.rotation = Vector3(get_surface_walk_applied_pitch(), 0.0, 0.0)
 
 	log_movement_event("ENTER mode  instant=%s  normal=%s  carry=%s" % [
 		instant, _fmt_v(surface_walk_normal), _fmt_v(surface_walk_entry_carry)])
@@ -630,15 +657,19 @@ func update_surface_walk_mouse_look(delta: float) -> void:
 
 	# Wash the gimbal offset toward 0 (sustained reorientation still settles the view) and
 	# clamp so aim + offset never exceed the pitch limit.
-	if surface_walk_pitch_stabilize_recenter > 0.0:
-		surface_walk_pitch_stabilize *= exp(-surface_walk_pitch_stabilize_recenter * delta)
+	if pitch_gimbal_strength <= 0.0:
+		surface_walk_pitch_stabilize = 0.0
+	else:
+		# recenter = 0 means the held offset NEVER washes out (absolute hold); higher
+		# values settle the view onto NEW surfaces after big deliberate transitions.
+		if surface_walk_pitch_stabilize_recenter > 0.0:
+			surface_walk_pitch_stabilize *= exp(-surface_walk_pitch_stabilize_recenter * delta)
+
 		surface_walk_pitch_stabilize = clampf(
 			surface_walk_pitch_stabilize,
 			-pitch_limit - surface_walk_pitch,
 			pitch_limit - surface_walk_pitch
 		)
-	else:
-		surface_walk_pitch_stabilize = 0.0
 
 	if camera != null:
 		camera.rotation = Vector3(get_surface_walk_applied_pitch(), 0.0, 0.0)
@@ -701,8 +732,8 @@ func align_surface_walk_normal_toward(target_normal: Vector3, delta: float) -> v
 
 	surface_walk_forward = projected_forward.normalized()
 
-	if surface_walk_pitch_stabilize_recenter > 0.0:
-		surface_walk_pitch_stabilize -= (surface_walk_forward - old_forward).dot(old_up)
+	if pitch_gimbal_strength > 0.0:
+		surface_walk_pitch_stabilize -= (surface_walk_forward - old_forward).dot(old_up) * pitch_gimbal_strength
 
 
 # ---------------------------------------------------------------- sensor (unchanged)

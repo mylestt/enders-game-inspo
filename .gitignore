@@ -16,3 +16,8 @@ raw_blend/*.import
 /EndersGameInspo.console.exe
 build/enders_server.x86_64
 build/mac/
+
+# Server-manager tool build output (source is tracked; binaries are not)
+tools/server_manager/EndersServerManager/bin/
+tools/server_manager/EndersServerManager/obj/
+tools/server_manager/publish/
