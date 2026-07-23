@@ -431,10 +431,12 @@ func _input(event: InputEvent) -> void:
 			weapon_inventory.try_quick_swap(3)
 
 	if grapple_controller != null:
+		# E toggles: fire when free, detach when attached (Q is the reel).
 		if event.is_action_pressed("grapple_fire"):
-			grapple_controller.try_fire()
-		elif event.is_action_pressed("grapple_release"):
-			grapple_controller.release()
+			if grapple_controller.attached:
+				grapple_controller.release()
+			else:
+				grapple_controller.try_fire()
 
 	if event.is_action_pressed("ui_cancel"):
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE

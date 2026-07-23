@@ -7,9 +7,10 @@ extends Node
 #
 # Physics: inside the radius you float freely (slack). Moving past it, the taut wire kills
 # only the OUTWARD radial velocity and keeps the tangential part — at speed that whips the
-# player into a circular swing around the pivot (release, grapple_release/Q, to slingshot
-# off with everything the swing gave you). Holding grapple_reel (MMB) spools the wire in:
-# floating, it tows you to the anchor; mid-swing it tightens the orbit and speeds the turn.
+# player into a circular swing around the pivot (press E again to detach and slingshot off
+# with everything the swing gave you — E toggles fire/release). Holding grapple_reel (Q)
+# spools the wire in: floating, it tows you to the anchor; mid-swing it tightens the orbit
+# and speeds the turn.
 #
 # Wrapping: the wire is a real line. When it touches geometry mid-swing it BENDS there — a
 # new pivot chained after the anchor — and the active radius shrinks to the remaining

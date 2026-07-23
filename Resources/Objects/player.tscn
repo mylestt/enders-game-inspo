@@ -41,7 +41,8 @@ script = ExtResource("2_1jxqw")
 
 [node name="GroundMovementController" type="Node" parent="." unique_id=294609105]
 script = ExtResource("15_ground")
-move_speed = 12.0
+move_speed = 10.0
+airborne_max_time = 0.0
 surface_walk_pitch_stabilize_recenter = 10.215
 surface_walk_slope_align_speed = 9.0
 
@@ -50,8 +51,6 @@ script = ExtResource("3_dw050")
 
 [node name="GrappleController" type="Node" parent="." unique_id=2126445204]
 script = ExtResource("11_grapple")
-taut_snap_strength = 3.0
-taut_max_snap_speed = 3.0
 wrap_surface_offset = 0.005
 wrap_min_pivot_separation = 0.0
 rope_width = 0.02
