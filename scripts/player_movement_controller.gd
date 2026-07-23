@@ -31,10 +31,15 @@ enum MovementMode {
 @export var surface_check_distance: float = 2.25
 @export var ctrl_push_check_distance: float = 2.75
 
-@export var jump_force: float = 10.0
+# Charged push/launch (space): the force starts EMPTY (min_jump_force) and builds toward
+# max while space is HELD (JUMP_CHARGE_TIME seconds to full); releasing fires — zero-G
+# pushes off the surface, ground mode launches into zero-G. A tap barely nudges, a full
+# hold launches hard. jump_force is the LIVE charge; the HUD force bar reads it per frame,
+# so the bar itself is the charge meter.
 @export var min_jump_force: float = 2.0
 @export var max_jump_force: float = 30.0
-@export var jump_force_scroll_step: float = 1.0
+const JUMP_CHARGE_TIME := 1.0
+var jump_force: float = 2.0
 
 @export var max_grab_speed: float = 10.0
 
@@ -136,7 +141,7 @@ func setup(owner_player: RigidBody3D, owner_hud_controller: PlayerHUDController)
 
 	ground.setup(self, player, camera)
 
-	jump_force = clampf(jump_force, min_jump_force, max_jump_force)
+	jump_force = min_jump_force
 	
 	if hud_controller != null:
 		hud_controller.update_jump_force(jump_force)
@@ -169,25 +174,6 @@ func setup_limb_push_controller() -> void:
 		limb_push_controller.setup(player)
 
 
-func _input(event: InputEvent) -> void:
-	if not can_adjust_jump_force():
-		return
-	
-	if event is InputEventMouseButton:
-		var mouse_event := event as InputEventMouseButton
-		
-		if not mouse_event.pressed:
-			return
-		
-		if mouse_event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			change_jump_force(jump_force_scroll_step)
-			get_viewport().set_input_as_handled()
-		
-		if mouse_event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			change_jump_force(-jump_force_scroll_step)
-			get_viewport().set_input_as_handled()
-
-
 func can_adjust_jump_force() -> bool:
 	if player == null:
 		return false
@@ -208,11 +194,20 @@ func can_adjust_jump_force() -> bool:
 	return true
 
 
-func change_jump_force(amount: float) -> void:
-	jump_force = clampf(jump_force + amount, min_jump_force, max_jump_force)
-	
-	if hud_controller != null:
-		hud_controller.update_jump_force(jump_force)
+# Space held = the charge builds; release fires. A blocked context (menu open, dead)
+# drains the charge so it can't fire stale.
+func update_jump_charge(delta: float) -> void:
+	if not can_adjust_jump_force():
+		jump_force = min_jump_force
+		return
+
+	if is_action_pressed_if_exists("push"):
+		var rate := (max_jump_force - min_jump_force) / JUMP_CHARGE_TIME
+		jump_force = minf(jump_force + rate * delta, max_jump_force)
+
+
+func reset_jump_charge() -> void:
+	jump_force = min_jump_force
 
 
 # Live mouse sensitivity: the settings slider writes GameSettings mid-game, so read it on
@@ -274,6 +269,7 @@ func physics_update(
 		return
 
 	consume_recoil_compensation()
+	update_jump_charge(delta)
 
 	match movement_mode:
 		MovementMode.ZERO_G:
@@ -624,14 +620,17 @@ func handle_free_look_rotation() -> void:
 	free_look_mouse_motion = Vector2.ZERO
 
 
+# Zero-G push fires on RELEASE with the charged force (jump_force = the live charge).
 func handle_jump_input() -> void:
-	if not is_action_just_pressed_if_exists("push"):
+	if not is_action_just_released_if_exists("push"):
 		return
-	
+
 	if is_action_pressed_if_exists("ctrl_push"):
 		try_ctrl_push()
 	else:
 		try_normal_push()
+
+	reset_jump_charge()
 
 
 func try_normal_push() -> void:
@@ -1066,6 +1065,10 @@ func is_action_pressed_if_exists(action_name: String) -> bool:
 
 func is_action_just_pressed_if_exists(action_name: String) -> bool:
 	return InputMap.has_action(action_name) and Input.is_action_just_pressed(action_name)
+
+
+func is_action_just_released_if_exists(action_name: String) -> bool:
+	return InputMap.has_action(action_name) and Input.is_action_just_released(action_name)
 
 
 func get_action_strength_if_exists(action_name: String) -> float:

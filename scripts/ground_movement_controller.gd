@@ -10,13 +10,15 @@ class_name GroundMovementController
 # plane, and "up" is the surface normal:
 #  - GROUNDED: accelerate (add only the shortfall of velocity along the steer direction, up
 #    to move speed) then friction (multiplicative drop per tick) — crisp starts, soft stops.
-#  - Jump (push/space, a DISCRETE press — holding does nothing): velocity += normal *
-#    jump_velocity -> AIRBORNE, still in ground mode. Gravity pulls along -normal; the
-#    air-accelerate recipe gives Source air control (air-strafing); NO friction in the air.
+#  - Launch (space, CHARGED): holding space builds the coordinator's jump_force from min
+#    toward max (the HUD force bar is the charge meter); releasing launches you OUT of
+#    ground mode into zero-G along the surface normal — a tap barely nudges off, a full
+#    hold blasts. Walking off a ledge still FALLS (AIRBORNE: gravity along -normal, Source
+#    air control, no friction) and lands or times out to zero-G.
 #  - Walking off a ledge also goes AIRBORNE (you fall like a normal FPS); if nothing
 #    catches you within AIRBORNE_MAX_TIME you hand off to zero-G with momentum.
-#  - ground_detach (Alt): the deliberate launch OUT of ground mode into zero-G (what space
-#    used to do) — momentum carried and boosted, jump_force impulse along the normal.
+#  - C disengages passively; auto ground lock (see the coordinator) can re-engage when
+#    your feet point at a surface in reach.
 #
 # The surface SENSOR is unchanged from the proven system: probe fan + distance-weighted
 # blend + anchor hysteresis feed the eased reorientation; the snap spring holds stand
@@ -30,8 +32,7 @@ enum GroundState { GROUNDED, AIRBORNE }
 @export var ground_accel := 11.0          # in units of move_speed per second
 @export var ground_decel := 7.0           # friction's minimum "control" speed
 @export var ground_friction := 3.5
-@export var jump_velocity := 6.0          # in-mode hop, along the surface normal
-@export var hop_gravity := 15.2           # pull along -normal while AIRBORNE (Source ~800u/s^2)
+@export var hop_gravity := 15.2           # pull along -normal while AIRBORNE/falling (Source ~800u/s^2)
 @export var air_cap := 0.85               # max speed the air recipe adds along the steer dir
 @export var air_accel := 800.0
 @export var air_move_speed := 500.0
@@ -155,16 +156,17 @@ func physics_update_ground(delta: float) -> void:
 
 	update_surface_walk_mouse_look(delta)
 
-	if is_action_just_pressed_if_exists("ground_detach"):
+	# Space RELEASED: fire the charged launch (grounded) or let go passively (mid-fall —
+	# there's nothing under your feet to push from). The charge lives on the coordinator.
+	if is_action_just_released_if_exists("push"):
 		if ground_state == GroundState.AIRBORNE:
-			# Mid-air Alt: passive release into zero-G (same as C) — you already spent your
-			# jump; no extra launch stacks on top of it. Momentum carries as-is.
-			log_movement_event("DETACH (alt, airborne -> passive release)")
+			log_movement_event("DETACH (space, airborne -> passive release)")
 			exit_surface_walk_mode()
 		else:
-			log_movement_event("DETACH (alt, grounded -> boosted launch)")
+			log_movement_event("DETACH (space, charged %.1f)" % coordinator.jump_force)
 			detach_to_zero_g()
 
+		coordinator.reset_jump_charge()
 		return
 
 	match ground_state:
@@ -187,19 +189,6 @@ func physics_grounded(delta: float) -> void:
 
 	apply_ground_sensing(result, delta)
 	update_surface_walk_orientation()
-
-	# Jump: Source-style — set the normal-axis velocity and go AIRBORNE (still ground
-	# mode). A discrete press only; holding jump does nothing.
-	if is_action_just_pressed_if_exists("push"):
-		var tangent := player.linear_velocity.slide(surface_walk_anchor_normal)
-		player.linear_velocity = tangent + surface_walk_normal * jump_velocity
-		log_movement_event("JUMP  v=%s  |v|=%.2f" % [_fmt_v(player.linear_velocity), player.linear_velocity.length()])
-		begin_airborne()
-
-		if player.has_method("suppress_launch_impact"):
-			player.call("suppress_launch_impact")
-
-		return
 
 	handle_source_ground_move(delta)
 
@@ -476,7 +465,8 @@ func exit_surface_walk_mode() -> void:
 	print("Exited surface-walk mode.")
 
 
-# Alt: the deliberate launch OUT of ground mode into zero-G (what space used to do).
+# The charged launch OUT of ground mode into zero-G (space release); force = the
+# coordinator's charged jump_force at the moment of release.
 func detach_to_zero_g() -> void:
 	var launch_direction := surface_walk_normal.normalized()
 	var carried := player.linear_velocity.slide(launch_direction) * DETACH_MOMENTUM_CARRY
@@ -1074,14 +1064,14 @@ func log_movement_tick() -> void:
 		else ("GROUND" if ground_state == GroundState.GROUNDED else "AIR")
 
 	_log_file.store_line(
-		"%8.3f  f%-7d %-7s a=%.2f  in=(%+.1f,%+.1f) J=%d/%d D=%d  |v|=%6.2f t=%6.2f n=%+6.2f  ang=%5.1f d=%5.2f  p=%s  up=%s" % [
+		"%8.3f  f%-7d %-7s a=%.2f  in=(%+.1f,%+.1f) J=%d/%d chg=%4.1f  |v|=%6.2f t=%6.2f n=%+6.2f  ang=%5.1f d=%5.2f  p=%s  up=%s" % [
 			Time.get_ticks_msec() / 1000.0,
 			Engine.get_physics_frames(),
 			state_name,
 			airborne_time,
 			input_vector.y, input_vector.x,
 			int(is_action_just_pressed_if_exists("push")), int(is_action_pressed_if_exists("push")),
-			int(is_action_pressed_if_exists("ground_detach")),
+			coordinator.jump_force if coordinator != null else 0.0,
 			velocity.length(), tangent_speed, normal_speed,
 			rad_to_deg(surface_walk_normal.angle_to(surface_walk_anchor_normal)),
 			stand_distance,
@@ -1105,6 +1095,10 @@ func is_action_pressed_if_exists(action_name: String) -> bool:
 
 func is_action_just_pressed_if_exists(action_name: String) -> bool:
 	return InputMap.has_action(action_name) and Input.is_action_just_pressed(action_name)
+
+
+func is_action_just_released_if_exists(action_name: String) -> bool:
+	return InputMap.has_action(action_name) and Input.is_action_just_released(action_name)
 
 
 func get_action_strength_if_exists(action_name: String) -> float:
