@@ -28,7 +28,8 @@ class_name GroundMovementController
 enum GroundState { GROUNDED, AIRBORNE }
 
 # --- Source movement (near-verbatim from the reference controller) ---
-@export var move_speed := 8.5             # THE ground speed — always at full pace, no sprint key
+@export var move_speed := 8.5             # base ground speed (walking)
+@export var sprint_multiplier := 1.5      # shift (stabilize_rotation) scales move_speed by this
 # TIGHTNESS dials: accel = how fast you reach speed (higher = snappier starts), friction =
 # how fast you shed it (higher = crisper stops, less glide), decel = the floor on friction's
 # bite at low speed (higher = the last metre of a stop ends decisively instead of tapering).
@@ -306,7 +307,11 @@ func apply_ground_sensing(result: Dictionary, delta: float) -> void:
 
 
 func get_move_speed() -> float:
-	return move_speed
+	return move_speed * (sprint_multiplier if is_sprinting() else 1.0)
+
+
+func is_sprinting() -> bool:
+	return is_action_pressed_if_exists("stabilize_rotation")
 
 
 # Steer direction in the stood surface's tangent plane (the Source "wish_dir").
@@ -333,32 +338,36 @@ func get_wish_dir() -> Vector3:
 # applied to the TANGENTIAL velocity only; the snap spring owns the normal axis.
 func handle_source_ground_move(delta: float) -> void:
 	var wish_dir := get_wish_dir()
-	var move_speed := get_move_speed()
+	var target_speed := get_move_speed()
+	# The overspeed (landing-carry) regime starts above SPRINT speed, not the current
+	# target — releasing shift settles sprint surplus with crisp normal friction instead
+	# of the ultra-slow landing bleed.
+	var top_ground_speed := move_speed * sprint_multiplier
 	var tangent := player.linear_velocity.slide(surface_walk_anchor_normal)
 
 	if wish_dir != Vector3.ZERO:
 		var cur_speed_in_wish_dir := tangent.dot(wish_dir)
-		var add_speed_till_cap := move_speed - cur_speed_in_wish_dir
+		var add_speed_till_cap := target_speed - cur_speed_in_wish_dir
 
 		if add_speed_till_cap > 0.0:
-			var accel_speed := minf(ground_accel * delta * move_speed, add_speed_till_cap)
+			var accel_speed := minf(ground_accel * delta * target_speed, add_speed_till_cap)
 			var speed_before := tangent.length()
 			tangent += wish_dir * accel_speed
 
-			# Overspeed steering guard: past move_speed, input REDIRECTS the carried
+			# Overspeed steering guard: past the target, input REDIRECTS the carried
 			# momentum but can never grow it (else wiggle-strafing pumps speed forever).
-			var speed_limit := maxf(speed_before, move_speed)
+			var speed_limit := maxf(speed_before, target_speed)
 
 			if tangent.length() > speed_limit:
 				tangent = tangent.normalized() * speed_limit
 
 	var speed := tangent.length()
 
-	if speed > move_speed + 0.05:
+	if speed > top_ground_speed + 0.05:
 		# Overspeed: only the excess bleeds, gently (see overspeed_friction) — carried
 		# landing momentum is a lasting reward, not food for full Source friction. The
-		# small constant floor guarantees the decay actually reaches move_speed.
-		var excess := speed - move_speed
+		# small constant floor guarantees the decay actually reaches sprint speed.
+		var excess := speed - top_ground_speed
 		var drop := maxf(excess * overspeed_friction, 0.75) * delta
 		tangent *= maxf(speed - drop, 0.0) / speed
 	elif speed > 0.0:
