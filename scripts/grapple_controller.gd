@@ -196,9 +196,14 @@ func physics_update(delta: float, input_enabled: bool) -> void:
 	if not attached or player == null:
 		return
 
-	# Spool in (never out). Reeling below the current distance makes the taut correction
-	# below tow the player toward the pivot at roughly reel_speed.
+	# Spool in (never out). While reeling there is NO SLACK: the rope length instantly
+	# matches your current distance (radius = distance adds zero velocity, so going taut
+	# never jerks the player — outward drift is then absorbed smoothly by taut_give), and
+	# from there each tick's shortening makes the taut correction tow you at ~reel_speed.
 	if input_enabled and InputMap.has_action("grapple_reel") and Input.is_action_pressed("grapple_reel"):
+		var active_pivot: Vector3 = pivots[pivots.size() - 1]
+		var segment := player.global_position.distance_to(active_pivot)
+		total_length = minf(total_length, consumed_length + maxf(segment, min_length))
 		total_length = maxf(total_length - reel_speed * delta, consumed_length + min_length)
 
 	_update_wrap()
