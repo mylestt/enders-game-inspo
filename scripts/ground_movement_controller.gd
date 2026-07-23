@@ -84,8 +84,16 @@ const SURFACE_WALK_ALIGN_ACCEL := 6.5
 # from the anchored face by at least the min-curve angle (a curving continuation) — a
 # PARALLEL floor further below is a drop-off you fall from, and a face past the walkable
 # gate (a skate-lip's far side) is rejected entirely, so ramp lips still launch you.
-const STICK_LOOKDOWN_SECONDS := 0.2
+const STICK_LOOKDOWN_SECONDS := 0.35
 const STICK_MIN_CURVE_DEGREES := 8.0
+# Tight turns at speed need the body to ROTATE as fast as the curve demands (a 3 m radius
+# at 25 m/s is ~480 deg/s — far past the walking-tuned align caps). All three align limits
+# scale with tangential speed above this reference so fast curves track without lag; at
+# walk speeds the boost is 1 and nothing changes.
+const STICK_SPEED_BOOST_REFERENCE := 8.0
+# Even with airborne_max_time tuned to 0, a single-tick sensor blip must not eject to
+# zero-G — the effective timeout never drops below this grace.
+const AIRBORNE_MIN_GRACE := 0.15
 const DETACH_MOMENTUM_CARRY := 1.35       # run speed kept (boosted) on Alt-detach
 # Fall gravity is heavier than rise gravity (the classic anti-float trick): symmetric
 # gravity hangs ~0.25 s of near-weightlessness at the apex, which reads as floaty/"a second
@@ -247,7 +255,8 @@ func physics_airborne(delta: float) -> void:
 				return
 
 	# Nothing caught us: float off into zero-G with momentum (walking off into the void).
-	if airborne_time > airborne_max_time:
+	# The grace floor means even airborne_max_time = 0 tolerates single-tick sensor blips.
+	if airborne_time > maxf(airborne_max_time, AIRBORNE_MIN_GRACE):
 		log_movement_event("AIRBORNE TIMEOUT -> zero-G")
 		exit_surface_walk_mode()
 
@@ -648,13 +657,20 @@ func align_surface_walk_normal_toward(target_normal: Vector3, delta: float) -> v
 	if full_angle < 0.0001:
 		return
 
-	var exp_weight := 1.0 - exp(-surface_walk_slope_align_speed * delta)
-	var max_step := deg_to_rad(SURFACE_WALK_MAX_TURN_SPEED_DEGREES) * delta
+	# Speed boost (see STICK_SPEED_BOOST_REFERENCE): fast runs raise every align limit so
+	# tight curves can be tracked; 1.0 at walk speeds and when running headless tests.
+	var speed_boost := 1.0
+
+	if player != null:
+		speed_boost = maxf(1.0, player.linear_velocity.slide(surface_walk_normal).length() / STICK_SPEED_BOOST_REFERENCE)
+
+	var exp_weight := 1.0 - exp(-surface_walk_slope_align_speed * speed_boost * delta)
+	var max_step := deg_to_rad(SURFACE_WALK_MAX_TURN_SPEED_DEGREES) * speed_boost * delta
 	var desired_step := minf(full_angle * exp_weight, max_step)
 	surface_walk_align_rate = lerpf(
 		surface_walk_align_rate,
 		desired_step / delta,
-		clampf(1.0 - exp(-SURFACE_WALK_ALIGN_ACCEL * delta), 0.0, 1.0)
+		clampf(1.0 - exp(-SURFACE_WALK_ALIGN_ACCEL * speed_boost * delta), 0.0, 1.0)
 	)
 	var step_angle := minf(desired_step, surface_walk_align_rate * delta)
 	var t := clampf(step_angle / full_angle, 0.0, 1.0)
@@ -904,7 +920,7 @@ func get_surface_walk_snap_velocity() -> Vector3:
 	# speeds both reduce to the old behaviour.
 	var pull_cap := maxf(
 		SURFACE_WALK_MAX_SNAP_SPEED,
-		player.linear_velocity.slide(surface_walk_anchor_normal).length()
+		player.linear_velocity.slide(surface_walk_anchor_normal).length() * 1.5
 	)
 	var snap_speed := clampf(
 		offset_error * SURFACE_WALK_SNAP_STRENGTH,
