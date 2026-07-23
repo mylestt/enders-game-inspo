@@ -62,6 +62,7 @@ const SURFACE_WALK_ENTRY_SHAKE_STRENGTH := 0.07
 const SURFACE_WALK_ENTRY_SHAKE_FREQUENCY := 52.0
 const SURFACE_WALK_SPAWN_PROBE_DISTANCE := 8.0
 const SURFACE_WALK_LOCK_MAX_DISTANCE := 4.0
+const AUTO_GROUND_LOCK_DISTANCE := 2.0    # auto-lock reach (feet ray only; see coordinator)
 const SURFACE_WALK_EDGE_CHECK_EXTRA_DISTANCE := 0.35
 const SURFACE_WALK_PROBE_FOOT_OFFSET := 0.28
 const SURFACE_WALK_ANCHOR_SWITCH_TIME := 0.12
@@ -560,8 +561,9 @@ func update_surface_walk_entry_shake(delta: float) -> void:
 
 
 func update_surface_walk_mouse_look(delta: float) -> void:
-	var yaw_delta: float = -coordinator.mouse_motion.x * coordinator.mouse_sensitivity
-	var pitch_delta: float = -coordinator.mouse_motion.y * coordinator.mouse_sensitivity
+	var sens: float = coordinator.get_mouse_sensitivity()
+	var yaw_delta: float = -coordinator.mouse_motion.x * sens
+	var pitch_delta: float = -coordinator.mouse_motion.y * sens
 
 	if absf(yaw_delta) > 0.0000001:
 		surface_walk_forward = surface_walk_forward.rotated(surface_walk_normal, yaw_delta).normalized()
@@ -942,6 +944,32 @@ func get_ground_lock_probe() -> Dictionary:
 		return {}
 
 	return {"position": nearest["position"], "normal": nearest["normal"]}
+
+
+# AUTO ground lock probe: strictly the FEET ray, strictly short reach — the surface only
+# counts if your feet genuinely point at it within AUTO_GROUND_LOCK_DISTANCE. No nearest-
+# surface fallback (that would lock you to walls drifting past your side).
+func get_auto_ground_probe() -> Dictionary:
+	if player == null:
+		return {}
+
+	var direction := -player.global_transform.basis.y
+
+	if direction.length() < 0.01:
+		return {}
+
+	var origin := player.global_position
+	var result := raycast_from_player(origin, origin + direction.normalized() * AUTO_GROUND_LOCK_DISTANCE)
+
+	if result.is_empty():
+		return {}
+
+	var hit_normal: Vector3 = result.get("normal", Vector3.ZERO)
+
+	if hit_normal.length() < 0.01:
+		return {}
+
+	return {"position": result.get("position", origin), "normal": hit_normal.normalized()}
 
 
 # ---------------------------------------------------------------- small helpers

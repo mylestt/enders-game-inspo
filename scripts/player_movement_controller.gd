@@ -89,6 +89,10 @@ var grab_distance_level: int = 0
 # state lives on it; this coordinator only tracks WHICH mode is active.
 var ground: GroundMovementController = null
 
+# Re-entry cooldown for AUTO ground lock: set on every ground-mode exit so a C-release,
+# Alt launch or knockback exit isn't instantly re-locked while still near the surface.
+var auto_ground_cooldown: float = 0.0
+
 var last_surface_result: Dictionary = {}
 var last_ctrl_push_result: Dictionary = {}
 var last_limb_push_state: Dictionary = {}
@@ -211,6 +215,15 @@ func change_jump_force(amount: float) -> void:
 		hud_controller.update_jump_force(jump_force)
 
 
+# Live mouse sensitivity: the settings slider writes GameSettings mid-game, so read it on
+# every use instead of caching at spawn — the slider takes effect immediately.
+func get_mouse_sensitivity() -> float:
+	if GameSettings.mouse_sensitivity > 0.0:
+		return GameSettings.mouse_sensitivity
+
+	return mouse_sensitivity
+
+
 func add_mouse_motion(relative_motion: Vector2) -> void:
 	mouse_motion += relative_motion
 
@@ -250,6 +263,7 @@ func physics_update(
 	update_surface_walk_entry_cache()
 	update_hud_values(input_locked)
 	handle_movement_mode_toggle(input_locked)
+	update_auto_ground_lock(delta, input_locked)
 	ground.update_surface_walk_entry_shake(delta)
 	
 	if input_locked:
@@ -354,6 +368,7 @@ func begin_surface_walk_mode() -> void:
 func end_surface_walk_mode() -> void:
 	movement_mode = MovementMode.ZERO_G
 	view_initialized = false   # re-sync head-up to the post-exit orientation
+	auto_ground_cooldown = 0.75
 	player.angular_velocity = Vector3.ZERO
 	player.sleeping = false
 
@@ -381,6 +396,26 @@ func exit_surface_walk_mode() -> void:
 		return
 
 	ground.exit_surface_walk_mode()
+
+
+# AUTO ground lock (Settings > Game): floating with your feet pointing at a surface within
+# reach engages ground mode by itself — C only disengages. Manual mode keeps C for both.
+func update_auto_ground_lock(delta: float, input_locked: bool) -> void:
+	if auto_ground_cooldown > 0.0:
+		auto_ground_cooldown = maxf(auto_ground_cooldown - delta, 0.0)
+
+	if not GameSettings.auto_ground_lock or input_locked:
+		return
+
+	if movement_mode != MovementMode.ZERO_G or pending_spawn_ground_mode or auto_ground_cooldown > 0.0:
+		return
+
+	var probe := ground.get_auto_ground_probe()
+
+	if probe.is_empty():
+		return
+
+	ground.enter_surface_walk_mode(probe["position"], (probe["normal"] as Vector3).normalized())
 
 
 func handle_movement_mode_toggle(input_locked: bool) -> void:
@@ -455,17 +490,18 @@ func handle_body_mouse_rotation() -> void:
 		view_initialized = true
 
 	var basis := player.global_transform.basis.orthonormalized()
+	var sens := get_mouse_sensitivity()
 
 	# Yaw around the body's OWN up axis, so a left flick always turns the view left no matter how
 	# the body is oriented. (Yawing around a fixed world-up inverts left/right when upside down.)
 	if mouse_motion.x != 0.0:
-		basis = basis.rotated(basis.y, -mouse_motion.x * mouse_sensitivity).orthonormalized()
+		basis = basis.rotated(basis.y, -mouse_motion.x * sens).orthonormalized()
 
 	# Pitch first articulates the neck (camera) up to a limit; the overflow past it tumbles the
 	# whole body around its right axis — a free 0g flip — so up/down never hits a hard stop.
 	if mouse_motion.y != 0.0:
 		var neck_limit := deg_to_rad(look_neck_limit_degrees)
-		var desired := look_pitch - mouse_motion.y * mouse_sensitivity
+		var desired := look_pitch - mouse_motion.y * sens
 		var overflow := 0.0
 
 		if desired > neck_limit:
@@ -515,7 +551,7 @@ func consume_recoil_compensation() -> void:
 	if recoil_offset == Vector2.ZERO or mouse_motion == Vector2.ZERO:
 		return
 
-	var sens := mouse_sensitivity
+	var sens := get_mouse_sensitivity()
 
 	if sens <= 0.0:
 		return
