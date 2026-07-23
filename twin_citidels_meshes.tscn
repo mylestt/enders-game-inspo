@@ -1,0 +1,5 @@
+[gd_scene format=3 uid="uid://cso05y5aheet4"]
+
+[ext_resource type="PackedScene" uid="uid://cicsmvmq2xgg3" path="res://Props/TwinCitidels.glb" id="1_5hdme"]
+
+[node name="TwinCitidels" unique_id=888847336 instance=ExtResource("1_5hdme")]

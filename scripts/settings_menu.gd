@@ -14,6 +14,7 @@ var sensitivity_value_label: Label
 var volume_slider: HSlider
 var volume_value_label: Label
 var fullscreen_check: CheckBox
+var auto_ground_check: CheckBox
 
 var keybind_buttons: Dictionary = {}
 var listening_action: String = ""
@@ -128,6 +129,23 @@ func build_game_tab() -> Control:
 
 	root.add_child(fs_row)
 
+	var auto_row := HBoxContainer.new()
+	auto_row.add_theme_constant_override("separation", 10)
+
+	var auto_label := Label.new()
+	auto_label.text = "Auto Ground Lock"
+	auto_label.tooltip_text = "Auto: ground mode engages when your feet point at a surface in reach (C disengages).\nManual: C engages and disengages."
+	auto_label.custom_minimum_size = Vector2(200.0, 0.0)
+	auto_row.add_child(auto_label)
+
+	auto_ground_check = CheckBox.new()
+	auto_ground_check.button_pressed = GameSettings.auto_ground_lock
+	auto_ground_check.text = "Auto (off = Manual, engage with C)"
+	auto_ground_check.toggled.connect(_on_auto_ground_toggled)
+	auto_row.add_child(auto_ground_check)
+
+	root.add_child(auto_row)
+
 	return margin
 
 
@@ -240,6 +258,11 @@ func _on_volume_changed(value: float) -> void:
 func _on_fullscreen_toggled(pressed: bool) -> void:
 	GameSettings.fullscreen = pressed
 	GameSettings.apply_video()
+	GameSettings.save()
+
+
+func _on_auto_ground_toggled(pressed: bool) -> void:
+	GameSettings.auto_ground_lock = pressed
 	GameSettings.save()
 
 

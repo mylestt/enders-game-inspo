@@ -84,7 +84,7 @@ func check(condition: bool, label: String) -> void:
 # --- Scene integrity ---------------------------------------------------------------------
 
 const SCENE_PATHS := [
-	"res://player.tscn",
+	"res://Resources/Objects/player.tscn",
 	"res://scenes/main.tscn",
 	"res://scenes/start_menu.tscn",
 	"res://scenes/test_map.tscn",
@@ -338,7 +338,7 @@ func test_network_state_hygiene() -> void:
 	nm.free()
 
 	# Replica state receipt orthonormalizes hostile scale away.
-	var player_scene := load("res://player.tscn") as PackedScene
+	var player_scene := load("res://Resources/Objects/player.tscn") as PackedScene
 	var player = player_scene.instantiate()
 	var skewed := Transform3D(Basis.IDENTITY.scaled(Vector3(4.0, 0.5, 2.0)).rotated(Vector3.UP, 0.7), Vector3(5, 6, 7))
 	player.receive_network_state(skewed, Vector3.ZERO, Vector3.ZERO, 1)
@@ -362,7 +362,7 @@ func test_network_state_hygiene() -> void:
 func test_surface_walk_wall_slide() -> void:
 	print("- movement: wall-slide velocity strip")
 
-	var mc := PlayerMovementController
+	var mc := GroundMovementController
 
 	# Wall on +X (its outward normal projected on the floor points -X toward the player).
 	var wall_tangent := Vector3(-1, 0, 0)
@@ -394,7 +394,7 @@ func test_surface_walk_wall_slide() -> void:
 func test_surface_walk_pitch_gimbal() -> void:
 	print("- movement: surface-walk pitch gimbal")
 
-	var mc := PlayerMovementController.new()
+	var mc := GroundMovementController.new()
 	mc.surface_walk_forward = Vector3(0, 0, -1)
 	mc.surface_walk_align_rate = 1000.0   # keep the step off the rate limiter so a nod accrues
 

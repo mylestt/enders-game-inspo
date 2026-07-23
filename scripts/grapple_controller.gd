@@ -7,9 +7,10 @@ extends Node
 #
 # Physics: inside the radius you float freely (slack). Moving past it, the taut wire kills
 # only the OUTWARD radial velocity and keeps the tangential part — at speed that whips the
-# player into a circular swing around the pivot (release, grapple_release/Q, to slingshot
-# off with everything the swing gave you). Holding grapple_reel (MMB) spools the wire in:
-# floating, it tows you to the anchor; mid-swing it tightens the orbit and speeds the turn.
+# player into a circular swing around the pivot (press E again to detach and slingshot off
+# with everything the swing gave you — E toggles fire/release). Holding grapple_reel (Q)
+# spools the wire in: floating, it tows you to the anchor; mid-swing it tightens the orbit
+# and speeds the turn.
 #
 # Wrapping: the wire is a real line. When it touches geometry mid-swing it BENDS there — a
 # new pivot chained after the anchor — and the active radius shrinks to the remaining
@@ -195,9 +196,14 @@ func physics_update(delta: float, input_enabled: bool) -> void:
 	if not attached or player == null:
 		return
 
-	# Spool in (never out). Reeling below the current distance makes the taut correction
-	# below tow the player toward the pivot at roughly reel_speed.
+	# Spool in (never out). While reeling there is NO SLACK: the rope length instantly
+	# matches your current distance (radius = distance adds zero velocity, so going taut
+	# never jerks the player — outward drift is then absorbed smoothly by taut_give), and
+	# from there each tick's shortening makes the taut correction tow you at ~reel_speed.
 	if input_enabled and InputMap.has_action("grapple_reel") and Input.is_action_pressed("grapple_reel"):
+		var active_pivot: Vector3 = pivots[pivots.size() - 1]
+		var segment := player.global_position.distance_to(active_pivot)
+		total_length = minf(total_length, consumed_length + maxf(segment, min_length))
 		total_length = maxf(total_length - reel_speed * delta, consumed_length + min_length)
 
 	_update_wrap()

@@ -431,10 +431,12 @@ func _input(event: InputEvent) -> void:
 			weapon_inventory.try_quick_swap(3)
 
 	if grapple_controller != null:
+		# E toggles: fire when free, detach when attached (Q is the reel).
 		if event.is_action_pressed("grapple_fire"):
-			grapple_controller.try_fire()
-		elif event.is_action_pressed("grapple_release"):
-			grapple_controller.release()
+			if grapple_controller.attached:
+				grapple_controller.release()
+			else:
+				grapple_controller.try_fire()
 
 	if event.is_action_pressed("ui_cancel"):
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -1147,6 +1149,20 @@ func is_surface_walk_mode_active() -> bool:
 		return false
 
 	return movement_controller.is_surface_walk_active()
+
+
+# True only when actually STANDING (ground mode and not mid-hop) — the camera rig keys
+# headbob/lean/landing-dip off this, so a jump doesn't keep bobbing the view mid-air.
+func is_surface_grounded() -> bool:
+	if not is_surface_walk_mode_active():
+		return false
+
+	var ground = movement_controller.ground
+
+	if ground == null:
+		return false
+
+	return ground.ground_state == GroundMovementController.GroundState.GROUNDED
 
 
 # Braced = recoil should kick the weapon (normal FPS), not the body. True when

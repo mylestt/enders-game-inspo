@@ -14,6 +14,7 @@
 [ext_resource type="Script" uid="uid://cg7trh76w3qq3" path="res://scripts/grapple_controller.gd" id="11_grapple"]
 [ext_resource type="Material" uid="uid://ictjshvmqobp" path="res://Resources/Materials/Mat1.tres" id="13_w4uxk"]
 [ext_resource type="Script" uid="uid://nid5ltl1bdyt" path="res://Resources/Scripts/PlayerNametag.cs" id="14_or2vr"]
+[ext_resource type="Script" uid="uid://vwlticrgm8hx" path="res://scripts/ground_movement_controller.gd" id="15_ground"]
 
 [sub_resource type="CylinderMesh" id="CylinderMesh_or2vr"]
 
@@ -37,6 +38,13 @@ grappleController = NodePath("../GrappleController")
 
 [node name="MovementController" type="Node" parent="." unique_id=294609104]
 script = ExtResource("2_1jxqw")
+
+[node name="GroundMovementController" type="Node" parent="." unique_id=294609105]
+script = ExtResource("15_ground")
+move_speed = 10.0
+overspeed_friction = 0.045
+airborne_max_time = 0.0
+surface_walk_pitch_stabilize_recenter = 10.215
 surface_walk_slope_align_speed = 9.0
 
 [node name="SuitBoosters" type="Node" parent="." unique_id=2126445202]
@@ -44,8 +52,6 @@ script = ExtResource("3_dw050")
 
 [node name="GrappleController" type="Node" parent="." unique_id=2126445204]
 script = ExtResource("11_grapple")
-taut_snap_strength = 3.0
-taut_max_snap_speed = 3.0
 wrap_surface_offset = 0.005
 wrap_min_pivot_separation = 0.0
 rope_width = 0.02
