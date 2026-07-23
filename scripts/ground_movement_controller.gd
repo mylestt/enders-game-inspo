@@ -16,7 +16,7 @@ class_name GroundMovementController
 #    hold blasts. Walking off a ledge still FALLS (AIRBORNE: gravity along -normal, Source
 #    air control, no friction) and lands or times out to zero-G.
 #  - Walking off a ledge also goes AIRBORNE (you fall like a normal FPS); if nothing
-#    catches you within AIRBORNE_MAX_TIME you hand off to zero-G with momentum.
+#    catches you within airborne_max_time you hand off to zero-G with momentum.
 #  - C disengages passively; auto ground lock (see the coordinator) can re-engage when
 #    your feet point at a surface in reach.
 #
@@ -33,6 +33,7 @@ enum GroundState { GROUNDED, AIRBORNE }
 @export var ground_decel := 7.0           # friction's minimum "control" speed
 @export var ground_friction := 3.5
 @export var hop_gravity := 15.2           # pull along -normal while AIRBORNE/falling (Source ~800u/s^2)
+@export var airborne_max_time := 2.0      # falling in ground mode this long, no landing -> zero-G
 @export var air_cap := 0.85               # max speed the air recipe adds along the steer dir
 @export var air_accel := 800.0
 @export var air_move_speed := 500.0
@@ -73,7 +74,6 @@ const SURFACE_WALK_TARGET_SMOOTHING := 22.0
 const SURFACE_WALK_MAX_TURN_SPEED_DEGREES := 175.0
 const SURFACE_WALK_ALIGN_ACCEL := 6.5
 const DETACH_MOMENTUM_CARRY := 1.35       # run speed kept (boosted) on Alt-detach
-const AIRBORNE_MAX_TIME := 2.0            # falling with no landing this long -> zero-G
 # Fall gravity is heavier than rise gravity (the classic anti-float trick): symmetric
 # gravity hangs ~0.25 s of near-weightlessness at the apex, which reads as floaty/"a second
 # push". Rise keeps hop_gravity; descent uses hop_gravity * this.
@@ -202,6 +202,13 @@ func physics_airborne(delta: float) -> void:
 	var gravity := hop_gravity if rising else hop_gravity * FALL_GRAVITY_MULTIPLIER
 	player.linear_velocity += -surface_walk_normal * gravity * delta
 	handle_source_air_move(delta)
+
+	# A controlled ground-mode descent is its own landing gear: keep impact detection
+	# suppressed while falling, so a fast-but-clean landing takes NO impact shake at all.
+	# Genuine zero-G crashes (outside ground mode) still register normally.
+	if not rising and player.has_method("suppress_launch_impact"):
+		player.call("suppress_launch_impact")
+
 	update_surface_walk_orientation()
 
 	# Landing: falling toward the surface AND genuinely at stand height (within 5 cm) — a
@@ -227,7 +234,7 @@ func physics_airborne(delta: float) -> void:
 				return
 
 	# Nothing caught us: float off into zero-G with momentum (walking off into the void).
-	if airborne_time > AIRBORNE_MAX_TIME:
+	if airborne_time > airborne_max_time:
 		log_movement_event("AIRBORNE TIMEOUT -> zero-G")
 		exit_surface_walk_mode()
 
@@ -384,6 +391,11 @@ func enter_spawn_surface_walk() -> bool:
 func enter_surface_walk_mode(hit_position: Vector3, surface_normal: Vector3, instant: bool = false) -> void:
 	coordinator.begin_surface_walk_mode()
 
+	# Entering at speed (auto-lock mid-flight, C-lock on approach): the mode absorbs the
+	# arrival — no impact shake from the touchdown contact.
+	if player.has_method("suppress_launch_impact"):
+		player.call("suppress_launch_impact")
+
 	# Surface-walk drives velocity directly; contact friction would fight it.
 	_pre_surface_walk_material = player.physics_material_override
 	var walk_material := PhysicsMaterial.new()
@@ -503,6 +515,10 @@ func start_surface_walk_transition(target_transform: Transform3D) -> void:
 func update_surface_walk_transition(delta: float) -> void:
 	player.angular_velocity = Vector3.ZERO
 	player.sleeping = false
+
+	# The glide-in may brush the surface at speed — that contact is the landing, not a hit.
+	if player.has_method("suppress_launch_impact"):
+		player.call("suppress_launch_impact")
 
 	surface_walk_transition_timer += delta
 
