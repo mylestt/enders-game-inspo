@@ -79,6 +79,13 @@ const SURFACE_WALK_FOREIGN_FACE_WEIGHT := 0.35
 const SURFACE_WALK_TARGET_SMOOTHING := 22.0
 const SURFACE_WALK_MAX_TURN_SPEED_DEGREES := 175.0
 const SURFACE_WALK_ALIGN_ACCEL := 6.5
+# Downhill stick: downward probes reach an extra (speed x seconds) so surfaces CURVING
+# away below stay in sensor range at speed; far hits only count when their normal differs
+# from the anchored face by at least the min-curve angle (a curving continuation) — a
+# PARALLEL floor further below is a drop-off you fall from, and a face past the walkable
+# gate (a skate-lip's far side) is rejected entirely, so ramp lips still launch you.
+const STICK_LOOKDOWN_SECONDS := 0.2
+const STICK_MIN_CURVE_DEGREES := 8.0
 const DETACH_MOMENTUM_CARRY := 1.35       # run speed kept (boosted) on Alt-detach
 # Fall gravity is heavier than rise gravity (the classic anti-float trick): symmetric
 # gravity hangs ~0.25 s of near-weightlessness at the apex, which reads as floaty/"a second
@@ -683,6 +690,10 @@ func get_surface_walk_ground_result() -> Dictionary:
 	var origin := player.global_position
 	var probe_length := surface_walk_body_offset + SURFACE_WALK_EDGE_CHECK_EXTRA_DISTANCE + 0.08
 	var move_dir := get_surface_walk_probe_move_direction()
+	# Speed-scaled reach for the DOWNWARD probes only (the feeler keeps base length so
+	# walls ahead aren't handed over early). See STICK_LOOKDOWN_SECONDS.
+	var tangential_speed := player.linear_velocity.slide(surface_walk_anchor_normal).length()
+	var down_length := probe_length + tangential_speed * STICK_LOOKDOWN_SECONDS
 
 	if move_dir != Vector3.ZERO:
 		var feeler := probe_surface_walk_ray(origin, move_dir, probe_length)
@@ -753,7 +764,7 @@ func get_surface_walk_ground_result() -> Dictionary:
 	var blended_normal := Vector3.ZERO
 
 	for probe in probes:
-		var result := probe_surface_walk_ray(probe[0], probe[1], probe_length)
+		var result := probe_surface_walk_ray(probe[0], probe[1], down_length)
 
 		if result.is_empty():
 			continue
@@ -762,7 +773,13 @@ func get_surface_walk_ground_result() -> Dictionary:
 		var hit_distance := origin.distance_to(result["position"])
 		var on_anchor_face := hit_normal.dot(surface_walk_anchor_normal) >= same_face_cos
 
-		var weight := 1.0 - clampf(hit_distance / probe_length, 0.0, 1.0)
+		# Beyond base reach, only a CURVING continuation sticks — a near-parallel surface
+		# far below is a drop-off (jump-down ledge), not a bevel to follow.
+		if hit_distance > probe_length \
+				and hit_normal.angle_to(surface_walk_anchor_normal) < deg_to_rad(STICK_MIN_CURVE_DEGREES):
+			continue
+
+		var weight := 1.0 - clampf(hit_distance / down_length, 0.0, 1.0)
 		weight = weight * weight + 0.001
 
 		if not on_anchor_face:
@@ -882,9 +899,16 @@ func get_surface_walk_snap_velocity() -> Vector3:
 	var distance_from_plane := surface_walk_anchor_normal.dot(player.global_position - surface_walk_anchor_point)
 	var offset_error := surface_walk_body_offset - distance_from_plane
 
+	# The PULL-toward-surface cap scales with run speed so fast crossings stay glued to
+	# surfaces curving away below; the push-out side keeps the gentle walking cap. At walk
+	# speeds both reduce to the old behaviour.
+	var pull_cap := maxf(
+		SURFACE_WALK_MAX_SNAP_SPEED,
+		player.linear_velocity.slide(surface_walk_anchor_normal).length()
+	)
 	var snap_speed := clampf(
 		offset_error * SURFACE_WALK_SNAP_STRENGTH,
-		-SURFACE_WALK_MAX_SNAP_SPEED,
+		-pull_cap,
 		SURFACE_WALK_MAX_SNAP_SPEED
 	)
 
