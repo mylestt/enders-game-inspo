@@ -45,9 +45,9 @@ radius = 11.5
 render_priority = 0
 shader = ExtResource("9_303gj")
 shader_parameter/glow_color = Color(0.99999994, 0.5437584, 0.26613075, 1)
-shader_parameter/glow_power = 4.6350001964125
-shader_parameter/glow_intensity = 5.0
-shader_parameter/swirl_speed = 0.42000001995
+shader_parameter/glow_power = 3.202000128345
+shader_parameter/glow_intensity = 4.550000216125
+shader_parameter/swirl_speed = 0.6
 
 [sub_resource type="SphereMesh" id="SphereMesh_wx5mg"]
 
@@ -559,13 +559,11 @@ team = 1
 [node name="OmniLight3D" type="OmniLight3D" parent="." unique_id=1397984358]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16.5, 89, 0)
 light_color = Color(0.8341112, 0.74372715, 1, 1)
-light_energy = 15.0
-light_indirect_energy = 15.0
-light_volumetric_fog_energy = 0.5
-light_size = 5555.0
+light_energy = 100.0
+light_indirect_energy = 15.19
 shadow_enabled = true
 shadow_blur = 0.001
-omni_range = 500.0
+omni_range = 1084.361
 omni_shadow_mode = 0
 
 [node name="Flags" parent="." unique_id=757648796 instance=ExtResource("3_b8stt")]
@@ -640,7 +638,7 @@ mesh = SubResource("PlaneMesh_ohdjg")
 [node name="DysonSphere" type="Node3D" parent="Terrain" unique_id=2076483662]
 
 [node name="Icosphere" type="MeshInstance3D" parent="Terrain/DysonSphere" unique_id=1809215815]
-transform = Transform3D(35.007347, 0, 0, 0, 35.007347, 0, 0, 0, 35.007347, 14.902161, 87.86671, 2.8791552)
+transform = Transform3D(60, 0, 0, 0, 60, 0, 0, 0, 60, 15.312038, 87.86671, 2.8791552)
 mesh = SubResource("ArrayMesh_2t7bj")
 
 [node name="StaticBody3D" type="StaticBody3D" parent="Terrain/DysonSphere/Icosphere" unique_id=201946241]

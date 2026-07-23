@@ -1,0 +1,103 @@
+[gd_scene format=3 uid="uid://dvrka2bkhgrn1"]
+
+[ext_resource type="Script" uid="uid://cmt4i6gkjmk2f" path="res://scripts/player.gd" id="1_2hs0m"]
+[ext_resource type="Script" uid="uid://dxpqy5hokl06c" path="res://scripts/player_movement_controller.gd" id="2_1jxqw"]
+[ext_resource type="Script" uid="uid://5vqw82uk1ke2" path="res://scripts/suit_boosters.gd" id="3_dw050"]
+[ext_resource type="Script" uid="uid://bge7xypp4io2b" path="res://scripts/player_hud.gd" id="4_b26j0"]
+[ext_resource type="Script" uid="uid://dfkxxwjk335qe" path="res://scripts/impact_controller.gd" id="5_n7ghd"]
+[ext_resource type="Script" uid="uid://bvli02if67of" path="res://scripts/weapons/weapon_inventory.gd" id="6_wpninv"]
+[ext_resource type="Script" uid="uid://dn41x1pava75b" path="res://scripts/limb_pusher_controller.gd" id="7_dw050"]
+[ext_resource type="Script" uid="uid://dat7xmhcpfn2o" path="res://scripts/camera_rig.gd" id="8_camrig"]
+[ext_resource type="Script" uid="uid://cxe5nvye4p0xy" path="res://scripts/weapons/weapon_spring_sway.gd" id="9_spring_sway"]
+[ext_resource type="Script" uid="uid://dh4s3fn0hi3ur" path="res://scripts/player_health.gd" id="10_health"]
+[ext_resource type="Script" uid="uid://cg7trh76w3qq3" path="res://scripts/grapple_controller.gd" id="11_grapple"]
+
+[sub_resource type="Curve" id="Curve_nvl01"]
+_limits = [0.52808994, 6.0, 0.0, 1.0]
+_data = [Vector2(0, 0.52808994), 0.0, 0.0, 0, 0, Vector2(0.5022762, 2.0045414), 0.0, 0.0, 0, 0, Vector2(0.8634294, 4.0022707), 0.0, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="Curve" id="Curve_ivps1"]
+_limits = [0.0, 179.89, 0.0, 1.0]
+_data = [Vector2(0.010000005, 0.08988774), 0.0, 0.0, 0, 0, Vector2(0.4855842, 92.966286), 0.0, 0.0, 0, 0, Vector2(0.88012135, 178.60225), 0.0, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_g2els"]
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_qhqgy"]
+
+[node name="Player RigidBody3D" type="RigidBody3D" unique_id=1389672182]
+gravity_scale = 0.0
+angular_damp = 0.5
+script = ExtResource("1_2hs0m")
+linear_damp_value = 0.01
+
+[node name="MovementController" type="Node" parent="." unique_id=294609104]
+script = ExtResource("2_1jxqw")
+walk_speed_curve = SubResource("Curve_nvl01")
+sprint_speed_curve = SubResource("Curve_ivps1")
+surface_walk_pitch_stabilize_recenter = 10.215
+surface_walk_slope_align_speed = 9.0
+
+[node name="SuitBoosters" type="Node" parent="." unique_id=2126445202]
+script = ExtResource("3_dw050")
+
+[node name="GrappleController" type="Node" parent="." unique_id=2126445204]
+script = ExtResource("11_grapple")
+taut_snap_strength = 3.0
+taut_max_snap_speed = 3.0
+wrap_surface_offset = 0.005
+wrap_min_pivot_separation = 0.0
+rope_width = 0.02
+
+[node name="PlayerHUD" type="Node" parent="." unique_id=1281244747]
+script = ExtResource("4_b26j0")
+
+[node name="PlayerHealth" type="Node" parent="." unique_id=1457164787]
+script = ExtResource("10_health")
+
+[node name="ImpactController" type="Node" parent="." unique_id=1918983541]
+script = ExtResource("5_n7ghd")
+min_impact_speed = 10.0
+heavy_impact_speed = 17.0
+impact_cooldown_time = 0.07
+min_camera_shake = 0.1
+max_camera_shake = 0.38
+max_shake_duration = 0.5
+impact_angular_velocity_multiplier = 0.35
+max_contacts_reported = 3
+
+[node name="WeaponInventory" type="Node" parent="." unique_id=1599111364]
+script = ExtResource("6_wpninv")
+
+[node name="LimbPusherController" type="Node3D" parent="." unique_id=775985500]
+script = ExtResource("7_dw050")
+
+[node name="LeftArmPoint" type="Marker3D" parent="LimbPusherController" unique_id=977520567]
+
+[node name="RightArmPoint" type="Marker3D" parent="LimbPusherController" unique_id=2007771686]
+
+[node name="LeftFootPoint" type="Marker3D" parent="LimbPusherController" unique_id=508516981]
+
+[node name="RightFootPoint" type="Marker3D" parent="LimbPusherController" unique_id=1123509489]
+
+[node name="CameraRig" type="Node3D" parent="." unique_id=331100742]
+script = ExtResource("8_camrig")
+
+[node name="Camera3D" type="Camera3D" parent="CameraRig" unique_id=782354166]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5235928, -0.18032497)
+fov = 90.0
+
+[node name="WeaponMount" type="Node3D" parent="CameraRig/Camera3D" unique_id=1410101425]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.45231187, -0.2743073, -0.46900803)
+script = ExtResource("9_spring_sway")
+rotation_sway_strength = Vector3(0.09, 0.12, 0.05)
+max_rotation_degrees = Vector3(12, 14, 6)
+max_position_offset = Vector3(2.185, 2.145, 2.62)
+rotation_stiffness = 83.425
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=157974881]
+shape = SubResource("CapsuleShape3D_g2els")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=1557973964]
+mesh = SubResource("CapsuleMesh_qhqgy")

@@ -42,6 +42,7 @@ script = ExtResource("2_1jxqw")
 [node name="GroundMovementController" type="Node" parent="." unique_id=294609105]
 script = ExtResource("15_ground")
 move_speed = 10.0
+overspeed_friction = 0.045
 airborne_max_time = 0.0
 surface_walk_pitch_stabilize_recenter = 10.215
 surface_walk_slope_align_speed = 9.0
