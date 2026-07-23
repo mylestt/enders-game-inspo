@@ -32,6 +32,12 @@ enum GroundState { GROUNDED, AIRBORNE }
 @export var ground_accel := 11.0          # in units of move_speed per second
 @export var ground_decel := 7.0           # friction's minimum "control" speed
 @export var ground_friction := 3.5
+# OVERSPEED regime: momentum above move_speed (a fast, shallow landing) is a skill reward —
+# it bleeds at this fraction of the EXCESS per second instead of full Source friction
+# (which halves speed every ~0.2 s). 0.35 = the excess halves every ~2 s: land at 30 with
+# move_speed 12 and you carry a meaningful edge for several seconds, steerable but never
+# pumpable. Below move_speed, normal Source friction applies unchanged.
+@export var overspeed_friction := 0.35
 @export var hop_gravity := 15.2           # pull along -normal while AIRBORNE/falling (Source ~800u/s^2)
 @export var airborne_max_time := 2.0      # falling in ground mode this long, no landing -> zero-G
 @export var air_cap := 0.85               # max speed the air recipe adds along the steer dir
@@ -317,12 +323,27 @@ func handle_source_ground_move(delta: float) -> void:
 
 		if add_speed_till_cap > 0.0:
 			var accel_speed := minf(ground_accel * delta * move_speed, add_speed_till_cap)
+			var speed_before := tangent.length()
 			tangent += wish_dir * accel_speed
 
-	# Friction (multiplicative drop per tick).
+			# Overspeed steering guard: past move_speed, input REDIRECTS the carried
+			# momentum but can never grow it (else wiggle-strafing pumps speed forever).
+			var speed_limit := maxf(speed_before, move_speed)
+
+			if tangent.length() > speed_limit:
+				tangent = tangent.normalized() * speed_limit
+
 	var speed := tangent.length()
 
-	if speed > 0.0:
+	if speed > move_speed + 0.05:
+		# Overspeed: only the excess bleeds, gently (see overspeed_friction) — carried
+		# landing momentum is a lasting reward, not food for full Source friction. The
+		# small constant floor guarantees the decay actually reaches move_speed.
+		var excess := speed - move_speed
+		var drop := maxf(excess * overspeed_friction, 0.75) * delta
+		tangent *= maxf(speed - drop, 0.0) / speed
+	elif speed > 0.0:
+		# Normal Source friction (multiplicative drop per tick).
 		var control := maxf(speed, ground_decel)
 		var drop := control * ground_friction * delta
 		tangent *= maxf(speed - drop, 0.0) / speed
