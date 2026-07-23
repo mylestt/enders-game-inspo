@@ -29,9 +29,12 @@ enum GroundState { GROUNDED, AIRBORNE }
 
 # --- Source movement (near-verbatim from the reference controller) ---
 @export var move_speed := 8.5             # THE ground speed — always at full pace, no sprint key
-@export var ground_accel := 11.0          # in units of move_speed per second
-@export var ground_decel := 7.0           # friction's minimum "control" speed
-@export var ground_friction := 3.5
+# TIGHTNESS dials: accel = how fast you reach speed (higher = snappier starts), friction =
+# how fast you shed it (higher = crisper stops, less glide), decel = the floor on friction's
+# bite at low speed (higher = the last metre of a stop ends decisively instead of tapering).
+@export var ground_accel := 14.0          # in units of move_speed per second
+@export var ground_decel := 10.0          # friction's minimum "control" speed
+@export var ground_friction := 4.5
 # OVERSPEED regime: momentum above move_speed (a fast, shallow landing) is a skill reward —
 # it bleeds at this fraction of the EXCESS per second instead of full Source friction
 # (which halves speed every ~0.2 s). 0.35 = the excess halves every ~2 s: land at 30 with
@@ -64,7 +67,7 @@ enum GroundState { GROUNDED, AIRBORNE }
 # Internal tuning (edit here if the feel needs it).
 const SURFACE_WALK_SNAP_STRENGTH := 10.0
 const SURFACE_WALK_MAX_SNAP_SPEED := 8.0
-const SURFACE_WALK_TRANSITION_DURATION := 0.14
+const SURFACE_WALK_TRANSITION_DURATION := 0.1
 const SURFACE_WALK_ENTRY_SHAKE_DURATION := 0.18
 const SURFACE_WALK_ENTRY_SHAKE_STRENGTH := 0.07
 const SURFACE_WALK_ENTRY_SHAKE_FREQUENCY := 52.0
