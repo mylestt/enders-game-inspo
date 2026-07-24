@@ -254,8 +254,9 @@ lobbies, deployed to a DigitalOcean VPS at **147.182.160.52:7000**.
   BarrelOpening (+X) only when on target — peaceful never shoots. Hitscan damages it via
   `apply_weapon_damage` + shove ∝ damage (local branch of `player.submit_weapon_hit`);
   plasma pushes it for free. Non-test launches reset the mode. Groups: `players`, `drones`.
-- **Settings:** `game_settings.gd` + `settings_menu.gd` (keybinds, FOV, volume, fullscreen
-  → `user://settings.cfg`).
+- **Settings:** `game_settings.gd` + `settings_menu.gd` (keybinds, FOV, sensitivity,
+  volume, fullscreen, slide hold/toggle, zero-G roll feel [start/max/change-rate sliders —
+  the ONLY roll tuning surface, read live] → `user://settings.cfg`).
 
 ## State notes / TODO
 - **Zero-G wall push DISABLED** (space push off geometry + limb pushes):

@@ -15,6 +15,9 @@ var volume_slider: HSlider
 var volume_value_label: Label
 var fullscreen_check: CheckBox
 var slide_toggle_check: CheckBox
+var roll_start_value_label: Label
+var roll_max_value_label: Label
+var roll_rate_value_label: Label
 
 var keybind_buttons: Dictionary = {}
 var listening_action: String = ""
@@ -146,6 +149,25 @@ func build_game_tab() -> Control:
 
 	root.add_child(slide_row)
 
+	# Zero-G roll feel: read live by the movement controller, so these apply instantly.
+	var roll_start_row := make_slider_row("Roll Start Speed", 0.0, 360.0, 5.0, GameSettings.roll_start_speed)
+	roll_start_value_label = roll_start_row[2] as Label
+	roll_start_value_label.text = str(int(GameSettings.roll_start_speed)) + "°/s"
+	(roll_start_row[1] as HSlider).value_changed.connect(_on_roll_start_changed)
+	root.add_child(roll_start_row[0] as Control)
+
+	var roll_max_row := make_slider_row("Roll Max Speed", 60.0, 720.0, 10.0, GameSettings.roll_max_speed)
+	roll_max_value_label = roll_max_row[2] as Label
+	roll_max_value_label.text = str(int(GameSettings.roll_max_speed)) + "°/s"
+	(roll_max_row[1] as HSlider).value_changed.connect(_on_roll_max_changed)
+	root.add_child(roll_max_row[0] as Control)
+
+	var roll_rate_row := make_slider_row("Roll Responsiveness", 60.0, 2880.0, 30.0, GameSettings.roll_speed_change_rate)
+	roll_rate_value_label = roll_rate_row[2] as Label
+	roll_rate_value_label.text = str(int(GameSettings.roll_speed_change_rate)) + "°/s²"
+	(roll_rate_row[1] as HSlider).value_changed.connect(_on_roll_rate_changed)
+	root.add_child(roll_rate_row[0] as Control)
+
 	return margin
 
 
@@ -263,6 +285,24 @@ func _on_fullscreen_toggled(pressed: bool) -> void:
 
 func _on_slide_toggle_toggled(pressed: bool) -> void:
 	GameSettings.slide_toggle_mode = pressed
+	GameSettings.save()
+
+
+func _on_roll_start_changed(value: float) -> void:
+	GameSettings.roll_start_speed = value
+	roll_start_value_label.text = str(int(value)) + "°/s"
+	GameSettings.save()
+
+
+func _on_roll_max_changed(value: float) -> void:
+	GameSettings.roll_max_speed = value
+	roll_max_value_label.text = str(int(value)) + "°/s"
+	GameSettings.save()
+
+
+func _on_roll_rate_changed(value: float) -> void:
+	GameSettings.roll_speed_change_rate = value
+	roll_rate_value_label.text = str(int(value)) + "°/s²"
 	GameSettings.save()
 
 

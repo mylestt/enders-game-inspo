@@ -21,13 +21,9 @@ enum MovementMode {
 @export var recoil_fire_settle_fraction: float = 1.0
 @export var recoil_recovery_fraction: float = 0.15
 
-# Zero-G roll (A/D), velocity-driven for a snappy, non-floaty feel: pressing seeds
-# roll_start_speed INSTANTLY (killing any opposing spin), holding ramps toward
-# roll_max_speed, releasing bleeds the roll back to zero — all at roll_speed_change_rate.
-# Shift-stabilize kills ALL spin at that same rate.
-@export var roll_start_speed: float = 120.0        # deg/s the instant you press
-@export var roll_max_speed: float = 300.0          # deg/s cap while held
-@export var roll_speed_change_rate: float = 720.0  # deg/s^2 — ramp AND stop rate
+# Zero-G roll (A/D) is velocity-driven and tuned ENTIRELY from the settings menu
+# (GameSettings.roll_start_speed / roll_max_speed / roll_speed_change_rate, read live in
+# handle_roll_input / handle_stabilize_input) — no exports here, one tuning surface.
 
 @export var ctrl_push_check_distance: float = 2.75
 
@@ -883,7 +879,7 @@ func handle_roll_input(delta: float) -> void:
 
 	var roll_axis := get_screen_roll_axis()
 	var current_speed := player.angular_velocity.dot(roll_axis)
-	var change_step := deg_to_rad(roll_speed_change_rate) * delta
+	var change_step := deg_to_rad(GameSettings.roll_speed_change_rate) * delta
 	var new_speed: float
 
 	if roll_input == 0.0:
@@ -891,10 +887,10 @@ func handle_roll_input(delta: float) -> void:
 	else:
 		new_speed = current_speed
 
-		if new_speed * roll_input < deg_to_rad(roll_start_speed):
-			new_speed = roll_input * deg_to_rad(roll_start_speed)
+		if new_speed * roll_input < deg_to_rad(GameSettings.roll_start_speed):
+			new_speed = roll_input * deg_to_rad(GameSettings.roll_start_speed)
 
-		new_speed = move_toward(new_speed, roll_input * deg_to_rad(roll_max_speed), change_step)
+		new_speed = move_toward(new_speed, roll_input * deg_to_rad(GameSettings.roll_max_speed), change_step)
 
 	player.angular_velocity += roll_axis * (new_speed - current_speed)
 
@@ -905,7 +901,7 @@ func handle_stabilize_input(delta: float) -> void:
 
 	player.angular_velocity = player.angular_velocity.move_toward(
 		Vector3.ZERO,
-		deg_to_rad(roll_speed_change_rate) * delta
+		deg_to_rad(GameSettings.roll_speed_change_rate) * delta
 	)
 
 
