@@ -219,8 +219,8 @@ lobbies, deployed to a DigitalOcean VPS at **147.182.160.52:7000**.
   sliding (`slide` action; hold, or press-to-toggle via Settings > Slide Input) — release
   and normal Source friction reclaims the excess. Slide is a real mode
   (`GroundMovementController.is_sliding()`, "SLIDING" on both HUDs, flight-recorder state
-  SLIDE, limb debug dots pinned to rest via `LimbPushController.set_limbs_frozen`) for
-  animations to key off; stance/hitbox/orientation are untouched.
+  SLIDE, limb debug dots pinned to rest via `LimbPushController.set_limbs_frozen`, headbob
+  suppressed) for animations to key off; stance/hitbox/orientation are untouched.
 - **Grapple wire:** standard-issue for every player by default (`GrappleController.has_grapple`
   defaults ON; no shop entry — re-add one + flip the default to gate it behind a purchase
   again). `scripts/grapple_controller.gd` on the player

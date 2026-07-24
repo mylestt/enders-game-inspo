@@ -1152,6 +1152,13 @@ func is_surface_grounded() -> bool:
 	return ground.ground_state == GroundMovementController.GroundState.GROUNDED
 
 
+func is_sliding() -> bool:
+	if movement_controller == null:
+		return false
+
+	return movement_controller.is_sliding()
+
+
 # Braced = recoil should kick the weapon (normal FPS), not the body. True when
 # standing on a surface or gripping a wall; false while free-floating in zero-G.
 func is_recoil_braced() -> bool:
