@@ -17,6 +17,9 @@ raw_blend/*.import
 build/enders_server.x86_64
 build/mac/
 
+# Steam build staging (300MB+ exports — far over GitHub's 100MB hard limit)
+SteamBuilds/
+
 # Server-manager tool build output (source is tracked; binaries are not)
 tools/server_manager/EndersServerManager/bin/
 tools/server_manager/EndersServerManager/obj/
