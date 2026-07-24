@@ -28,12 +28,14 @@ public partial class Hud : Control
 	private GroundState lastGroundState = (GroundState)(-1);
 	private Node playerRoot;
 
+	// Mounting is automatic now — there is no engage/disengage prompt. Ground mode shows
+	// either Grounded or the active SLIDE state ([C] holds overspeed momentum).
 	private enum GroundState
 	{
 		FreeFloat,
 		PushAvailable,
-		GroundLockEnable,
-		GroundLockDisable
+		Grounded,
+		Sliding
 	}
 
 
@@ -115,32 +117,30 @@ public partial class Hud : Control
 		{
 			GroundState.FreeFloat => freeFloatIcon,
 			GroundState.PushAvailable => pushAvailableIcon,
-			GroundState.GroundLockEnable => groundLockEnableIcon,
-			GroundState.GroundLockDisable => groundLockDisableIcon,
+			GroundState.Grounded => groundLockDisableIcon,
+			GroundState.Sliding => groundLockEnableIcon,
 			_ => groundStateIndicator.Texture
 		};
-		
+
 		groundStateText.Text = groundState switch
 		{
 			GroundState.FreeFloat => "Free Float",
 			GroundState.PushAvailable => "[Space] Push",
-			GroundState.GroundLockEnable => "[C] Engage Ground Lock",
-			GroundState.GroundLockDisable => "[C] Disengage Ground Lock",
+			GroundState.Grounded => "Grounded  ([C] Slide)",
+			GroundState.Sliding => "SLIDING",
 			_ => groundStateText.Text
 		};
 	}
-	
+
 	private GroundState ReadGroundState()
 	{
 		int movementMode = movementController.Get("movement_mode").AsInt32();
 
 		if (movementMode == 1)
-			return GroundState.GroundLockDisable;
-
-		bool canGroundLock = movementController.Call("can_ground_lock").AsBool();
-
-		if (canGroundLock)
-			return GroundState.GroundLockEnable;
+		{
+			bool sliding = movementController.Call("is_sliding").AsBool();
+			return sliding ? GroundState.Sliding : GroundState.Grounded;
+		}
 
 		float maxDistance = movementController.Get("surface_walk_lock_max_distance").AsSingle();
 		var nearbySurface = movementController.Call("find_spawn_surface", maxDistance, -1.0f).AsGodotDictionary();

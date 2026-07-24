@@ -197,8 +197,9 @@ lobbies, deployed to a DigitalOcean VPS at **147.182.160.52:7000**.
   seams don't false-block) find no ground → the into-the-void velocity is stripped so you STOP
   at the lip and stay grounded. Curved surfaces: author them with
   PRIMITIVE colliders (SphereShape3D etc. — analytic, smooth normals), not trimesh. **Surface
-  walk NEVER auto-exits into zero-G** — you leave ONLY by jumping (`push`) or disengaging (C),
-  or via external force-exits (death/respawn/knockback/grapple-tension). Steep edges and walls
+  walk NEVER auto-exits into zero-G** — you leave ONLY by the charged space launch (`push`
+  release) or the airborne timeout, or via external force-exits
+  (death/respawn/knockback/grapple-tension). Steep edges and walls
   just stop you. If ground is somehow lost anyway (shoved off / clipped past a lip) the body
   holds (`surface_walk_ground_lost`: drift arrested, snap tows you back) rather than floating
   off. Camera rolls with the body on an eased tween
@@ -209,11 +210,17 @@ lobbies, deployed to a DigitalOcean VPS at **147.182.160.52:7000**.
   `surface_walk_pitch_stabilize_recenter` (LOWER = more locked, HIGHER = follows the surface
   sooner, 0 = off) so deliberate wall/ceiling transitions still settle the view onto the new
   surface (never left looking the wrong way; offset clamped so aim+offset stays within the pitch
-  limit). Jump-off keeps the tangential run
-  (×`surface_walk_jump_momentum_carry`, 1.35). Ground-lock (C): feet ray first, then
-  nearest surface around the body — but ONLY surfaces whose normal matches the body's up
-  within `surface_walk_entry_max_angle_degrees` (15°): you must actually orient your feet
-  at a surface to lock it. Spawn grounding is exempt (snaps to the nearest surface).
+  limit). Jump-off keeps the tangential run (×`DETACH_MOMENTUM_CARRY`, 1.35). Mounting is
+  FULLY AUTOMATIC (no engage key): floating with your feet pointed at a surface within
+  `AUTO_GROUND_LOCK_DISTANCE` (2 m) locks on, gated by
+  `surface_walk_entry_max_angle_degrees` (15° — the normal must be near the body's up).
+  Spawn grounding is exempt (snaps to the nearest surface). **C = SLIDE**, not
+  mount/dismount: momentum above `move_speed * sprint_multiplier` survives ONLY while
+  sliding (`slide` action; hold, or press-to-toggle via Settings > Slide Input) — release
+  and normal Source friction reclaims the excess. Slide is a real mode
+  (`GroundMovementController.is_sliding()`, "SLIDING" on both HUDs, flight-recorder state
+  SLIDE, limb debug dots pinned to rest via `LimbPushController.set_limbs_frozen`) for
+  animations to key off; stance/hitbox/orientation are untouched.
 - **Grapple wire:** standard-issue for every player by default (`GrappleController.has_grapple`
   defaults ON; no shop entry — re-add one + flip the default to gate it behind a purchase
   again). `scripts/grapple_controller.gd` on the player

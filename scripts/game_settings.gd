@@ -14,15 +14,15 @@ const DEFAULT_FOV := 90.0
 const DEFAULT_SENSITIVITY := 0.0025
 const DEFAULT_VOLUME := 1.0
 const DEFAULT_FULLSCREEN := false
-const DEFAULT_AUTO_GROUND_LOCK := true
+const DEFAULT_SLIDE_TOGGLE := false
 
 static var fov: float = DEFAULT_FOV
 static var mouse_sensitivity: float = DEFAULT_SENSITIVITY
 static var master_volume: float = DEFAULT_VOLUME
 static var fullscreen: bool = DEFAULT_FULLSCREEN
-# Auto: ground mode engages by itself when your feet point at a surface in reach (C only
-# disengages). Manual: C engages and disengages, the old behaviour.
-static var auto_ground_lock: bool = DEFAULT_AUTO_GROUND_LOCK
+# Slide input mode: false = HOLD the slide key to keep sliding (default); true = TOGGLE —
+# press once to slide, again to stop. (Ground-mode mounting itself is always automatic.)
+static var slide_toggle_mode: bool = DEFAULT_SLIDE_TOGGLE
 # Remembered admin-menu password, so it only has to be typed once. Persisted to settings.cfg.
 static var admin_password: String = ""
 # Path to blender.exe for map-creator .blend imports (auto-detected when blank; the map
@@ -45,7 +45,7 @@ static func load_and_apply() -> void:
 		mouse_sensitivity = float(config.get_value("gameplay", "mouse_sensitivity", DEFAULT_SENSITIVITY))
 		master_volume = clampf(float(config.get_value("audio", "master_volume", DEFAULT_VOLUME)), 0.0, 1.0)
 		fullscreen = bool(config.get_value("video", "fullscreen", DEFAULT_FULLSCREEN))
-		auto_ground_lock = bool(config.get_value("gameplay", "auto_ground_lock", DEFAULT_AUTO_GROUND_LOCK))
+		slide_toggle_mode = bool(config.get_value("gameplay", "slide_toggle_mode", DEFAULT_SLIDE_TOGGLE))
 		admin_password = String(config.get_value("admin", "password", ""))
 		blender_path = String(config.get_value("tools", "blender_path", ""))
 		apply_keybinds_from_config(config)
@@ -58,7 +58,7 @@ static func save() -> void:
 	var config := ConfigFile.new()
 	config.set_value("gameplay", "fov", fov)
 	config.set_value("gameplay", "mouse_sensitivity", mouse_sensitivity)
-	config.set_value("gameplay", "auto_ground_lock", auto_ground_lock)
+	config.set_value("gameplay", "slide_toggle_mode", slide_toggle_mode)
 	config.set_value("audio", "master_volume", master_volume)
 	config.set_value("video", "fullscreen", fullscreen)
 	config.set_value("admin", "password", admin_password)
@@ -142,7 +142,7 @@ static func reset_to_defaults() -> void:
 	mouse_sensitivity = DEFAULT_SENSITIVITY
 	master_volume = DEFAULT_VOLUME
 	fullscreen = DEFAULT_FULLSCREEN
-	auto_ground_lock = DEFAULT_AUTO_GROUND_LOCK
+	slide_toggle_mode = DEFAULT_SLIDE_TOGGLE
 
 	for action in _default_events_by_action.keys():
 		InputMap.action_erase_events(action)

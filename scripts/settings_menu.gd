@@ -14,7 +14,7 @@ var sensitivity_value_label: Label
 var volume_slider: HSlider
 var volume_value_label: Label
 var fullscreen_check: CheckBox
-var auto_ground_check: CheckBox
+var slide_toggle_check: CheckBox
 
 var keybind_buttons: Dictionary = {}
 var listening_action: String = ""
@@ -129,22 +129,22 @@ func build_game_tab() -> Control:
 
 	root.add_child(fs_row)
 
-	var auto_row := HBoxContainer.new()
-	auto_row.add_theme_constant_override("separation", 10)
+	var slide_row := HBoxContainer.new()
+	slide_row.add_theme_constant_override("separation", 10)
 
-	var auto_label := Label.new()
-	auto_label.text = "Auto Ground Lock"
-	auto_label.tooltip_text = "Auto: ground mode engages when your feet point at a surface in reach (C disengages).\nManual: C engages and disengages."
-	auto_label.custom_minimum_size = Vector2(200.0, 0.0)
-	auto_row.add_child(auto_label)
+	var slide_setting_label := Label.new()
+	slide_setting_label.text = "Slide Input"
+	slide_setting_label.tooltip_text = "Hold: slide only while the key is held (default).\nToggle: press once to slide, press again to stop."
+	slide_setting_label.custom_minimum_size = Vector2(200.0, 0.0)
+	slide_row.add_child(slide_setting_label)
 
-	auto_ground_check = CheckBox.new()
-	auto_ground_check.button_pressed = GameSettings.auto_ground_lock
-	auto_ground_check.text = "Auto (off = Manual, engage with C)"
-	auto_ground_check.toggled.connect(_on_auto_ground_toggled)
-	auto_row.add_child(auto_ground_check)
+	slide_toggle_check = CheckBox.new()
+	slide_toggle_check.button_pressed = GameSettings.slide_toggle_mode
+	slide_toggle_check.text = "Toggle (off = Hold)"
+	slide_toggle_check.toggled.connect(_on_slide_toggle_toggled)
+	slide_row.add_child(slide_toggle_check)
 
-	root.add_child(auto_row)
+	root.add_child(slide_row)
 
 	return margin
 
@@ -261,8 +261,8 @@ func _on_fullscreen_toggled(pressed: bool) -> void:
 	GameSettings.save()
 
 
-func _on_auto_ground_toggled(pressed: bool) -> void:
-	GameSettings.auto_ground_lock = pressed
+func _on_slide_toggle_toggled(pressed: bool) -> void:
+	GameSettings.slide_toggle_mode = pressed
 	GameSettings.save()
 
 

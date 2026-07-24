@@ -95,7 +95,6 @@ var auto_ground_cooldown: float = 0.0
 var last_surface_result: Dictionary = {}
 var last_ctrl_push_result: Dictionary = {}
 var last_limb_push_state: Dictionary = {}
-var last_surface_walk_entry_result: Dictionary = {}
 
 # Set when the player (re)spawns: the next physics tick drops them into ground mode on the
 # nearest surface. Deferred to a physics frame so the surface raycasts run safely; retried for
@@ -241,9 +240,7 @@ func physics_update(
 	update_surface_cache()
 	update_ctrl_push_cache()
 	update_limb_push_cache()
-	update_surface_walk_entry_cache()
 	update_hud_values(input_locked)
-	handle_movement_mode_toggle(input_locked)
 	update_auto_ground_lock(delta, input_locked)
 	ground.update_surface_walk_entry_shake(delta)
 	
@@ -283,12 +280,8 @@ func update_hud_values(input_locked: bool) -> void:
 		if hud_controller.has_method("update_limb_push_indicator"):
 			hud_controller.update_limb_push_indicator(should_show_limb_ui, last_limb_push_state)
 		
-		if hud_controller.has_method("update_ground_lock_indicator"):
-			hud_controller.update_ground_lock_indicator(
-				not input_locked,
-				can_ground_lock(),
-				movement_mode == MovementMode.SURFACE_WALK
-			)
+		if hud_controller.has_method("update_slide_indicator"):
+			hud_controller.update_slide_indicator(not input_locked and is_sliding())
 
 
 func handle_input_locked_state() -> void:
@@ -378,13 +371,14 @@ func exit_surface_walk_mode() -> void:
 	ground.exit_surface_walk_mode()
 
 
-# AUTO ground lock (Settings > Game): floating with your feet pointing at a surface within
-# reach engages ground mode by itself — C only disengages. Manual mode keeps C for both.
+# AUTO ground lock — the ONLY way in: floating with your feet pointing at a surface within
+# reach engages ground mode by itself (gated by the entry angle; C is the slide, not a
+# mount key, and the only manual exits are the space launch and external forces).
 func update_auto_ground_lock(delta: float, input_locked: bool) -> void:
 	if auto_ground_cooldown > 0.0:
 		auto_ground_cooldown = maxf(auto_ground_cooldown - delta, 0.0)
 
-	if not GameSettings.auto_ground_lock or input_locked:
+	if input_locked:
 		return
 
 	if movement_mode != MovementMode.ZERO_G or pending_spawn_ground_mode or auto_ground_cooldown > 0.0:
@@ -398,35 +392,9 @@ func update_auto_ground_lock(delta: float, input_locked: bool) -> void:
 	ground.enter_surface_walk_mode(probe["position"], (probe["normal"] as Vector3).normalized())
 
 
-func handle_movement_mode_toggle(input_locked: bool) -> void:
-	if not is_action_just_pressed_if_exists("toggle_surface_walk"):
-		return
-
-	if movement_mode == MovementMode.SURFACE_WALK:
-		ground.exit_surface_walk_mode()
-		return
-
-	if input_locked:
-		return
-
-	ground.try_enter_surface_walk_mode()
-
-
 func request_spawn_ground_mode() -> void:
 	pending_spawn_ground_mode = true
 	pending_spawn_ground_frames = SPAWN_GROUND_MODE_MAX_FRAMES
-
-
-func update_surface_walk_entry_cache() -> void:
-	if movement_mode != MovementMode.ZERO_G:
-		last_surface_walk_entry_result = {}
-		return
-
-	last_surface_walk_entry_result = ground.get_ground_lock_probe()
-
-
-func can_ground_lock() -> bool:
-	return movement_mode == MovementMode.ZERO_G and not last_surface_walk_entry_result.is_empty()
 
 
 # --- C# HUD contract (Hud.cs reads/calls these BY NAME on this node) ---------------------
@@ -444,6 +412,10 @@ func find_spawn_surface(max_distance: float, max_normal_angle_degrees: float = -
 
 func is_surface_walk_active() -> bool:
 	return movement_mode == MovementMode.SURFACE_WALK
+
+
+func is_sliding() -> bool:
+	return ground != null and ground.is_sliding()
 
 
 func get_control_look_basis() -> Basis:
@@ -787,7 +759,12 @@ func update_limb_push_cache() -> void:
 	if limb_push_controller == null:
 		last_limb_push_state = {}
 		return
-	
+
+	# Sliding pins the limb dots to their rest state (visually "standing still"); the same
+	# flag is the hook any future limb run-cycle animation should key off.
+	if limb_push_controller.has_method("set_limbs_frozen"):
+		limb_push_controller.set_limbs_frozen(is_sliding())
+
 	if movement_mode != MovementMode.ZERO_G:
 		last_limb_push_state = {}
 		clear_limb_push_controller_debug(false)
