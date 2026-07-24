@@ -16,8 +16,8 @@ const DEFAULT_VOLUME := 1.0
 const DEFAULT_FULLSCREEN := false
 const DEFAULT_SLIDE_TOGGLE := false
 const DEFAULT_ROLL_START_SPEED := 120.0
-const DEFAULT_ROLL_MAX_SPEED := 300.0
-const DEFAULT_ROLL_CHANGE_RATE := 720.0
+const DEFAULT_ROLL_MAX_SPEED := 140.0
+const DEFAULT_ROLL_CHANGE_RATE := 500.0
 
 static var fov: float = DEFAULT_FOV
 static var mouse_sensitivity: float = DEFAULT_SENSITIVITY
