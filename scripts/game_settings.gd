@@ -14,15 +14,24 @@ const DEFAULT_FOV := 90.0
 const DEFAULT_SENSITIVITY := 0.0025
 const DEFAULT_VOLUME := 1.0
 const DEFAULT_FULLSCREEN := false
-const DEFAULT_AUTO_GROUND_LOCK := true
+const DEFAULT_SLIDE_TOGGLE := false
+const DEFAULT_ROLL_START_SPEED := 120.0
+const DEFAULT_ROLL_MAX_SPEED := 140.0
+const DEFAULT_ROLL_CHANGE_RATE := 500.0
 
 static var fov: float = DEFAULT_FOV
 static var mouse_sensitivity: float = DEFAULT_SENSITIVITY
 static var master_volume: float = DEFAULT_VOLUME
 static var fullscreen: bool = DEFAULT_FULLSCREEN
-# Auto: ground mode engages by itself when your feet point at a surface in reach (C only
-# disengages). Manual: C engages and disengages, the old behaviour.
-static var auto_ground_lock: bool = DEFAULT_AUTO_GROUND_LOCK
+# Slide input mode: false = HOLD the slide key to keep sliding (default); true = TOGGLE —
+# press once to slide, again to stop. (Ground-mode mounting itself is always automatic.)
+static var slide_toggle_mode: bool = DEFAULT_SLIDE_TOGGLE
+# Zero-G roll feel — the ONLY tuning surface for the roll (the movement controller reads
+# these LIVE, so the sliders take effect immediately). start/max in deg/s; the change rate
+# (deg/s^2) governs the ramp up, the stop on release, and the shift-stabilize spin kill.
+static var roll_start_speed: float = DEFAULT_ROLL_START_SPEED
+static var roll_max_speed: float = DEFAULT_ROLL_MAX_SPEED
+static var roll_speed_change_rate: float = DEFAULT_ROLL_CHANGE_RATE
 # Remembered admin-menu password, so it only has to be typed once. Persisted to settings.cfg.
 static var admin_password: String = ""
 # Path to blender.exe for map-creator .blend imports (auto-detected when blank; the map
@@ -45,7 +54,10 @@ static func load_and_apply() -> void:
 		mouse_sensitivity = float(config.get_value("gameplay", "mouse_sensitivity", DEFAULT_SENSITIVITY))
 		master_volume = clampf(float(config.get_value("audio", "master_volume", DEFAULT_VOLUME)), 0.0, 1.0)
 		fullscreen = bool(config.get_value("video", "fullscreen", DEFAULT_FULLSCREEN))
-		auto_ground_lock = bool(config.get_value("gameplay", "auto_ground_lock", DEFAULT_AUTO_GROUND_LOCK))
+		slide_toggle_mode = bool(config.get_value("gameplay", "slide_toggle_mode", DEFAULT_SLIDE_TOGGLE))
+		roll_start_speed = clampf(float(config.get_value("gameplay", "roll_start_speed", DEFAULT_ROLL_START_SPEED)), 0.0, 720.0)
+		roll_max_speed = clampf(float(config.get_value("gameplay", "roll_max_speed", DEFAULT_ROLL_MAX_SPEED)), 30.0, 1080.0)
+		roll_speed_change_rate = clampf(float(config.get_value("gameplay", "roll_speed_change_rate", DEFAULT_ROLL_CHANGE_RATE)), 60.0, 2880.0)
 		admin_password = String(config.get_value("admin", "password", ""))
 		blender_path = String(config.get_value("tools", "blender_path", ""))
 		apply_keybinds_from_config(config)
@@ -58,7 +70,10 @@ static func save() -> void:
 	var config := ConfigFile.new()
 	config.set_value("gameplay", "fov", fov)
 	config.set_value("gameplay", "mouse_sensitivity", mouse_sensitivity)
-	config.set_value("gameplay", "auto_ground_lock", auto_ground_lock)
+	config.set_value("gameplay", "slide_toggle_mode", slide_toggle_mode)
+	config.set_value("gameplay", "roll_start_speed", roll_start_speed)
+	config.set_value("gameplay", "roll_max_speed", roll_max_speed)
+	config.set_value("gameplay", "roll_speed_change_rate", roll_speed_change_rate)
 	config.set_value("audio", "master_volume", master_volume)
 	config.set_value("video", "fullscreen", fullscreen)
 	config.set_value("admin", "password", admin_password)
@@ -142,7 +157,10 @@ static func reset_to_defaults() -> void:
 	mouse_sensitivity = DEFAULT_SENSITIVITY
 	master_volume = DEFAULT_VOLUME
 	fullscreen = DEFAULT_FULLSCREEN
-	auto_ground_lock = DEFAULT_AUTO_GROUND_LOCK
+	slide_toggle_mode = DEFAULT_SLIDE_TOGGLE
+	roll_start_speed = DEFAULT_ROLL_START_SPEED
+	roll_max_speed = DEFAULT_ROLL_MAX_SPEED
+	roll_speed_change_rate = DEFAULT_ROLL_CHANGE_RATE
 
 	for action in _default_events_by_action.keys():
 		InputMap.action_erase_events(action)

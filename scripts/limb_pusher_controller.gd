@@ -52,6 +52,11 @@ var disabled_material: StandardMaterial3D
 
 var last_limb_push_state: Dictionary = {}
 
+# While frozen (the player is SLIDING) the limbs read as standing still: push state stays
+# empty and the debug dots hold their inactive rest look. Any future limb animation should
+# also key off this flag.
+var limbs_frozen: bool = false
+
 # Built once in setup() — these never change at runtime, so rebuilding the array
 # and a fresh ray query every push tick was pure churn on the hot path.
 var _limb_definitions: Array[Dictionary] = []
@@ -192,13 +197,23 @@ func setup_debug_sphere_for_marker(limb_id: String, marker: Node3D) -> void:
 	_sphere_near_by_id[limb_id] = false
 
 
+func set_limbs_frozen(frozen: bool) -> void:
+	if limbs_frozen == frozen:
+		return
+
+	limbs_frozen = frozen
+
+	if frozen:
+		clear_limb_push_state(false)
+
+
 func update_limb_push_state(
 	preferred_surface_check_direction: Vector3,
 	desired_push_direction: Vector3,
 	max_check_distance: float,
 	using_ctrl_push: bool
 ) -> Dictionary:
-	if player == null:
+	if player == null or limbs_frozen:
 		clear_limb_push_state(using_ctrl_push)
 		return last_limb_push_state
 	

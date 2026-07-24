@@ -116,7 +116,7 @@ func _ready() -> void:
 	if impact_controller == null:
 		push_warning("ImpactController node is missing or does not have impact_controller.gd attached.")
 	else:
-		impact_controller.setup(self, hud_controller)
+		impact_controller.setup(self)
 	
 	if weapon_inventory == null:
 		push_warning("WeaponInventory node is missing; weapon purchases will be unavailable.")
@@ -158,12 +158,10 @@ func set_multiplayer_player(new_peer_id: int, new_is_local_player: bool, new_net
 	if hud_controller != null and hud_controller.has_method("set_hud_active"):
 		hud_controller.set_hud_active(is_local_player)
 
-	# Remote replicas only interpolate their network target (_physics_process); the aim
-	# reticle (_process), camera-rig feel, and viewmodel animator are local-player-only
-	# work that would otherwise tick per replica — including on the dedicated server.
+	# Remote replicas only interpolate their network target (_physics_process); camera-rig
+	# feel and the viewmodel animator are local-player-only work that would otherwise tick
+	# per replica — including on the dedicated server.
 	if not is_local_player:
-		set_process(false)
-
 		var camera_rig := get_node_or_null("CameraRig")
 
 		if camera_rig != null:
@@ -406,17 +404,12 @@ func _input(event: InputEvent) -> void:
 	if buy_menu_open or is_input_locked():
 		if movement_controller != null:
 			movement_controller.clear_mouse_motion()
-			movement_controller.clear_free_look_mouse_motion()
 		return
 
-	var surface_walk_active := is_surface_walk_mode_active()
-
 	if event is InputEventMouseMotion:
-		if movement_controller != null:
-			if is_free_look_active() and not surface_walk_active:
-				movement_controller.add_free_look_mouse_motion(event.relative)
-			else:
-				movement_controller.add_mouse_motion(event.relative)
+		# While free-looking the mouse steers nothing, so don't buffer aim motion at all.
+		if movement_controller != null and not is_free_look_active():
+			movement_controller.add_mouse_motion(event.relative)
 
 	if weapon_inventory != null:
 		if event.is_action_pressed("reload"):
@@ -445,10 +438,6 @@ func _input(event: InputEvent) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
-func _process(_delta: float) -> void:
-	pass
-
-
 func _physics_process(delta: float) -> void:
 	if not is_local_player:
 		update_remote_network_state(delta)
@@ -457,7 +446,6 @@ func _physics_process(delta: float) -> void:
 	if is_dead:
 		if movement_controller != null:
 			movement_controller.clear_mouse_motion()
-			movement_controller.clear_free_look_mouse_motion()
 
 		if weapon_inventory != null:
 			weapon_inventory.update(delta, false)
@@ -908,7 +896,6 @@ func _on_died(attacker_peer_id: int) -> void:
 		if movement_controller.is_surface_walk_active():
 			movement_controller.exit_surface_walk_mode()
 		movement_controller.clear_mouse_motion()
-		movement_controller.clear_free_look_mouse_motion()
 
 	if weapon_inventory != null:
 		weapon_inventory.release()
@@ -1165,6 +1152,13 @@ func is_surface_grounded() -> bool:
 	return ground.ground_state == GroundMovementController.GroundState.GROUNDED
 
 
+func is_sliding() -> bool:
+	if movement_controller == null:
+		return false
+
+	return movement_controller.is_sliding()
+
+
 # Braced = recoil should kick the weapon (normal FPS), not the body. True when
 # standing on a surface or gripping a wall; false while free-floating in zero-G.
 func is_recoil_braced() -> bool:
@@ -1179,10 +1173,9 @@ func set_buy_menu_open(value: bool) -> void:
 		return
 	
 	buy_menu_open = value
-	
+
 	if movement_controller != null:
 		movement_controller.clear_mouse_motion()
-		movement_controller.clear_free_look_mouse_motion()
 	
 	if weapon_inventory != null and value:
 		weapon_inventory.release()
@@ -1203,7 +1196,6 @@ func set_external_menu_open(value: bool) -> void:
 
 	if movement_controller != null:
 		movement_controller.clear_mouse_motion()
-		movement_controller.clear_free_look_mouse_motion()
 
 	if value and weapon_inventory != null:
 		weapon_inventory.release()

@@ -17,8 +17,11 @@ class_name GroundMovementController
 #    air control, no friction) and lands or times out to zero-G.
 #  - Walking off a ledge also goes AIRBORNE (you fall like a normal FPS); if nothing
 #    catches you within airborne_max_time you hand off to zero-G with momentum.
-#  - C disengages passively; auto ground lock (see the coordinator) can re-engage when
-#    your feet point at a surface in reach.
+#  - Mounting is fully AUTOMATIC (see the coordinator's auto ground lock): float with your
+#    feet pointed at a surface in reach and you're on it. C is SLIDE, not mount/dismount:
+#    momentum above sprint speed survives ONLY while sliding (hold C — or toggle, see
+#    settings); let go and normal friction reclaims you. Exits are the space launch, the
+#    airborne timeout, and external forces (death/knockback/grapple tension).
 #
 # The surface SENSOR is unchanged from the proven system: probe fan + distance-weighted
 # blend + anchor hysteresis feed the eased reorientation; the snap spring holds stand
@@ -69,6 +72,10 @@ enum GroundState { GROUNDED, AIRBORNE }
 @export_range(0.0, 1.0) var pitch_gimbal_strength := 1.0
 # Entering ground mode auto-releases an attached grapple wire.
 @export var release_grapple_on_entry := true
+# ENTRY gate for both C-lock and auto-lock: a surface only locks if its normal is within
+# this many degrees of the body's up — you must genuinely point your feet at it to engage.
+# Spawn grounding is exempt (snaps to the nearest surface regardless of orientation).
+@export var surface_walk_entry_max_angle_degrees: float = 15.0
 # THE walkable-angle gate: surfaces angled further than this from the one you stand on are
 # WALLS (stop you); within it they're ground you reorient across.
 @export var surface_walk_max_edge_angle_degrees: float = 80.0
@@ -121,6 +128,13 @@ var _ray_query: PhysicsRayQueryParameters3D
 
 var ground_state: int = GroundState.GROUNDED
 var airborne_time: float = 0.0
+
+# SLIDE: the only regime that keeps speed above move_speed * sprint_multiplier. Active while
+# the slide input is engaged (held, or latched in toggle mode), GROUNDED, and actually
+# carrying overspeed; ends the moment any of those stop being true. Purely a friction-regime
+# switch — stance, hitbox and orientation are untouched. HUD/animation hooks read is_sliding().
+var sliding: bool = false
+var slide_toggle_latch: bool = false
 
 var surface_walk_normal: Vector3 = Vector3.UP
 var surface_walk_forward: Vector3 = Vector3.FORWARD
@@ -190,6 +204,7 @@ func physics_update_ground(delta: float) -> void:
 		return
 
 	update_surface_walk_mouse_look(delta)
+	update_slide_state()
 
 	# Space RELEASED: fire the charged launch (grounded) or let go passively (mid-fall —
 	# there's nothing under your feet to push from). The charge lives on the coordinator.
@@ -313,6 +328,52 @@ func apply_ground_sensing(result: Dictionary, delta: float) -> void:
 			surface_walk_anchor_normal = raw_normal
 
 
+# ---------------------------------------------------------------- slide
+
+
+func is_sliding() -> bool:
+	return sliding
+
+
+func is_slide_input_engaged() -> bool:
+	if GameSettings.slide_toggle_mode:
+		return slide_toggle_latch
+
+	return is_action_pressed_if_exists("slide")
+
+
+# Runs every ground-mode tick (GROUNDED and AIRBORNE, so a toggle press mid-hop still arms
+# the next landing). Slide is only LIVE while grounded with genuine overspeed to protect.
+func update_slide_state() -> void:
+	if GameSettings.slide_toggle_mode and is_action_just_pressed_if_exists("slide"):
+		slide_toggle_latch = not slide_toggle_latch
+
+	var top_ground_speed := move_speed * sprint_multiplier
+	var tangent_speed := player.linear_velocity.slide(surface_walk_anchor_normal).length()
+	var now_sliding := is_slide_input_engaged() \
+		and ground_state == GroundState.GROUNDED \
+		and tangent_speed > top_ground_speed + 0.05
+
+	if now_sliding == sliding:
+		return
+
+	sliding = now_sliding
+	log_movement_event("SLIDE %s  v=%.2f" % ["START" if sliding else "END", tangent_speed])
+
+	# A toggle-mode slide that ran out of speed is SPENT — the next slide is a fresh press
+	# (otherwise a stale latch would silently re-slide the next fast landing).
+	if not sliding and GameSettings.slide_toggle_mode and tangent_speed <= top_ground_speed + 0.05:
+		slide_toggle_latch = false
+
+
+func reset_slide_state() -> void:
+	if sliding:
+		log_movement_event("SLIDE END (mode exit)")
+
+	sliding = false
+	slide_toggle_latch = false
+
+
 # ---------------------------------------------------------------- Source recipes
 
 
@@ -373,10 +434,10 @@ func handle_source_ground_move(delta: float) -> void:
 
 	var speed := tangent.length()
 
-	if speed > top_ground_speed + 0.05:
-		# Overspeed: only the excess bleeds, gently (see overspeed_friction) — carried
-		# landing momentum is a lasting reward, not food for full Source friction. The
-		# small constant floor guarantees the decay actually reaches sprint speed.
+	if speed > top_ground_speed + 0.05 and sliding:
+		# SLIDING: only the excess bleeds, gently (see overspeed_friction) — carried
+		# landing momentum is the slide's reward. Without the slide held, overspeed
+		# falls through to normal Source friction below and is reclaimed fast.
 		var excess := speed - top_ground_speed
 		var drop := maxf(excess * overspeed_friction, 0.75) * delta
 		tangent *= maxf(speed - drop, 0.0) / speed
@@ -420,21 +481,6 @@ func handle_source_air_move(delta: float) -> void:
 
 
 # ---------------------------------------------------------------- entry / exit
-
-
-func try_enter_surface_walk_mode() -> void:
-	var result := get_ground_lock_probe()
-
-	if result.is_empty():
-		print("Ground lock failed: no surface within ", SURFACE_WALK_LOCK_MAX_DISTANCE, " m.")
-		return
-
-	var surface_normal: Vector3 = result.get("normal", Vector3.ZERO)
-
-	if surface_normal.length() < 0.01:
-		return
-
-	enter_surface_walk_mode(result.get("position", player.global_position), surface_normal.normalized())
 
 
 func enter_spawn_surface_walk() -> bool:
@@ -537,6 +583,7 @@ func exit_surface_walk_mode() -> void:
 		return
 
 	log_movement_event("EXIT mode  v=%s" % _fmt_v(player.linear_velocity))
+	reset_slide_state()
 	surface_walk_transition_active = false
 	surface_walk_shake_timer = 0.0
 	surface_walk_align_rate = 0.0
@@ -1027,35 +1074,6 @@ func find_spawn_surface(max_distance: float, max_normal_angle_degrees: float = -
 	return best
 
 
-func get_ground_lock_probe() -> Dictionary:
-	if player == null:
-		return {}
-
-	var origin := player.global_position
-	var direction := -player.global_transform.basis.y
-
-	if direction.length() >= 0.01:
-		direction = direction.normalized()
-		var end := origin + direction * SURFACE_WALK_LOCK_MAX_DISTANCE
-		var result := raycast_from_player(origin, end)
-
-		if not result.is_empty():
-			var hit_normal: Vector3 = result.get("normal", Vector3.ZERO)
-
-			if hit_normal.length() >= 0.01:
-				return {
-					"position": result.get("position", end),
-					"normal": hit_normal.normalized(),
-				}
-
-	var nearest := find_spawn_surface(SURFACE_WALK_LOCK_MAX_DISTANCE)
-
-	if nearest.is_empty():
-		return {}
-
-	return {"position": nearest["position"], "normal": nearest["normal"]}
-
-
 # AUTO ground lock probe: strictly the FEET ray, strictly short reach — the surface only
 # counts if your feet genuinely point at it within AUTO_GROUND_LOCK_DISTANCE. No nearest-
 # surface fallback (that would lock you to walls drifting past your side).
@@ -1079,7 +1097,14 @@ func get_auto_ground_probe() -> Dictionary:
 	if hit_normal.length() < 0.01:
 		return {}
 
-	return {"position": result.get("position", origin), "normal": hit_normal.normalized()}
+	hit_normal = hit_normal.normalized()
+
+	# Same entry gate as C-lock: drifting past a wall never auto-locks you onto it unless
+	# your feet are genuinely oriented at it.
+	if rad_to_deg(player.global_transform.basis.y.angle_to(hit_normal)) > surface_walk_entry_max_angle_degrees:
+		return {}
+
+	return {"position": result.get("position", origin), "normal": hit_normal}
 
 
 # ---------------------------------------------------------------- small helpers
@@ -1181,7 +1206,7 @@ func log_movement_tick() -> void:
 	var normal_speed := velocity.dot(surface_walk_normal)
 	var stand_distance := surface_walk_anchor_normal.dot(player.global_position - surface_walk_anchor_point)
 	var state_name := "TRANSIT" if surface_walk_transition_active \
-		else ("GROUND" if ground_state == GroundState.GROUNDED else "AIR")
+		else ("SLIDE" if sliding else ("GROUND" if ground_state == GroundState.GROUNDED else "AIR"))
 
 	_log_file.store_line(
 		"%8.3f  f%-7d %-7s a=%.2f  in=(%+.1f,%+.1f) J=%d/%d chg=%4.1f  |v|=%6.2f t=%6.2f n=%+6.2f  ang=%5.1f d=%5.2f  p=%s  up=%s" % [

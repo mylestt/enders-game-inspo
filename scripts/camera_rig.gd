@@ -97,7 +97,8 @@ func _physics_process(delta: float) -> void:
 	was_grounded = grounded
 	prev_speed = player.linear_velocity.length()
 
-	update_headbob(delta, tangent_velocity.length(), grounded)
+	# Sliding reads as a fixed stance: no footsteps, so no headbob (amp eases out smoothly).
+	update_headbob(delta, tangent_velocity.length(), grounded and not is_sliding())
 	update_landing(delta)
 	update_sway(delta)
 	update_tilt(delta, tangent_velocity, grounded)
@@ -240,6 +241,16 @@ func get_look_basis() -> Basis:
 		look = look * camera.transform.basis
 
 	return look
+
+
+func is_sliding() -> bool:
+	if player == null:
+		return false
+
+	if player.has_method("is_sliding"):
+		return bool(player.call("is_sliding"))
+
+	return false
 
 
 func is_surface_walking() -> bool:

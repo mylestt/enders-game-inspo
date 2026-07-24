@@ -7,7 +7,6 @@ enum MovementMode {
 }
 
 @export var mouse_sensitivity: float = 0.0025
-@export var free_look_sensitivity: float = 0.0025
 @export var look_neck_limit_degrees: float = 70.0
 @export var body_follow_speed: float = 6.0
 
@@ -22,13 +21,10 @@ enum MovementMode {
 @export var recoil_fire_settle_fraction: float = 1.0
 @export var recoil_recovery_fraction: float = 0.15
 
-@export var roll_torque: float = 10.0
-@export var roll_start_torque: float = 1.5
-@export var roll_ramp_time: float = 1.2
-@export var roll_settle_rate: float = 8.0
-@export var stabilize_strength: float = 7.5
+# Zero-G roll (A/D) is velocity-driven and tuned ENTIRELY from the settings menu
+# (GameSettings.roll_start_speed / roll_max_speed / roll_speed_change_rate, read live in
+# handle_roll_input / handle_stabilize_input) — no exports here, one tuning surface.
 
-@export var surface_check_distance: float = 2.25
 @export var ctrl_push_check_distance: float = 2.75
 
 # Charged push/launch (space): the force starts EMPTY (min_jump_force) and builds toward
@@ -57,9 +53,6 @@ var jump_force: float = 2.0
 @export var grab_distance_level_2: float = 3.4
 @export var grab_distance_level_3: float = 4.2
 
-@export var grabbed_linear_damp: float = 12.0
-@export var grabbed_angular_damp: float = 4.0
-
 # Ground (surface-walk) movement lives on the GroundMovementController sibling node —
 # Source-style accelerate/friction/air recipes, jumping, orientation, probes and all its
 # tuning exports. This node coordinates modes, owns zero-G movement, and shares look/recoil.
@@ -73,9 +66,13 @@ var _ray_query: PhysicsRayQueryParameters3D
 var movement_mode: int = MovementMode.ZERO_G
 
 var mouse_motion: Vector2 = Vector2.ZERO
-var free_look_mouse_motion: Vector2 = Vector2.ZERO
 
-var roll_hold_time: float = 0.0
+# Zero-G WALL PUSH (space release pushing off nearby geometry, limb pushes included):
+# DISABLED for now — the whole mechanic stays in the file, flip this to re-enable. While
+# false the zero-G charge stays parked, the push never fires, and every HUD affordance for
+# it (push prompt, ctrl-push arrow, limb-push readout) hides. The ground-mode charged
+# launch is a separate path and is unaffected.
+var wall_push_enabled: bool = false
 
 var look_pitch: float = 0.0
 var view_initialized: bool = false
@@ -101,7 +98,6 @@ var auto_ground_cooldown: float = 0.0
 var last_surface_result: Dictionary = {}
 var last_ctrl_push_result: Dictionary = {}
 var last_limb_push_state: Dictionary = {}
-var last_surface_walk_entry_result: Dictionary = {}
 
 # Set when the player (re)spawns: the next physics tick drops them into ground mode on the
 # nearest surface. Deferred to a physics frame so the surface raycasts run safely; retried for
@@ -201,6 +197,11 @@ func update_jump_charge(delta: float) -> void:
 		jump_force = min_jump_force
 		return
 
+	# No wall push = nothing for a zero-G charge to fire; keep the bar parked.
+	if movement_mode == MovementMode.ZERO_G and not wall_push_enabled:
+		jump_force = min_jump_force
+		return
+
 	if is_action_pressed_if_exists("push"):
 		var rate := (max_jump_force - min_jump_force) / JUMP_CHARGE_TIME
 		jump_force = minf(jump_force + rate * delta, max_jump_force)
@@ -223,16 +224,8 @@ func add_mouse_motion(relative_motion: Vector2) -> void:
 	mouse_motion += relative_motion
 
 
-func add_free_look_mouse_motion(relative_motion: Vector2) -> void:
-	free_look_mouse_motion += relative_motion
-
-
 func clear_mouse_motion() -> void:
 	mouse_motion = Vector2.ZERO
-
-
-func clear_free_look_mouse_motion() -> void:
-	free_look_mouse_motion = Vector2.ZERO
 
 
 func physics_update(
@@ -255,9 +248,7 @@ func physics_update(
 	update_surface_cache()
 	update_ctrl_push_cache()
 	update_limb_push_cache()
-	update_surface_walk_entry_cache()
 	update_hud_values(input_locked)
-	handle_movement_mode_toggle(input_locked)
 	update_auto_ground_lock(delta, input_locked)
 	ground.update_surface_walk_entry_shake(delta)
 	
@@ -265,7 +256,6 @@ func physics_update(
 		handle_input_locked_state()
 		update_recoil(delta)
 		clear_mouse_motion()
-		clear_free_look_mouse_motion()
 		return
 
 	consume_recoil_compensation()
@@ -280,7 +270,6 @@ func physics_update(
 
 	update_recoil(delta)
 	clear_mouse_motion()
-	clear_free_look_mouse_motion()
 
 
 func update_hud_values(input_locked: bool) -> void:
@@ -289,6 +278,7 @@ func update_hud_values(input_locked: bool) -> void:
 		
 		var should_show_limb_ui := (
 			show_limb_push_debug_ui
+			and wall_push_enabled
 			and movement_mode == MovementMode.ZERO_G
 			and not input_locked
 		)
@@ -299,12 +289,8 @@ func update_hud_values(input_locked: bool) -> void:
 		if hud_controller.has_method("update_limb_push_indicator"):
 			hud_controller.update_limb_push_indicator(should_show_limb_ui, last_limb_push_state)
 		
-		if hud_controller.has_method("update_ground_lock_indicator"):
-			hud_controller.update_ground_lock_indicator(
-				not input_locked,
-				can_ground_lock(),
-				movement_mode == MovementMode.SURFACE_WALK
-			)
+		if hud_controller.has_method("update_slide_indicator"):
+			hud_controller.update_slide_indicator(not input_locked and is_sliding())
 
 
 func handle_input_locked_state() -> void:
@@ -335,17 +321,17 @@ func integrate_surface_walk_forces() -> void:
 	player.angular_velocity = Vector3.ZERO
 
 
+# While free-look is held the buffered aim motion is simply not applied (and cleared at the
+# end of the tick), so the mouse moves nothing until it's released.
 func physics_update_zero_g(delta: float, free_look_active: bool) -> void:
-	if free_look_active:
-		handle_free_look_rotation()
-	else:
+	if not free_look_active:
 		handle_body_mouse_rotation()
 		update_body_follow(delta)
 
 	handle_jump_input()
 	handle_grab_input()
 	handle_roll_input(delta)
-	handle_stabilize_input()
+	handle_stabilize_input(delta)
 
 
 func physics_update_surface_walk(delta: float) -> void:
@@ -394,13 +380,14 @@ func exit_surface_walk_mode() -> void:
 	ground.exit_surface_walk_mode()
 
 
-# AUTO ground lock (Settings > Game): floating with your feet pointing at a surface within
-# reach engages ground mode by itself — C only disengages. Manual mode keeps C for both.
+# AUTO ground lock — the ONLY way in: floating with your feet pointing at a surface within
+# reach engages ground mode by itself (gated by the entry angle; C is the slide, not a
+# mount key, and the only manual exits are the space launch and external forces).
 func update_auto_ground_lock(delta: float, input_locked: bool) -> void:
 	if auto_ground_cooldown > 0.0:
 		auto_ground_cooldown = maxf(auto_ground_cooldown - delta, 0.0)
 
-	if not GameSettings.auto_ground_lock or input_locked:
+	if input_locked:
 		return
 
 	if movement_mode != MovementMode.ZERO_G or pending_spawn_ground_mode or auto_ground_cooldown > 0.0:
@@ -414,35 +401,9 @@ func update_auto_ground_lock(delta: float, input_locked: bool) -> void:
 	ground.enter_surface_walk_mode(probe["position"], (probe["normal"] as Vector3).normalized())
 
 
-func handle_movement_mode_toggle(input_locked: bool) -> void:
-	if not is_action_just_pressed_if_exists("toggle_surface_walk"):
-		return
-
-	if movement_mode == MovementMode.SURFACE_WALK:
-		ground.exit_surface_walk_mode()
-		return
-
-	if input_locked:
-		return
-
-	ground.try_enter_surface_walk_mode()
-
-
 func request_spawn_ground_mode() -> void:
 	pending_spawn_ground_mode = true
 	pending_spawn_ground_frames = SPAWN_GROUND_MODE_MAX_FRAMES
-
-
-func update_surface_walk_entry_cache() -> void:
-	if movement_mode != MovementMode.ZERO_G:
-		last_surface_walk_entry_result = {}
-		return
-
-	last_surface_walk_entry_result = ground.get_ground_lock_probe()
-
-
-func can_ground_lock() -> bool:
-	return movement_mode == MovementMode.ZERO_G and not last_surface_walk_entry_result.is_empty()
 
 
 # --- C# HUD contract (Hud.cs reads/calls these BY NAME on this node) ---------------------
@@ -460,6 +421,10 @@ func find_spawn_surface(max_distance: float, max_normal_angle_degrees: float = -
 
 func is_surface_walk_active() -> bool:
 	return movement_mode == MovementMode.SURFACE_WALK
+
+
+func is_sliding() -> bool:
+	return ground != null and ground.is_sliding()
 
 
 func get_control_look_basis() -> Basis:
@@ -616,12 +581,11 @@ func update_recoil(delta: float) -> void:
 		camera.rotation = Vector3(base + recoil_offset.x, recoil_offset.y, 0.0)
 
 
-func handle_free_look_rotation() -> void:
-	free_look_mouse_motion = Vector2.ZERO
-
-
 # Zero-G push fires on RELEASE with the charged force (jump_force = the live charge).
 func handle_jump_input() -> void:
+	if not wall_push_enabled:
+		return
+
 	if not is_action_just_released_if_exists("push"):
 		return
 
@@ -807,8 +771,13 @@ func update_limb_push_cache() -> void:
 	if limb_push_controller == null:
 		last_limb_push_state = {}
 		return
-	
-	if movement_mode != MovementMode.ZERO_G:
+
+	# Sliding pins the limb dots to their rest state (visually "standing still"); the same
+	# flag is the hook any future limb run-cycle animation should key off.
+	if limb_push_controller.has_method("set_limbs_frozen"):
+		limb_push_controller.set_limbs_frozen(is_sliding())
+
+	if not wall_push_enabled or movement_mode != MovementMode.ZERO_G:
 		last_limb_push_state = {}
 		clear_limb_push_controller_debug(false)
 		return
@@ -896,6 +865,9 @@ func release_grab() -> void:
 	grabbing_wall = false
 
 
+# Velocity-driven roll: the speed along the roll axis is steered directly (no torque, no
+# inertia float). Press = instant start speed in that direction (any opposing spin dies on
+# the spot), hold = ramp to max, release = bleed to zero, all at the one change rate.
 func handle_roll_input(delta: float) -> void:
 	var roll_input := 0.0
 
@@ -906,42 +878,31 @@ func handle_roll_input(delta: float) -> void:
 		roll_input -= 1.0
 
 	var roll_axis := get_screen_roll_axis()
+	var current_speed := player.angular_velocity.dot(roll_axis)
+	var change_step := deg_to_rad(GameSettings.roll_speed_change_rate) * delta
+	var new_speed: float
 
 	if roll_input == 0.0:
-		roll_hold_time = 0.0
+		new_speed = move_toward(current_speed, 0.0, change_step)
+	else:
+		new_speed = current_speed
 
-		# Constant decel on the roll axis: drift-angle ~ spin^2, so small turns settle
-		# almost instantly while fast spins still coast. Skip while stabilizing.
-		if not is_action_pressed_if_exists("stabilize_rotation"):
-			var roll_velocity := roll_axis * player.angular_velocity.dot(roll_axis)
-			var settled := roll_velocity.move_toward(Vector3.ZERO, roll_settle_rate * delta)
-			player.angular_velocity += settled - roll_velocity
+		if new_speed * roll_input < deg_to_rad(GameSettings.roll_start_speed):
+			new_speed = roll_input * deg_to_rad(GameSettings.roll_start_speed)
 
-		return
+		new_speed = move_toward(new_speed, roll_input * deg_to_rad(GameSettings.roll_max_speed), change_step)
 
-	var current_roll_speed := player.angular_velocity.dot(roll_axis)
-	
-	if current_roll_speed * roll_input < 0.0:
-		var opposing_roll_velocity := roll_axis * current_roll_speed
-		var settled := opposing_roll_velocity.move_toward(
-			Vector3.ZERO,
-			roll_settle_rate * delta * 2.0
-		)
-		player.angular_velocity += settled - opposing_roll_velocity
-
-	roll_hold_time += delta
-	var ramp := clampf(roll_hold_time / maxf(roll_ramp_time, 0.001), 0.0, 1.0)
-	var torque := lerpf(roll_start_torque, roll_torque, ramp)
-
-	player.apply_torque(roll_axis * roll_input * torque)
+	player.angular_velocity += roll_axis * (new_speed - current_speed)
 
 
-func handle_stabilize_input() -> void:
+func handle_stabilize_input(delta: float) -> void:
 	if not is_action_pressed_if_exists("stabilize_rotation"):
 		return
-	
-	player.angular_velocity = player.angular_velocity.lerp(Vector3.ZERO, 0.12)
-	player.apply_torque(-player.angular_velocity * stabilize_strength)
+
+	player.angular_velocity = player.angular_velocity.move_toward(
+		Vector3.ZERO,
+		deg_to_rad(GameSettings.roll_speed_change_rate) * delta
+	)
 
 
 func update_surface_cache() -> void:
@@ -999,6 +960,9 @@ func should_show_ctrl_push_arrow(
 	free_look_active: bool,
 	input_locked: bool
 ) -> bool:
+	if not wall_push_enabled:
+		return false
+
 	if movement_mode == MovementMode.SURFACE_WALK:
 		return false
 	

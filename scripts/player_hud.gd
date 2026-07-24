@@ -11,7 +11,7 @@ var health_label: Label
 var jump_force_label: Label
 var fps_label: Label
 var booster_label: Label
-var ground_lock_label: Label
+var slide_label: Label
 var limb_push_label: Label
 var ammo_label: Label
 
@@ -227,7 +227,7 @@ func build_top_left_stats() -> void:
 	jump_force_label = add_stat_label(stats_box, "JumpForceLabel", "Jump Force: 10.0", 18, Color(1.0, 1.0, 1.0, 0.92), true)
 	fps_label = add_stat_label(stats_box, "FPSLabel", "FPS: 0", 16, Color(1.0, 1.0, 1.0, 0.85), true)
 	booster_label = add_stat_label(stats_box, "BoosterLabel", "", 16, Color(0.75, 0.9, 1.0, 0.88), false)
-	ground_lock_label = add_stat_label(stats_box, "GroundLockLabel", "", 16, Color(0.65, 1.0, 0.75, 0.94), false)
+	slide_label = add_stat_label(stats_box, "SlideLabel", "", 16, Color(0.55, 0.9, 1.0, 0.96), false)
 	limb_push_label = add_stat_label(stats_box, "LimbPushLabel", "", 16, Color(0.75, 1.0, 0.75, 0.9), false)
 	ammo_label = add_stat_label(stats_box, "AmmoLabel", "", 18, Color(1.0, 0.95, 0.75, 0.95), false)
 
@@ -394,26 +394,17 @@ func update_limb_push_indicator(should_show: bool, limb_state: Dictionary) -> vo
 		limb_push_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.45))
 
 
-func update_ground_lock_indicator(
-	should_show: bool,
-	can_ground_lock: bool,
-	is_ground_locked: bool
-) -> void:
-	if ground_lock_label == null:
+# The SLIDE mode readout: visible only while actually sliding. Animations can key off the
+# same state via player.is_sliding() / GroundMovementController.is_sliding().
+func update_slide_indicator(sliding: bool) -> void:
+	if slide_label == null:
 		return
-	
-	if not should_show or (not can_ground_lock and not is_ground_locked):
-		ground_lock_label.visible = false
-		return
-	
-	ground_lock_label.visible = true
-	
-	if is_ground_locked:
-		ground_lock_label.text = "Ground Lock: ON (C)"
-		ground_lock_label.add_theme_color_override("font_color", Color(0.65, 0.9, 1.0, 0.94))
-	else:
-		ground_lock_label.text = "Ground Lock: READY (C)"
-		ground_lock_label.add_theme_color_override("font_color", Color(0.65, 1.0, 0.75, 0.94))
+
+	slide_label.visible = sliding
+
+	if sliding:
+		slide_label.text = "SLIDING"
+		slide_label.add_theme_color_override("font_color", Color(0.55, 0.9, 1.0, 0.96))
 
 
 func update_reticle(
