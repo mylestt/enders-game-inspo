@@ -3,7 +3,7 @@
 [ext_resource type="PackedScene" uid="uid://0jf5ak884hmg" path="res://scenes/spawn_point.tscn" id="1_k66gf"]
 [ext_resource type="PackedScene" uid="uid://dogwa1i6o25k1" path="res://Resources/Objects/cits_castle.tscn" id="1_lkmil"]
 [ext_resource type="Material" uid="uid://dkr58dr03qoar" path="res://Resources/Materials/MatBlue.tres" id="4_enx61"]
-[ext_resource type="PackedScene" uid="uid://bv863scax14op" path="res://Resources/Objects/flags.tscn" id="4_mmdha"]
+[ext_resource type="PackedScene" uid="uid://bv863scax14op" path="res://Resources/Objects/Gamemodes/CTF/flags.tscn" id="4_mmdha"]
 [ext_resource type="Material" uid="uid://ca0uuhsuxts63" path="res://Resources/Materials/MatRed.tres" id="4_stsjn"]
 [ext_resource type="Shader" uid="uid://bd7pwahd6p47d" path="res://Resources/Materials/Shaders/Blackhole.gdshader" id="4_wx5mg"]
 [ext_resource type="Script" uid="uid://b2035ijkuruvj" path="res://Resources/Scripts/GravityWell.cs" id="5_xtbh1"]

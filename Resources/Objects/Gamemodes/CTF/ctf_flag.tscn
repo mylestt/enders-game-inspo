@@ -1,8 +1,8 @@
 [gd_scene format=3 uid="uid://bmtlx1luljh83"]
 
-[ext_resource type="Script" uid="uid://boqqaj46h4kd2" path="res://Resources/Scripts/Flag.cs" id="1_wsk8h"]
+[ext_resource type="Script" uid="uid://boqqaj46h4kd2" path="res://Resources/Scripts/Gamemodes/CTF/Flag.cs" id="1_wsk8h"]
 [ext_resource type="Material" uid="uid://ictjshvmqobp" path="res://Resources/Materials/Mat1.tres" id="2_johfm"]
-[ext_resource type="Script" uid="uid://dhcbyvscigtbu" path="res://Resources/Scripts/FlagPickupZone.cs" id="2_xlre0"]
+[ext_resource type="Script" uid="uid://dhcbyvscigtbu" path="res://Resources/Scripts/Gamemodes/CTF/FlagPickupZone.cs" id="2_xlre0"]
 
 [sub_resource type="CylinderShape3D" id="CylinderShape3D_dg3js"]
 height = 14.403687

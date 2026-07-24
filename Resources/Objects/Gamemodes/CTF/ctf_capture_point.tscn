@@ -1,8 +1,8 @@
 [gd_scene format=3 uid="uid://dv2q8ct0fdyoe"]
 
-[ext_resource type="Script" uid="uid://d2a8n13yedlll" path="res://Resources/Scripts/FlagCaptureZone.cs" id="1_friws"]
+[ext_resource type="Script" uid="uid://d2a8n13yedlll" path="res://Resources/Scripts/Gamemodes/CTF/FlagCaptureZone.cs" id="1_friws"]
 [ext_resource type="Material" uid="uid://ictjshvmqobp" path="res://Resources/Materials/Mat1.tres" id="2_y7qxm"]
-[ext_resource type="PackedScene" uid="uid://bmtlx1luljh83" path="res://Resources/Objects/ctf_flag.tscn" id="3_5oonm"]
+[ext_resource type="PackedScene" uid="uid://bmtlx1luljh83" path="res://Resources/Objects/Gamemodes/CTF/ctf_flag.tscn" id="3_5oonm"]
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_43wxm"]
 radius = 1.6453732

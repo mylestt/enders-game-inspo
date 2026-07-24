@@ -1,0 +1,37 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/weapons/plasma_projectile.gd" id="1_frag"]
+
+[node name="FlakFragPellet" type="Node3D"]
+script = ExtResource("1_frag")
+lifetime = 3.0
+projectile_color = Color(1, 0.6, 0.2, 1)
+projectile_radius = 0.06
+projectile_emission_energy = 8.0
+projectile_light_energy = 2.0
+projectile_light_range = 2.5
+explosion_radius = 1.6
+explosion_duration = 0.22
+explosion_color = Color(1, 0.5, 0.15, 1)
+explosion_emission_energy = 6.0
+explosion_light_energy = 6.0
+explosion_light_range = 6.0
+explosion_light_fade_time = 0.3
+impact_core_enabled = true
+impact_core_radius_multiplier = 0.4
+impact_core_duration = 0.08
+impact_core_emission_energy = 12.0
+shockwave_enabled = false
+maximum_damage = 14.0
+minimum_damage = 3.0
+airburst_enabled = true
+airburst_center_impulse = 6.0
+airburst_edge_impulse = 1.0
+particle_amount = 40
+particle_lifetime = 0.5
+particle_min_speed = 4.0
+particle_max_speed = 8.0
+particle_size = 0.02
+ion_streaks_enabled = true
+ion_streak_amount = 24
+ion_streak_lifetime = 0.25

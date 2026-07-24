@@ -2,7 +2,7 @@
 
 [ext_resource type="Texture2D" uid="uid://cx6g2bygli807" path="res://textures/GreyGrid.png" id="1_bjciq"]
 [ext_resource type="PackedScene" uid="uid://0jf5ak884hmg" path="res://scenes/spawn_point.tscn" id="1_v8bwy"]
-[ext_resource type="PackedScene" uid="uid://dv2q8ct0fdyoe" path="res://Resources/Objects/ctf_capture_point.tscn" id="3_kbhtn"]
+[ext_resource type="PackedScene" uid="uid://dv2q8ct0fdyoe" path="res://Resources/Objects/Gamemodes/CTF/ctf_capture_point.tscn" id="3_kbhtn"]
 [ext_resource type="Material" uid="uid://dkr58dr03qoar" path="res://Resources/Materials/MatBlue.tres" id="4_gvb6p"]
 [ext_resource type="Material" uid="uid://ca0uuhsuxts63" path="res://Resources/Materials/MatRed.tres" id="5_gvb6p"]
 

@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://bv863scax14op"]
 
-[ext_resource type="PackedScene" uid="uid://dv2q8ct0fdyoe" path="res://Resources/Objects/ctf_capture_point.tscn" id="1_5kefj"]
+[ext_resource type="PackedScene" uid="uid://dv2q8ct0fdyoe" path="res://Resources/Objects/Gamemodes/CTF/ctf_capture_point.tscn" id="1_5kefj"]
 [ext_resource type="Material" uid="uid://dkr58dr03qoar" path="res://Resources/Materials/MatBlue.tres" id="2_k036x"]
 [ext_resource type="Material" uid="uid://ca0uuhsuxts63" path="res://Resources/Materials/MatRed.tres" id="3_qcy7u"]
 

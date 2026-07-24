@@ -1,0 +1,34 @@
+[gd_scene format=3 uid="uid://chbkganhler1y"]
+
+[ext_resource type="Script" uid="uid://dri7xm7iaiedc" path="res://Resources/Scripts/Weapons/flak_shotgun_weapon.gd" id="1_flak_gun"]
+[ext_resource type="PackedScene" uid="uid://efthum54ogvt" path="res://Resources/Objects/Weapons/flak_projectile.tscn" id="2_flak_pellet"]
+[ext_resource type="PackedScene" path="res://Resources/Objects/Weapons/flak_mini_projectile.tscn" id="3_frag_pellet"]
+[ext_resource type="PackedScene" uid="uid://4fhix7rtub1r" path="res://Resources/Models/flak.glb" id="4_6gfla"]
+
+[node name="FlakShotgun" type="Node3D" unique_id=731956520]
+script = ExtResource("1_flak_gun")
+flak_projectile_scene = ExtResource("2_flak_pellet")
+frag_projectile_scene = ExtResource("3_frag_pellet")
+weapon_weight = 1.3
+aim_origin_node_path = NodePath("Muzzle")
+recoil_rotation_degrees = Vector3(2.4, 0, 0)
+recoil_position_offset = Vector3(0, 0.03, 0.14)
+recoil_random_rotation_degrees = Vector3(0.4, 1, 0.4)
+recoil_kick_up = 14.0
+recoil_kick_side = 1.4
+hitscan_spread_degrees = Vector2(4.5, 3.5)
+fire_knockback_force = 12.0
+mag_size = 6
+starting_reserve = 24
+reload_time = 2.8
+ads_spread_mult = 1.0
+ads_recoil_mult = 1.0
+
+[node name="Muzzle" type="Marker3D" parent="." unique_id=307815742]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.27130914)
+
+[node name="ADSmarker" type="Marker3D" parent="." unique_id=1414288354]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.49372745, 0.09866029, 0.4255337)
+
+[node name="flak" parent="." unique_id=118585496 instance=ExtResource("4_6gfla")]
+transform = Transform3D(-4.371139e-09, 0, 0.1, 0, 0.1, 0, -0.1, 0, -4.371139e-09, 0, 0, 0)

@@ -15,6 +15,7 @@
 [ext_resource type="Material" uid="uid://ictjshvmqobp" path="res://Resources/Materials/Mat1.tres" id="13_w4uxk"]
 [ext_resource type="Script" uid="uid://nid5ltl1bdyt" path="res://Resources/Scripts/PlayerNametag.cs" id="14_or2vr"]
 [ext_resource type="Script" uid="uid://vwlticrgm8hx" path="res://scripts/ground_movement_controller.gd" id="15_ground"]
+[ext_resource type="PackedScene" uid="uid://c856vj2sqlve2" path="res://Resources/Models/char.glb" id="16_n5i1l"]
 
 [sub_resource type="CylinderMesh" id="CylinderMesh_or2vr"]
 
@@ -38,6 +39,8 @@ grappleController = NodePath("../GrappleController")
 
 [node name="MovementController" type="Node" parent="." unique_id=294609104]
 script = ExtResource("2_1jxqw")
+show_limb_push_debug_ui = false
+show_limb_push_ui_when_no_limb_near = false
 
 [node name="GroundMovementController" type="Node" parent="." unique_id=294609105]
 script = ExtResource("15_ground")
@@ -48,6 +51,7 @@ surface_walk_pitch_limit_degrees = 100.0
 pitch_gimbal_strength = 0.5
 surface_walk_entry_max_angle_degrees = 90.0
 surface_walk_slope_align_speed = 9.0
+debug_movement_log = false
 
 [node name="SuitBoosters" type="Node" parent="." unique_id=2126445202]
 script = ExtResource("3_dw050")
@@ -80,6 +84,7 @@ script = ExtResource("6_wpninv")
 
 [node name="LimbPusherController" type="Node3D" parent="." unique_id=775985500]
 script = ExtResource("7_dw050")
+show_debug_limb_spheres = false
 
 [node name="LeftArmPoint" type="Marker3D" parent="LimbPusherController" unique_id=977520567]
 
@@ -90,10 +95,11 @@ script = ExtResource("7_dw050")
 [node name="RightFootPoint" type="Marker3D" parent="LimbPusherController" unique_id=1123509489]
 
 [node name="CameraRig" type="Node3D" parent="." unique_id=331100742]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.043516338)
 script = ExtResource("8_camrig")
 
 [node name="Camera3D" type="Camera3D" parent="CameraRig" unique_id=782354166]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5235928, -0.18032497)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6785122, -0.19368988)
 fov = 90.0
 
 [node name="WeaponMount" type="Node3D" parent="CameraRig/Camera3D" unique_id=1410101425]
@@ -106,6 +112,7 @@ rotation_stiffness = 83.425
 
 [node name="MeshInstance3D2" type="MeshInstance3D" parent="CameraRig/Camera3D" unique_id=7603808]
 transform = Transform3D(0.8538803, 0, 0, 0, 0.1490291, 0, 0, 0, 0.6980653, 0, -0.102986276, -0.03181261)
+visible = false
 visibility_range_begin = 1.0
 mesh = SubResource("CylinderMesh_or2vr")
 
@@ -113,6 +120,7 @@ mesh = SubResource("CylinderMesh_or2vr")
 shape = SubResource("CapsuleShape3D_g2els")
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=1557973964]
+visible = false
 layers = 512
 material_override = ExtResource("13_w4uxk")
 visibility_range_begin = 1.0
@@ -122,3 +130,6 @@ mesh = SubResource("CapsuleMesh_qhqgy")
 transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 1.345995, 0)
 text = "Player Name Goes Here"
 script = ExtResource("14_or2vr")
+
+[node name="char" parent="." unique_id=396444175 instance=ExtResource("16_n5i1l")]
+transform = Transform3D(-0.8, 0, 1.2079664e-07, 0, 0.8, 0, -1.2079664e-07, 0, -0.8, 0, 0, 0)

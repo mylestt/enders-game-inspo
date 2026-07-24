@@ -14,7 +14,7 @@
 [ext_resource type="Script" uid="uid://cwcakba58fk0q" path="res://scripts/scoreboard.gd" id="12_scoreboard"]
 [ext_resource type="Script" uid="uid://d00rhfk3nukjc" path="res://scripts/game_over_hud.gd" id="13_gameover"]
 [ext_resource type="Script" uid="uid://dundkdjk2x61u" path="res://scripts/drone_spawner.gd" id="14_drones"]
-[ext_resource type="Script" uid="uid://c07247hpxrq76" path="res://Resources/Scripts/CtfNotificationHud.gd" id="15_jkv2x"]
+[ext_resource type="Script" uid="uid://c07247hpxrq76" path="res://Resources/Scripts/Gamemodes/CTF/CtfNotificationHud.gd" id="15_jkv2x"]
 
 [node name="World Node3D" type="Node3D" unique_id=878825741]
 script = ExtResource("1_sugp2")

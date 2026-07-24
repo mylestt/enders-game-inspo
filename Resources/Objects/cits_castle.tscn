@@ -1,9 +1,9 @@
 [gd_scene format=3 uid="uid://dogwa1i6o25k1"]
 
-[ext_resource type="PackedScene" uid="uid://clpa65e3xylyx" path="res://Resources/Objects/pickup_health.tscn" id="1_h2nav"]
-[ext_resource type="PackedScene" uid="uid://wgb77r1d4cf2" path="res://Resources/Objects/pickup_defence.tscn" id="2_0u4sv"]
-[ext_resource type="PackedScene" uid="uid://ctd4kao86avi2" path="res://Resources/Objects/pickup_damage.tscn" id="3_1nhox"]
-[ext_resource type="PackedScene" uid="uid://b4hyfeb7b51pp" path="res://Resources/Objects/pickup_invisibility.tscn" id="4_5cpew"]
+[ext_resource type="PackedScene" uid="uid://clpa65e3xylyx" path="res://Resources/Objects/Pickups/pickup_health.tscn" id="1_h2nav"]
+[ext_resource type="PackedScene" uid="uid://wgb77r1d4cf2" path="res://Resources/Objects/Pickups/pickup_defence.tscn" id="2_0u4sv"]
+[ext_resource type="PackedScene" uid="uid://ctd4kao86avi2" path="res://Resources/Objects/Pickups/pickup_damage.tscn" id="3_1nhox"]
+[ext_resource type="PackedScene" uid="uid://b4hyfeb7b51pp" path="res://Resources/Objects/Pickups/pickup_invisibility.tscn" id="4_5cpew"]
 [ext_resource type="PackedScene" uid="uid://b0tsf1hj65ru5" path="res://Resources/Models/castle.tscn" id="5_0u4sv"]
 [ext_resource type="Material" uid="uid://1g33aosrog67" path="res://Resources/Materials/Level/Mud.tres" id="5_nmw42"]
 [ext_resource type="Material" uid="uid://bca43gas5l3m6" path="res://Resources/Materials/LightBlue.tres" id="6_2clwr"]
