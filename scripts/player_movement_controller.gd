@@ -21,11 +21,13 @@ enum MovementMode {
 @export var recoil_fire_settle_fraction: float = 1.0
 @export var recoil_recovery_fraction: float = 0.15
 
-@export var roll_torque: float = 10.0
-@export var roll_start_torque: float = 1.5
-@export var roll_ramp_time: float = 1.2
-@export var roll_settle_rate: float = 8.0
-@export var stabilize_strength: float = 7.5
+# Zero-G roll (A/D), velocity-driven for a snappy, non-floaty feel: pressing seeds
+# roll_start_speed INSTANTLY (killing any opposing spin), holding ramps toward
+# roll_max_speed, releasing bleeds the roll back to zero — all at roll_speed_change_rate.
+# Shift-stabilize kills ALL spin at that same rate.
+@export var roll_start_speed: float = 120.0        # deg/s the instant you press
+@export var roll_max_speed: float = 300.0          # deg/s cap while held
+@export var roll_speed_change_rate: float = 720.0  # deg/s^2 — ramp AND stop rate
 
 @export var ctrl_push_check_distance: float = 2.75
 
@@ -69,7 +71,12 @@ var movement_mode: int = MovementMode.ZERO_G
 
 var mouse_motion: Vector2 = Vector2.ZERO
 
-var roll_hold_time: float = 0.0
+# Zero-G WALL PUSH (space release pushing off nearby geometry, limb pushes included):
+# DISABLED for now — the whole mechanic stays in the file, flip this to re-enable. While
+# false the zero-G charge stays parked, the push never fires, and every HUD affordance for
+# it (push prompt, ctrl-push arrow, limb-push readout) hides. The ground-mode charged
+# launch is a separate path and is unaffected.
+var wall_push_enabled: bool = false
 
 var look_pitch: float = 0.0
 var view_initialized: bool = false
@@ -194,6 +201,11 @@ func update_jump_charge(delta: float) -> void:
 		jump_force = min_jump_force
 		return
 
+	# No wall push = nothing for a zero-G charge to fire; keep the bar parked.
+	if movement_mode == MovementMode.ZERO_G and not wall_push_enabled:
+		jump_force = min_jump_force
+		return
+
 	if is_action_pressed_if_exists("push"):
 		var rate := (max_jump_force - min_jump_force) / JUMP_CHARGE_TIME
 		jump_force = minf(jump_force + rate * delta, max_jump_force)
@@ -270,6 +282,7 @@ func update_hud_values(input_locked: bool) -> void:
 		
 		var should_show_limb_ui := (
 			show_limb_push_debug_ui
+			and wall_push_enabled
 			and movement_mode == MovementMode.ZERO_G
 			and not input_locked
 		)
@@ -322,7 +335,7 @@ func physics_update_zero_g(delta: float, free_look_active: bool) -> void:
 	handle_jump_input()
 	handle_grab_input()
 	handle_roll_input(delta)
-	handle_stabilize_input()
+	handle_stabilize_input(delta)
 
 
 func physics_update_surface_walk(delta: float) -> void:
@@ -574,6 +587,9 @@ func update_recoil(delta: float) -> void:
 
 # Zero-G push fires on RELEASE with the charged force (jump_force = the live charge).
 func handle_jump_input() -> void:
+	if not wall_push_enabled:
+		return
+
 	if not is_action_just_released_if_exists("push"):
 		return
 
@@ -765,7 +781,7 @@ func update_limb_push_cache() -> void:
 	if limb_push_controller.has_method("set_limbs_frozen"):
 		limb_push_controller.set_limbs_frozen(is_sliding())
 
-	if movement_mode != MovementMode.ZERO_G:
+	if not wall_push_enabled or movement_mode != MovementMode.ZERO_G:
 		last_limb_push_state = {}
 		clear_limb_push_controller_debug(false)
 		return
@@ -853,6 +869,9 @@ func release_grab() -> void:
 	grabbing_wall = false
 
 
+# Velocity-driven roll: the speed along the roll axis is steered directly (no torque, no
+# inertia float). Press = instant start speed in that direction (any opposing spin dies on
+# the spot), hold = ramp to max, release = bleed to zero, all at the one change rate.
 func handle_roll_input(delta: float) -> void:
 	var roll_input := 0.0
 
@@ -863,42 +882,31 @@ func handle_roll_input(delta: float) -> void:
 		roll_input -= 1.0
 
 	var roll_axis := get_screen_roll_axis()
+	var current_speed := player.angular_velocity.dot(roll_axis)
+	var change_step := deg_to_rad(roll_speed_change_rate) * delta
+	var new_speed: float
 
 	if roll_input == 0.0:
-		roll_hold_time = 0.0
+		new_speed = move_toward(current_speed, 0.0, change_step)
+	else:
+		new_speed = current_speed
 
-		# Constant decel on the roll axis: drift-angle ~ spin^2, so small turns settle
-		# almost instantly while fast spins still coast. Skip while stabilizing.
-		if not is_action_pressed_if_exists("stabilize_rotation"):
-			var roll_velocity := roll_axis * player.angular_velocity.dot(roll_axis)
-			var settled := roll_velocity.move_toward(Vector3.ZERO, roll_settle_rate * delta)
-			player.angular_velocity += settled - roll_velocity
+		if new_speed * roll_input < deg_to_rad(roll_start_speed):
+			new_speed = roll_input * deg_to_rad(roll_start_speed)
 
-		return
+		new_speed = move_toward(new_speed, roll_input * deg_to_rad(roll_max_speed), change_step)
 
-	var current_roll_speed := player.angular_velocity.dot(roll_axis)
-	
-	if current_roll_speed * roll_input < 0.0:
-		var opposing_roll_velocity := roll_axis * current_roll_speed
-		var settled := opposing_roll_velocity.move_toward(
-			Vector3.ZERO,
-			roll_settle_rate * delta * 2.0
-		)
-		player.angular_velocity += settled - opposing_roll_velocity
-
-	roll_hold_time += delta
-	var ramp := clampf(roll_hold_time / maxf(roll_ramp_time, 0.001), 0.0, 1.0)
-	var torque := lerpf(roll_start_torque, roll_torque, ramp)
-
-	player.apply_torque(roll_axis * roll_input * torque)
+	player.angular_velocity += roll_axis * (new_speed - current_speed)
 
 
-func handle_stabilize_input() -> void:
+func handle_stabilize_input(delta: float) -> void:
 	if not is_action_pressed_if_exists("stabilize_rotation"):
 		return
-	
-	player.angular_velocity = player.angular_velocity.lerp(Vector3.ZERO, 0.12)
-	player.apply_torque(-player.angular_velocity * stabilize_strength)
+
+	player.angular_velocity = player.angular_velocity.move_toward(
+		Vector3.ZERO,
+		deg_to_rad(roll_speed_change_rate) * delta
+	)
 
 
 func update_surface_cache() -> void:
@@ -956,6 +964,9 @@ func should_show_ctrl_push_arrow(
 	free_look_active: bool,
 	input_locked: bool
 ) -> bool:
+	if not wall_push_enabled:
+		return false
+
 	if movement_mode == MovementMode.SURFACE_WALK:
 		return false
 	

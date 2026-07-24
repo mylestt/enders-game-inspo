@@ -258,6 +258,10 @@ lobbies, deployed to a DigitalOcean VPS at **147.182.160.52:7000**.
   → `user://settings.cfg`).
 
 ## State notes / TODO
+- **Zero-G wall push DISABLED** (space push off geometry + limb pushes):
+  `wall_push_enabled = false` on PlayerMovementController — mechanic code intact, flip to
+  re-enable. Gates the push itself, the zero-G charge, and every HUD affordance (push
+  prompt, ctrl-push arrow, limb readout). Ground-mode charged launch unaffected.
 - **Scoring reconciled:** `team_scores` IS the match score (admin `set_score`/`add_score`
   take a team letter); scoreboard K/D is display-only.
 - **Economy/ammo server-authoritative**; the HUD ammo counter is client-side display.

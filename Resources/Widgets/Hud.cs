@@ -142,6 +142,12 @@ public partial class Hud : Control
 			return sliding ? GroundState.Sliding : GroundState.Grounded;
 		}
 
+		// The wall push can be disabled wholesale (wall_push_enabled = false) — no prompt then.
+		bool pushEnabled = movementController.Get("wall_push_enabled").AsBool();
+
+		if (!pushEnabled)
+			return GroundState.FreeFloat;
+
 		float maxDistance = movementController.Get("surface_walk_lock_max_distance").AsSingle();
 		var nearbySurface = movementController.Call("find_spawn_surface", maxDistance, -1.0f).AsGodotDictionary();
 
