@@ -20,7 +20,6 @@ extends Node
 var player: RigidBody3D
 var camera: Camera3D
 var camera_rig: CameraRig
-var hud_controller: PlayerHUDController
 
 var camera_default_position: Vector3 = Vector3.ZERO
 
@@ -33,10 +32,9 @@ var shake_duration: float = 0.0
 var shake_intensity: float = 0.0
 
 
-func setup(owner_player: RigidBody3D, owner_hud: PlayerHUDController) -> void:
+func setup(owner_player: RigidBody3D) -> void:
 	player = owner_player
-	hud_controller = owner_hud
-	
+
 	camera = player.get_node_or_null("CameraRig/Camera3D") as Camera3D
 	camera_rig = player.get_node_or_null("CameraRig") as CameraRig
 	

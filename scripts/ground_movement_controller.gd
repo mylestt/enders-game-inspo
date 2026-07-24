@@ -69,6 +69,10 @@ enum GroundState { GROUNDED, AIRBORNE }
 @export_range(0.0, 1.0) var pitch_gimbal_strength := 1.0
 # Entering ground mode auto-releases an attached grapple wire.
 @export var release_grapple_on_entry := true
+# ENTRY gate for both C-lock and auto-lock: a surface only locks if its normal is within
+# this many degrees of the body's up — you must genuinely point your feet at it to engage.
+# Spawn grounding is exempt (snaps to the nearest surface regardless of orientation).
+@export var surface_walk_entry_max_angle_degrees: float = 15.0
 # THE walkable-angle gate: surfaces angled further than this from the one you stand on are
 # WALLS (stop you); within it they're ground you reorient across.
 @export var surface_walk_max_edge_angle_degrees: float = 80.0
@@ -1043,12 +1047,16 @@ func get_ground_lock_probe() -> Dictionary:
 			var hit_normal: Vector3 = result.get("normal", Vector3.ZERO)
 
 			if hit_normal.length() >= 0.01:
-				return {
-					"position": result.get("position", end),
-					"normal": hit_normal.normalized(),
-				}
+				hit_normal = hit_normal.normalized()
 
-	var nearest := find_spawn_surface(SURFACE_WALK_LOCK_MAX_DISTANCE)
+				# Entry gate: feet must actually point at the face (normal near the body's up).
+				if rad_to_deg(player.global_transform.basis.y.angle_to(hit_normal)) <= surface_walk_entry_max_angle_degrees:
+					return {
+						"position": result.get("position", end),
+						"normal": hit_normal,
+					}
+
+	var nearest := find_spawn_surface(SURFACE_WALK_LOCK_MAX_DISTANCE, surface_walk_entry_max_angle_degrees)
 
 	if nearest.is_empty():
 		return {}
@@ -1079,7 +1087,14 @@ func get_auto_ground_probe() -> Dictionary:
 	if hit_normal.length() < 0.01:
 		return {}
 
-	return {"position": result.get("position", origin), "normal": hit_normal.normalized()}
+	hit_normal = hit_normal.normalized()
+
+	# Same entry gate as C-lock: drifting past a wall never auto-locks you onto it unless
+	# your feet are genuinely oriented at it.
+	if rad_to_deg(player.global_transform.basis.y.angle_to(hit_normal)) > surface_walk_entry_max_angle_degrees:
+		return {}
+
+	return {"position": result.get("position", origin), "normal": hit_normal}
 
 
 # ---------------------------------------------------------------- small helpers

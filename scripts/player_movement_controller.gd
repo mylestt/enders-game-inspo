@@ -7,7 +7,6 @@ enum MovementMode {
 }
 
 @export var mouse_sensitivity: float = 0.0025
-@export var free_look_sensitivity: float = 0.0025
 @export var look_neck_limit_degrees: float = 70.0
 @export var body_follow_speed: float = 6.0
 
@@ -28,7 +27,6 @@ enum MovementMode {
 @export var roll_settle_rate: float = 8.0
 @export var stabilize_strength: float = 7.5
 
-@export var surface_check_distance: float = 2.25
 @export var ctrl_push_check_distance: float = 2.75
 
 # Charged push/launch (space): the force starts EMPTY (min_jump_force) and builds toward
@@ -57,9 +55,6 @@ var jump_force: float = 2.0
 @export var grab_distance_level_2: float = 3.4
 @export var grab_distance_level_3: float = 4.2
 
-@export var grabbed_linear_damp: float = 12.0
-@export var grabbed_angular_damp: float = 4.0
-
 # Ground (surface-walk) movement lives on the GroundMovementController sibling node —
 # Source-style accelerate/friction/air recipes, jumping, orientation, probes and all its
 # tuning exports. This node coordinates modes, owns zero-G movement, and shares look/recoil.
@@ -73,7 +68,6 @@ var _ray_query: PhysicsRayQueryParameters3D
 var movement_mode: int = MovementMode.ZERO_G
 
 var mouse_motion: Vector2 = Vector2.ZERO
-var free_look_mouse_motion: Vector2 = Vector2.ZERO
 
 var roll_hold_time: float = 0.0
 
@@ -223,16 +217,8 @@ func add_mouse_motion(relative_motion: Vector2) -> void:
 	mouse_motion += relative_motion
 
 
-func add_free_look_mouse_motion(relative_motion: Vector2) -> void:
-	free_look_mouse_motion += relative_motion
-
-
 func clear_mouse_motion() -> void:
 	mouse_motion = Vector2.ZERO
-
-
-func clear_free_look_mouse_motion() -> void:
-	free_look_mouse_motion = Vector2.ZERO
 
 
 func physics_update(
@@ -265,7 +251,6 @@ func physics_update(
 		handle_input_locked_state()
 		update_recoil(delta)
 		clear_mouse_motion()
-		clear_free_look_mouse_motion()
 		return
 
 	consume_recoil_compensation()
@@ -280,7 +265,6 @@ func physics_update(
 
 	update_recoil(delta)
 	clear_mouse_motion()
-	clear_free_look_mouse_motion()
 
 
 func update_hud_values(input_locked: bool) -> void:
@@ -335,10 +319,10 @@ func integrate_surface_walk_forces() -> void:
 	player.angular_velocity = Vector3.ZERO
 
 
+# While free-look is held the buffered aim motion is simply not applied (and cleared at the
+# end of the tick), so the mouse moves nothing until it's released.
 func physics_update_zero_g(delta: float, free_look_active: bool) -> void:
-	if free_look_active:
-		handle_free_look_rotation()
-	else:
+	if not free_look_active:
 		handle_body_mouse_rotation()
 		update_body_follow(delta)
 
@@ -614,10 +598,6 @@ func update_recoil(delta: float) -> void:
 
 	if camera != null:
 		camera.rotation = Vector3(base + recoil_offset.x, recoil_offset.y, 0.0)
-
-
-func handle_free_look_rotation() -> void:
-	free_look_mouse_motion = Vector2.ZERO
 
 
 # Zero-G push fires on RELEASE with the charged force (jump_force = the live charge).
