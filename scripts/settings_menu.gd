@@ -15,6 +15,7 @@ var volume_slider: HSlider
 var volume_value_label: Label
 var fullscreen_check: CheckBox
 var slide_toggle_check: CheckBox
+var slide_default_check: CheckBox
 var roll_start_value_label: Label
 var roll_max_value_label: Label
 var roll_rate_value_label: Label
@@ -148,6 +149,23 @@ func build_game_tab() -> Control:
 	slide_row.add_child(slide_toggle_check)
 
 	root.add_child(slide_row)
+
+	var slide_default_row := HBoxContainer.new()
+	slide_default_row.add_theme_constant_override("separation", 10)
+
+	var slide_default_label := Label.new()
+	slide_default_label.text = "Slide On By Default"
+	slide_default_label.tooltip_text = "On: you slide automatically whenever you land with overspeed — the slide key STOPS the slide instead of starting it.\nOff: the slide key starts the slide (default)."
+	slide_default_label.custom_minimum_size = Vector2(200.0, 0.0)
+	slide_default_row.add_child(slide_default_label)
+
+	slide_default_check = CheckBox.new()
+	slide_default_check.button_pressed = GameSettings.slide_on_by_default
+	slide_default_check.text = "Auto-slide (key ends the slide)"
+	slide_default_check.toggled.connect(_on_slide_default_toggled)
+	slide_default_row.add_child(slide_default_check)
+
+	root.add_child(slide_default_row)
 
 	# Zero-G roll feel. The sliders display the EFFECTIVE value: the player's saved
 	# override, or the game's export defaults (PlayerMovementController) when untouched.
@@ -295,6 +313,11 @@ func _on_fullscreen_toggled(pressed: bool) -> void:
 
 func _on_slide_toggle_toggled(pressed: bool) -> void:
 	GameSettings.slide_toggle_mode = pressed
+	GameSettings.save()
+
+
+func _on_slide_default_toggled(pressed: bool) -> void:
+	GameSettings.slide_on_by_default = pressed
 	GameSettings.save()
 
 
