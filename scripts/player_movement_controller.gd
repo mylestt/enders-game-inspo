@@ -21,6 +21,12 @@ enum MovementMode {
 @export var recoil_fire_settle_fraction: float = 1.0
 @export var recoil_recovery_fraction: float = 0.15
 
+# Seconds after ANY ground-mode exit (slide-jump launch, knockback, grapple yank) before
+# the auto ground lock may re-engage. Too high = fast slide-jump arcs reconverge with
+# curved surfaces while the lock is still deaf and you face-plant raw; too low = a
+# deliberate launch can get re-grabbed by the surface you just left.
+@export var auto_ground_relock_cooldown: float = 0.25
+
 # Zero-G roll (A/D), velocity-driven. These exports are the GAME's baked defaults — the
 # feel every player gets out of the box. The settings-menu sliders store a PER-PLAYER
 # override in GameSettings (-1 = untouched, follow these defaults); the get_roll_*()
@@ -354,7 +360,7 @@ func begin_surface_walk_mode() -> void:
 func end_surface_walk_mode() -> void:
 	movement_mode = MovementMode.ZERO_G
 	view_initialized = false   # re-sync head-up to the post-exit orientation
-	auto_ground_cooldown = 0.75
+	auto_ground_cooldown = auto_ground_relock_cooldown
 	player.angular_velocity = Vector3.ZERO
 	player.sleeping = false
 
