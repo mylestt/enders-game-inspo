@@ -8,21 +8,12 @@
 [node name="FlakShotgun" type="Node3D" unique_id=731956520]
 script = ExtResource("1_flak_gun")
 flak_projectile_scene = ExtResource("2_flak_pellet")
+flak_ricochet_damage_multiplier = 2.0
+flak_ricochet_speed_multiplier = 2.0
+flak_max_multiplying_ricochets = 20
+flak_lifetime = 3.0
 frag_projectile_scene = ExtResource("3_frag_pellet")
-weapon_weight = 1.3
-aim_origin_node_path = NodePath("Muzzle")
-recoil_rotation_degrees = Vector3(2.4, 0, 0)
-recoil_position_offset = Vector3(0, 0.03, 0.14)
-recoil_random_rotation_degrees = Vector3(0.4, 1, 0.4)
-recoil_kick_up = 14.0
-recoil_kick_side = 1.4
 hitscan_spread_degrees = Vector2(4.5, 3.5)
-fire_knockback_force = 12.0
-mag_size = 6
-starting_reserve = 24
-reload_time = 2.8
-ads_spread_mult = 1.0
-ads_recoil_mult = 1.0
 
 [node name="Muzzle" type="Marker3D" parent="." unique_id=307815742]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.27130914)

@@ -34,10 +34,10 @@ extends Node3D
 @export_group("Trail")
 @export var trail_enabled: bool = true
 @export var trail_color: Color = Color(1.0, 0.7, 0.3, 1.0)
-@export_range(1, 128, 1) var trail_amount: int = 24
-@export_range(0.02, 2.0, 0.01, "or_greater") var trail_lifetime: float = 0.18
-@export_range(0.001, 0.5, 0.001, "or_greater") var trail_width: float = 0.035
+@export_range(0.02, 2.0, 0.01, "or_greater") var trail_time: float = 0.15
+@export_range(0.001, 0.5, 0.001, "or_greater") var trail_width: float = 0.05
 @export_range(0.0, 32.0, 0.1, "or_greater") var trail_emission_energy: float = 6.0
+@export_range(0.001, 0.5, 0.001, "or_greater") var trail_min_point_distance: float = 0.02
 
 var owner_player: Node = null
 var can_deal_damage: bool = false
@@ -53,7 +53,10 @@ var bounce_count: int = 0
 
 var core_mesh: MeshInstance3D
 var glow_light: OmniLight3D
-var trail_particles: GPUParticles3D
+var trail_mesh_instance: MeshInstance3D
+var trail_immediate_mesh: ImmediateMesh
+var trail_material: StandardMaterial3D
+var _trail_points: Array = []
 var _last_position: Vector3
 
 
@@ -68,6 +71,7 @@ func launch(
 	velocity = direction.normalized() * speed
 	current_damage = base_damage
 	collect_exclusions(exclude_root)
+	_add_trail_point(start_position)
 
 
 func collect_exclusions(node: Node) -> void:
@@ -115,61 +119,121 @@ func build_visuals() -> void:
 	add_child(glow_light)
 
 	if trail_enabled:
-		build_trail()
+		_setup_trail()
 
 
-func build_trail() -> void:
-	trail_particles = GPUParticles3D.new()
-	trail_particles.name = "FlakTrail"
-	trail_particles.emitting = true
-	trail_particles.amount = trail_amount
-	trail_particles.lifetime = trail_lifetime
-	trail_particles.one_shot = false
-	trail_particles.explosiveness = 0.0
-	trail_particles.randomness = 0.05
-	trail_particles.local_coords = false
-	trail_particles.visibility_aabb = AABB(Vector3.ONE * -4.0, Vector3.ONE * 8.0)
+func _setup_trail() -> void:
+	trail_immediate_mesh = ImmediateMesh.new()
 
-	var process_material := ParticleProcessMaterial.new()
-	process_material.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_POINT
-	process_material.direction = Vector3.ZERO
-	process_material.spread = 0.0
-	process_material.initial_velocity_min = 0.0
-	process_material.initial_velocity_max = 0.0
-	process_material.gravity = Vector3.ZERO
-	process_material.damping_min = 0.0
-	process_material.damping_max = 0.0
-	process_material.scale_min = 1.0
-	process_material.scale_max = 1.0
-
-	var fade_gradient := Gradient.new()
-	fade_gradient.offsets = PackedFloat32Array([0.0, 1.0])
-	fade_gradient.colors = PackedColorArray([
-		trail_color,
-		Color(trail_color.r, trail_color.g, trail_color.b, 0.0),
-	])
-	var color_ramp := GradientTexture1D.new()
-	color_ramp.gradient = fade_gradient
-	process_material.color_ramp = color_ramp
-	trail_particles.process_material = process_material
-
-	var trail_material := StandardMaterial3D.new()
+	trail_material = StandardMaterial3D.new()
 	trail_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	trail_material.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	trail_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	trail_material.vertex_color_use_as_albedo = true
 	trail_material.albedo_color = Color.WHITE
 	trail_material.emission_enabled = true
-	trail_material.emission = Color.WHITE
+	trail_material.emission = trail_color
 	trail_material.emission_energy_multiplier = trail_emission_energy
-	trail_material.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	trail_material.cull_mode = BaseMaterial3D.CULL_DISABLED
 
-	var trail_quad := QuadMesh.new()
-	trail_quad.size = Vector2.ONE * trail_width
-	trail_quad.material = trail_material
-	trail_particles.draw_pass_1 = trail_quad
+	trail_mesh_instance = MeshInstance3D.new()
+	trail_mesh_instance.name = "FlakTrail"
+	trail_mesh_instance.mesh = trail_immediate_mesh
+	trail_mesh_instance.material_override = trail_material
+	trail_mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	trail_mesh_instance.top_level = true
+	add_child(trail_mesh_instance)
 
-	add_child(trail_particles)
+
+func _add_trail_point(position: Vector3) -> void:
+	if not _trail_points.is_empty():
+		var last_position: Vector3 = _trail_points[-1]["position"]
+
+		if last_position.distance_to(position) < trail_min_point_distance:
+			return
+
+	_trail_points.append({"position": position, "age": 0.0})
+
+
+func _process(delta: float) -> void:
+	if not trail_enabled or trail_immediate_mesh == null:
+		return
+
+	for point in _trail_points:
+		point["age"] += delta
+
+	while _trail_points.size() > 0 and _trail_points[0]["age"] > trail_time:
+		_trail_points.pop_front()
+
+	_rebuild_trail_mesh()
+
+
+func _rebuild_trail_mesh() -> void:
+	trail_immediate_mesh.clear_surfaces()
+
+	if _trail_points.size() < 2:
+		return
+
+	var camera := _get_active_camera()
+
+	if camera == null:
+		return
+
+	var camera_position := camera.global_position
+	var point_count := _trail_points.size()
+
+	trail_immediate_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
+
+	for i in range(point_count):
+		var point: Dictionary = _trail_points[i]
+		var position: Vector3 = point["position"]
+		var point_age: float = point["age"]
+		var life_ratio := clampf(1.0 - point_age / maxf(trail_time, 0.001), 0.0, 1.0)
+
+		var tangent: Vector3
+
+		if i < point_count - 1:
+			tangent = (_trail_points[i + 1]["position"] as Vector3) - position
+		else:
+			tangent = position - (_trail_points[i - 1]["position"] as Vector3)
+
+		if tangent.length_squared() < 0.0001:
+			tangent = Vector3.FORWARD
+		else:
+			tangent = tangent.normalized()
+
+		var to_camera := camera_position - position
+
+		if to_camera.length_squared() < 0.0001:
+			to_camera = Vector3.UP
+
+		var side := tangent.cross(to_camera.normalized())
+
+		if side.length_squared() < 0.0001:
+			side = Vector3.RIGHT
+		else:
+			side = side.normalized()
+
+		var half_width := trail_width * 0.5 * life_ratio
+		var vertex_color := Color(
+			trail_color.r, trail_color.g, trail_color.b, trail_color.a * life_ratio
+		)
+
+		trail_immediate_mesh.surface_set_color(vertex_color)
+		trail_immediate_mesh.surface_add_vertex(position + side * half_width)
+		trail_immediate_mesh.surface_set_color(vertex_color)
+		trail_immediate_mesh.surface_add_vertex(position - side * half_width)
+
+	trail_immediate_mesh.surface_end()
+
+
+func _get_active_camera() -> Camera3D:
+	var viewport := get_viewport()
+
+	if viewport == null:
+		return null
+
+	return viewport.get_camera_3d()
 
 
 func _physics_process(delta: float) -> void:
@@ -195,6 +259,7 @@ func _physics_process(delta: float) -> void:
 	if hit.is_empty():
 		_last_position = from
 		global_position = to
+		_add_trail_point(to)
 		return
 
 	var hit_position: Vector3 = hit.get("position", to)
@@ -224,6 +289,7 @@ func _detonate_on_target(target: Node, hit_position: Vector3) -> void:
 	global_position = hit_position
 	velocity = Vector3.ZERO
 	set_physics_process(false)
+	_add_trail_point(hit_position)
 
 	if can_deal_damage and owner_player != null:
 		var is_owner := target == owner_player
@@ -261,6 +327,7 @@ func _ricochet(hit_position: Vector3, hit_normal: Vector3) -> void:
 
 	global_position = hit_position + hit_normal * 0.02
 	_last_position = global_position
+	_add_trail_point(global_position)
 
 	bounce_count += 1
 
@@ -307,7 +374,6 @@ func _spawn_spark(position: Vector3, normal: Vector3, color: Color) -> void:
 	material.emission = color
 	material.emission_energy_multiplier = spark_emission_energy
 	spark.material_override = material
-	spark.global_position = position + normal * 0.01
 	spark.scale = Vector3.ONE * 0.01
 
 	var parent := get_parent()
@@ -316,6 +382,7 @@ func _spawn_spark(position: Vector3, normal: Vector3, color: Color) -> void:
 		return
 
 	parent.add_child(spark)
+	spark.global_position = position + normal * 0.01
 
 	var tween := spark.create_tween()
 	tween.set_trans(Tween.TRANS_QUART)
@@ -333,10 +400,7 @@ func _cleanup() -> void:
 		var light_tween := create_tween()
 		light_tween.tween_property(glow_light, "light_energy", 0.0, 0.1)
 
-	if trail_particles != null:
-		trail_particles.emitting = false
-
-	var cleanup_delay := (trail_lifetime + 0.05) if trail_enabled else 0.25
+	var cleanup_delay := (trail_time + 0.05) if trail_enabled else 0.25
 	cleanup_delay = maxf(cleanup_delay, 0.25)
 	var cleanup_tween := create_tween()
 	cleanup_tween.tween_interval(cleanup_delay)
