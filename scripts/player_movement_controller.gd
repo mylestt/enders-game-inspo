@@ -21,9 +21,19 @@ enum MovementMode {
 @export var recoil_fire_settle_fraction: float = 1.0
 @export var recoil_recovery_fraction: float = 0.15
 
-# Zero-G roll (A/D) is velocity-driven and tuned ENTIRELY from the settings menu
-# (GameSettings.roll_start_speed / roll_max_speed / roll_speed_change_rate, read live in
-# handle_roll_input / handle_stabilize_input) — no exports here, one tuning surface.
+# Seconds after ANY ground-mode exit (slide-jump launch, knockback, grapple yank) before
+# the auto ground lock may re-engage. Too high = fast slide-jump arcs reconverge with
+# curved surfaces while the lock is still deaf and you face-plant raw; too low = a
+# deliberate launch can get re-grabbed by the surface you just left.
+@export var auto_ground_relock_cooldown: float = 0.25
+
+# Zero-G roll (A/D), velocity-driven. These exports are the GAME's baked defaults — the
+# feel every player gets out of the box. The settings-menu sliders store a PER-PLAYER
+# override in GameSettings (-1 = untouched, follow these defaults); the get_roll_*()
+# getters resolve override-else-default live, so both layers apply immediately.
+@export var roll_start_speed: float = 120.0        # deg/s the instant you press
+@export var roll_max_speed: float = 140.0          # deg/s cap while held
+@export var roll_speed_change_rate: float = 500.0  # deg/s^2 — ramp AND stop rate
 
 @export var ctrl_push_check_distance: float = 2.75
 
@@ -350,7 +360,7 @@ func begin_surface_walk_mode() -> void:
 func end_surface_walk_mode() -> void:
 	movement_mode = MovementMode.ZERO_G
 	view_initialized = false   # re-sync head-up to the post-exit orientation
-	auto_ground_cooldown = 0.75
+	auto_ground_cooldown = auto_ground_relock_cooldown
 	player.angular_velocity = Vector3.ZERO
 	player.sleeping = false
 
@@ -865,6 +875,18 @@ func release_grab() -> void:
 	grabbing_wall = false
 
 
+func get_roll_start_speed() -> float:
+	return GameSettings.roll_start_speed if GameSettings.roll_start_speed >= 0.0 else roll_start_speed
+
+
+func get_roll_max_speed() -> float:
+	return GameSettings.roll_max_speed if GameSettings.roll_max_speed >= 0.0 else roll_max_speed
+
+
+func get_roll_speed_change_rate() -> float:
+	return GameSettings.roll_speed_change_rate if GameSettings.roll_speed_change_rate >= 0.0 else roll_speed_change_rate
+
+
 # Velocity-driven roll: the speed along the roll axis is steered directly (no torque, no
 # inertia float). Press = instant start speed in that direction (any opposing spin dies on
 # the spot), hold = ramp to max, release = bleed to zero, all at the one change rate.
@@ -879,7 +901,7 @@ func handle_roll_input(delta: float) -> void:
 
 	var roll_axis := get_screen_roll_axis()
 	var current_speed := player.angular_velocity.dot(roll_axis)
-	var change_step := deg_to_rad(GameSettings.roll_speed_change_rate) * delta
+	var change_step := deg_to_rad(get_roll_speed_change_rate()) * delta
 	var new_speed: float
 
 	if roll_input == 0.0:
@@ -887,10 +909,10 @@ func handle_roll_input(delta: float) -> void:
 	else:
 		new_speed = current_speed
 
-		if new_speed * roll_input < deg_to_rad(GameSettings.roll_start_speed):
-			new_speed = roll_input * deg_to_rad(GameSettings.roll_start_speed)
+		if new_speed * roll_input < deg_to_rad(get_roll_start_speed()):
+			new_speed = roll_input * deg_to_rad(get_roll_start_speed())
 
-		new_speed = move_toward(new_speed, roll_input * deg_to_rad(GameSettings.roll_max_speed), change_step)
+		new_speed = move_toward(new_speed, roll_input * deg_to_rad(get_roll_max_speed()), change_step)
 
 	player.angular_velocity += roll_axis * (new_speed - current_speed)
 
@@ -901,7 +923,7 @@ func handle_stabilize_input(delta: float) -> void:
 
 	player.angular_velocity = player.angular_velocity.move_toward(
 		Vector3.ZERO,
-		deg_to_rad(GameSettings.roll_speed_change_rate) * delta
+		deg_to_rad(get_roll_speed_change_rate()) * delta
 	)
 
 

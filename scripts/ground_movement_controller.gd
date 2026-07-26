@@ -336,10 +336,17 @@ func is_sliding() -> bool:
 
 
 func is_slide_input_engaged() -> bool:
-	if GameSettings.slide_toggle_mode:
-		return slide_toggle_latch
+	var engaged := slide_toggle_latch if GameSettings.slide_toggle_mode \
+		else is_action_pressed_if_exists("slide")
 
-	return is_action_pressed_if_exists("slide")
+	# Slide-on-by-default INVERTS the key: overspeed slides automatically and the key
+	# (held, or latched in toggle mode) SUPPRESSES the slide instead of enabling it. The
+	# spent-latch reset in update_slide_state doubles as the suppress reset, so a stale
+	# "stop sliding" press never carries into the next fast landing.
+	if GameSettings.slide_on_by_default:
+		return not engaged
+
+	return engaged
 
 
 # Runs every ground-mode tick (GROUNDED and AIRBORNE, so a toggle press mid-hop still arms

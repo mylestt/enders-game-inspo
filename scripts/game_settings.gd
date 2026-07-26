@@ -15,9 +15,11 @@ const DEFAULT_SENSITIVITY := 0.0025
 const DEFAULT_VOLUME := 1.0
 const DEFAULT_FULLSCREEN := false
 const DEFAULT_SLIDE_TOGGLE := false
-const DEFAULT_ROLL_START_SPEED := 120.0
-const DEFAULT_ROLL_MAX_SPEED := 140.0
-const DEFAULT_ROLL_CHANGE_RATE := 500.0
+const DEFAULT_SLIDE_ON_BY_DEFAULT := false
+# Sentinel for the roll settings: below zero = "player never touched this slider" — the
+# game's export defaults on PlayerMovementController apply (so re-tuning those defaults
+# reaches every player who hasn't customized).
+const ROLL_UNSET := -1.0
 
 static var fov: float = DEFAULT_FOV
 static var mouse_sensitivity: float = DEFAULT_SENSITIVITY
@@ -26,12 +28,17 @@ static var fullscreen: bool = DEFAULT_FULLSCREEN
 # Slide input mode: false = HOLD the slide key to keep sliding (default); true = TOGGLE —
 # press once to slide, again to stop. (Ground-mode mounting itself is always automatic.)
 static var slide_toggle_mode: bool = DEFAULT_SLIDE_TOGGLE
-# Zero-G roll feel — the ONLY tuning surface for the roll (the movement controller reads
-# these LIVE, so the sliders take effect immediately). start/max in deg/s; the change rate
-# (deg/s^2) governs the ramp up, the stop on release, and the shift-stabilize spin kill.
-static var roll_start_speed: float = DEFAULT_ROLL_START_SPEED
-static var roll_max_speed: float = DEFAULT_ROLL_MAX_SPEED
-static var roll_speed_change_rate: float = DEFAULT_ROLL_CHANGE_RATE
+# Inverts the slide key: true = you slide AUTOMATICALLY whenever you're grounded with
+# overspeed, and the slide key ENDS the slide instead of starting it (hold mode: holding
+# interrupts; toggle mode: press to stop, press to resume).
+static var slide_on_by_default: bool = DEFAULT_SLIDE_ON_BY_DEFAULT
+# Zero-G roll feel — PER-PLAYER OVERRIDES of the movement controller's export defaults
+# (ROLL_UNSET = follow the game). Read live via the coordinator's get_roll_*() getters.
+# start/max in deg/s; the change rate (deg/s^2) governs the ramp up, the stop on release,
+# and the shift-stabilize spin kill.
+static var roll_start_speed: float = ROLL_UNSET
+static var roll_max_speed: float = ROLL_UNSET
+static var roll_speed_change_rate: float = ROLL_UNSET
 # Remembered admin-menu password, so it only has to be typed once. Persisted to settings.cfg.
 static var admin_password: String = ""
 # Path to blender.exe for map-creator .blend imports (auto-detected when blank; the map
@@ -55,9 +62,10 @@ static func load_and_apply() -> void:
 		master_volume = clampf(float(config.get_value("audio", "master_volume", DEFAULT_VOLUME)), 0.0, 1.0)
 		fullscreen = bool(config.get_value("video", "fullscreen", DEFAULT_FULLSCREEN))
 		slide_toggle_mode = bool(config.get_value("gameplay", "slide_toggle_mode", DEFAULT_SLIDE_TOGGLE))
-		roll_start_speed = clampf(float(config.get_value("gameplay", "roll_start_speed", DEFAULT_ROLL_START_SPEED)), 0.0, 720.0)
-		roll_max_speed = clampf(float(config.get_value("gameplay", "roll_max_speed", DEFAULT_ROLL_MAX_SPEED)), 30.0, 1080.0)
-		roll_speed_change_rate = clampf(float(config.get_value("gameplay", "roll_speed_change_rate", DEFAULT_ROLL_CHANGE_RATE)), 60.0, 2880.0)
+		slide_on_by_default = bool(config.get_value("gameplay", "slide_on_by_default", DEFAULT_SLIDE_ON_BY_DEFAULT))
+		roll_start_speed = _load_roll_override(config, "roll_start_speed", 0.0, 720.0)
+		roll_max_speed = _load_roll_override(config, "roll_max_speed", 30.0, 1080.0)
+		roll_speed_change_rate = _load_roll_override(config, "roll_speed_change_rate", 60.0, 2880.0)
 		admin_password = String(config.get_value("admin", "password", ""))
 		blender_path = String(config.get_value("tools", "blender_path", ""))
 		apply_keybinds_from_config(config)
@@ -71,6 +79,7 @@ static func save() -> void:
 	config.set_value("gameplay", "fov", fov)
 	config.set_value("gameplay", "mouse_sensitivity", mouse_sensitivity)
 	config.set_value("gameplay", "slide_toggle_mode", slide_toggle_mode)
+	config.set_value("gameplay", "slide_on_by_default", slide_on_by_default)
 	config.set_value("gameplay", "roll_start_speed", roll_start_speed)
 	config.set_value("gameplay", "roll_max_speed", roll_max_speed)
 	config.set_value("gameplay", "roll_speed_change_rate", roll_speed_change_rate)
@@ -158,9 +167,10 @@ static func reset_to_defaults() -> void:
 	master_volume = DEFAULT_VOLUME
 	fullscreen = DEFAULT_FULLSCREEN
 	slide_toggle_mode = DEFAULT_SLIDE_TOGGLE
-	roll_start_speed = DEFAULT_ROLL_START_SPEED
-	roll_max_speed = DEFAULT_ROLL_MAX_SPEED
-	roll_speed_change_rate = DEFAULT_ROLL_CHANGE_RATE
+	slide_on_by_default = DEFAULT_SLIDE_ON_BY_DEFAULT
+	roll_start_speed = ROLL_UNSET
+	roll_max_speed = ROLL_UNSET
+	roll_speed_change_rate = ROLL_UNSET
 
 	for action in _default_events_by_action.keys():
 		InputMap.action_erase_events(action)
@@ -171,6 +181,17 @@ static func reset_to_defaults() -> void:
 	apply_audio()
 	apply_video()
 	save()
+
+
+# A stored roll override is clamped to its slider range; anything below zero (including
+# the unset sentinel itself) means "no override — follow the game's defaults".
+static func _load_roll_override(config: ConfigFile, key: String, lo: float, hi: float) -> float:
+	var value := float(config.get_value("gameplay", key, ROLL_UNSET))
+
+	if value < 0.0:
+		return ROLL_UNSET
+
+	return clampf(value, lo, hi)
 
 
 static func event_to_data(event: InputEvent) -> Dictionary:

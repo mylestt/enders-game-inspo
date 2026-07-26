@@ -15,6 +15,7 @@ var volume_slider: HSlider
 var volume_value_label: Label
 var fullscreen_check: CheckBox
 var slide_toggle_check: CheckBox
+var slide_default_check: CheckBox
 var roll_start_value_label: Label
 var roll_max_value_label: Label
 var roll_rate_value_label: Label
@@ -149,22 +150,49 @@ func build_game_tab() -> Control:
 
 	root.add_child(slide_row)
 
-	# Zero-G roll feel: read live by the movement controller, so these apply instantly.
-	var roll_start_row := make_slider_row("Roll Start Speed", 0.0, 360.0, 5.0, GameSettings.roll_start_speed)
+	var slide_default_row := HBoxContainer.new()
+	slide_default_row.add_theme_constant_override("separation", 10)
+
+	var slide_default_label := Label.new()
+	slide_default_label.text = "Slide On By Default"
+	slide_default_label.tooltip_text = "On: you slide automatically whenever you land with overspeed — the slide key STOPS the slide instead of starting it.\nOff: the slide key starts the slide (default)."
+	slide_default_label.custom_minimum_size = Vector2(200.0, 0.0)
+	slide_default_row.add_child(slide_default_label)
+
+	slide_default_check = CheckBox.new()
+	slide_default_check.button_pressed = GameSettings.slide_on_by_default
+	slide_default_check.text = "Auto-slide (key ends the slide)"
+	slide_default_check.toggled.connect(_on_slide_default_toggled)
+	slide_default_row.add_child(slide_default_check)
+
+	root.add_child(slide_default_row)
+
+	# Zero-G roll feel. The sliders display the EFFECTIVE value: the player's saved
+	# override, or the game's export defaults (PlayerMovementController) when untouched.
+	# Moving a slider stores an override; Reset to Defaults clears them so the player
+	# follows the game's tuning again. Applied live either way.
+	var roll_defaults := get_roll_defaults()
+	var start_value: float = GameSettings.roll_start_speed \
+		if GameSettings.roll_start_speed >= 0.0 else float(roll_defaults["start"])
+	var roll_start_row := make_slider_row("Roll Start Speed", 0.0, 360.0, 5.0, start_value)
 	roll_start_value_label = roll_start_row[2] as Label
-	roll_start_value_label.text = str(int(GameSettings.roll_start_speed)) + "°/s"
+	roll_start_value_label.text = str(int(start_value)) + "°/s"
 	(roll_start_row[1] as HSlider).value_changed.connect(_on_roll_start_changed)
 	root.add_child(roll_start_row[0] as Control)
 
-	var roll_max_row := make_slider_row("Roll Max Speed", 60.0, 720.0, 10.0, GameSettings.roll_max_speed)
+	var max_value: float = GameSettings.roll_max_speed \
+		if GameSettings.roll_max_speed >= 0.0 else float(roll_defaults["max"])
+	var roll_max_row := make_slider_row("Roll Max Speed", 60.0, 720.0, 10.0, max_value)
 	roll_max_value_label = roll_max_row[2] as Label
-	roll_max_value_label.text = str(int(GameSettings.roll_max_speed)) + "°/s"
+	roll_max_value_label.text = str(int(max_value)) + "°/s"
 	(roll_max_row[1] as HSlider).value_changed.connect(_on_roll_max_changed)
 	root.add_child(roll_max_row[0] as Control)
 
-	var roll_rate_row := make_slider_row("Roll Responsiveness", 60.0, 2880.0, 30.0, GameSettings.roll_speed_change_rate)
+	var rate_value: float = GameSettings.roll_speed_change_rate \
+		if GameSettings.roll_speed_change_rate >= 0.0 else float(roll_defaults["rate"])
+	var roll_rate_row := make_slider_row("Roll Responsiveness", 60.0, 2880.0, 30.0, rate_value)
 	roll_rate_value_label = roll_rate_row[2] as Label
-	roll_rate_value_label.text = str(int(GameSettings.roll_speed_change_rate)) + "°/s²"
+	roll_rate_value_label.text = str(int(rate_value)) + "°/s²"
 	(roll_rate_row[1] as HSlider).value_changed.connect(_on_roll_rate_changed)
 	root.add_child(roll_rate_row[0] as Control)
 
@@ -286,6 +314,25 @@ func _on_fullscreen_toggled(pressed: bool) -> void:
 func _on_slide_toggle_toggled(pressed: bool) -> void:
 	GameSettings.slide_toggle_mode = pressed
 	GameSettings.save()
+
+
+func _on_slide_default_toggled(pressed: bool) -> void:
+	GameSettings.slide_on_by_default = pressed
+	GameSettings.save()
+
+
+# The game's baked roll defaults, read off a throwaway controller instance so the sliders
+# can show them before any player exists (start menu). Scene overrides on the player's
+# MovementController would not be seen here — tune the defaults in the SCRIPT exports.
+static func get_roll_defaults() -> Dictionary:
+	var controller := PlayerMovementController.new()
+	var defaults := {
+		"start": controller.roll_start_speed,
+		"max": controller.roll_max_speed,
+		"rate": controller.roll_speed_change_rate,
+	}
+	controller.free()
+	return defaults
 
 
 func _on_roll_start_changed(value: float) -> void:

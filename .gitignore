@@ -14,6 +14,8 @@ raw_blend/*.import
 # Export binaries too large for GitHub (kept local; deploy via scp per DEPLOY.md)
 /EndersGameInspo.exe
 /EndersGameInspo.console.exe
+/ZeroGravArena.exe
+/ZeroGravArena.console.exe
 build/enders_server.x86_64
 build/mac/
 
