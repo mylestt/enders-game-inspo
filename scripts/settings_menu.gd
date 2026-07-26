@@ -16,6 +16,9 @@ var volume_value_label: Label
 var fullscreen_check: CheckBox
 var slide_toggle_check: CheckBox
 var slide_default_check: CheckBox
+var mouse_roll_check: CheckBox
+var mouse_roll_sens_container: Control
+var mouse_roll_sens_value_label: Label
 var roll_start_value_label: Label
 var roll_max_value_label: Label
 var roll_rate_value_label: Label
@@ -196,6 +199,35 @@ func build_game_tab() -> Control:
 	(roll_rate_row[1] as HSlider).value_changed.connect(_on_roll_rate_changed)
 	root.add_child(roll_rate_row[0] as Control)
 
+	# Mouse-roll modifier: while the Mouse Roll bind is held in zero-G, mouse X drives ROLL
+	# around the aim instead of yaw, on its own sensitivity. Slider only shows while enabled.
+	var mouse_roll_row := HBoxContainer.new()
+	mouse_roll_row.add_theme_constant_override("separation", 10)
+
+	var mouse_roll_label := Label.new()
+	mouse_roll_label.text = "Mouse Roll Modifier"
+	mouse_roll_label.tooltip_text = "Zero-G only: while the Mouse Roll key is held (rebind in Keybinds),\nmoving the mouse left/right ROLLS you around your aim instead of turning.\nA/D roll is ignored while held."
+	mouse_roll_label.custom_minimum_size = Vector2(200.0, 0.0)
+	mouse_roll_row.add_child(mouse_roll_label)
+
+	mouse_roll_check = CheckBox.new()
+	mouse_roll_check.button_pressed = GameSettings.mouse_roll_enabled
+	mouse_roll_check.text = "Enabled (hold %s)" % get_action_display("mouse_roll")
+	mouse_roll_check.toggled.connect(_on_mouse_roll_toggled)
+	mouse_roll_row.add_child(mouse_roll_check)
+
+	root.add_child(mouse_roll_row)
+
+	var mouse_roll_sens_row := make_slider_row(
+		"Mouse Roll Sensitivity", 5.0, 200.0, 1.0, GameSettings.mouse_roll_sensitivity * 10000.0
+	)
+	mouse_roll_sens_container = mouse_roll_sens_row[0] as Control
+	mouse_roll_sens_value_label = mouse_roll_sens_row[2] as Label
+	mouse_roll_sens_value_label.text = str(int(GameSettings.mouse_roll_sensitivity * 10000.0))
+	(mouse_roll_sens_row[1] as HSlider).value_changed.connect(_on_mouse_roll_sens_changed)
+	mouse_roll_sens_container.visible = GameSettings.mouse_roll_enabled
+	root.add_child(mouse_roll_sens_container)
+
 	return margin
 
 
@@ -321,6 +353,21 @@ func _on_slide_default_toggled(pressed: bool) -> void:
 	GameSettings.save()
 
 
+func _on_mouse_roll_toggled(pressed: bool) -> void:
+	GameSettings.mouse_roll_enabled = pressed
+
+	if mouse_roll_sens_container != null:
+		mouse_roll_sens_container.visible = pressed
+
+	GameSettings.save()
+
+
+func _on_mouse_roll_sens_changed(value: float) -> void:
+	GameSettings.mouse_roll_sensitivity = value / 10000.0
+	mouse_roll_sens_value_label.text = str(int(value))
+	GameSettings.save()
+
+
 # The game's baked roll defaults, read off a throwaway controller instance so the sliders
 # can show them before any player exists (start menu). Scene overrides on the player's
 # MovementController would not be seen here — tune the defaults in the SCRIPT exports.
@@ -390,6 +437,10 @@ func commit_rebind(event: InputEvent) -> void:
 	InputMap.action_add_event(listening_action, event)
 	GameSettings.save()
 	refresh_keybind_button(listening_action)
+
+	if listening_action == "mouse_roll" and mouse_roll_check != null:
+		mouse_roll_check.text = "Enabled (hold %s)" % get_action_display("mouse_roll")
+
 	listening_action = ""
 	listening_button = null
 

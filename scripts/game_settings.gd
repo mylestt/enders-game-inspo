@@ -16,6 +16,8 @@ const DEFAULT_VOLUME := 1.0
 const DEFAULT_FULLSCREEN := false
 const DEFAULT_SLIDE_TOGGLE := false
 const DEFAULT_SLIDE_ON_BY_DEFAULT := false
+const DEFAULT_MOUSE_ROLL_ENABLED := false
+const DEFAULT_MOUSE_ROLL_SENSITIVITY := 0.0025
 # Sentinel for the roll settings: below zero = "player never touched this slider" — the
 # game's export defaults on PlayerMovementController apply (so re-tuning those defaults
 # reaches every player who hasn't customized).
@@ -32,6 +34,11 @@ static var slide_toggle_mode: bool = DEFAULT_SLIDE_TOGGLE
 # overspeed, and the slide key ENDS the slide instead of starting it (hold mode: holding
 # interrupts; toggle mode: press to stop, press to resume).
 static var slide_on_by_default: bool = DEFAULT_SLIDE_ON_BY_DEFAULT
+# Mouse-roll modifier (zero-G only): while the `mouse_roll` action is held, mouse X drives
+# ROLL around the aim axis instead of yaw (A/D roll is ignored meanwhile), on its own
+# sensitivity — fast precise banking. The bind lives in the InputMap like any action.
+static var mouse_roll_enabled: bool = DEFAULT_MOUSE_ROLL_ENABLED
+static var mouse_roll_sensitivity: float = DEFAULT_MOUSE_ROLL_SENSITIVITY
 # Zero-G roll feel — PER-PLAYER OVERRIDES of the movement controller's export defaults
 # (ROLL_UNSET = follow the game). Read live via the coordinator's get_roll_*() getters.
 # start/max in deg/s; the change rate (deg/s^2) governs the ramp up, the stop on release,
@@ -63,6 +70,11 @@ static func load_and_apply() -> void:
 		fullscreen = bool(config.get_value("video", "fullscreen", DEFAULT_FULLSCREEN))
 		slide_toggle_mode = bool(config.get_value("gameplay", "slide_toggle_mode", DEFAULT_SLIDE_TOGGLE))
 		slide_on_by_default = bool(config.get_value("gameplay", "slide_on_by_default", DEFAULT_SLIDE_ON_BY_DEFAULT))
+		mouse_roll_enabled = bool(config.get_value("gameplay", "mouse_roll_enabled", DEFAULT_MOUSE_ROLL_ENABLED))
+		mouse_roll_sensitivity = clampf(
+			float(config.get_value("gameplay", "mouse_roll_sensitivity", DEFAULT_MOUSE_ROLL_SENSITIVITY)),
+			0.0005, 0.02
+		)
 		roll_start_speed = _load_roll_override(config, "roll_start_speed", 0.0, 720.0)
 		roll_max_speed = _load_roll_override(config, "roll_max_speed", 30.0, 1080.0)
 		roll_speed_change_rate = _load_roll_override(config, "roll_speed_change_rate", 60.0, 2880.0)
@@ -80,6 +92,8 @@ static func save() -> void:
 	config.set_value("gameplay", "mouse_sensitivity", mouse_sensitivity)
 	config.set_value("gameplay", "slide_toggle_mode", slide_toggle_mode)
 	config.set_value("gameplay", "slide_on_by_default", slide_on_by_default)
+	config.set_value("gameplay", "mouse_roll_enabled", mouse_roll_enabled)
+	config.set_value("gameplay", "mouse_roll_sensitivity", mouse_roll_sensitivity)
 	config.set_value("gameplay", "roll_start_speed", roll_start_speed)
 	config.set_value("gameplay", "roll_max_speed", roll_max_speed)
 	config.set_value("gameplay", "roll_speed_change_rate", roll_speed_change_rate)
@@ -168,6 +182,8 @@ static func reset_to_defaults() -> void:
 	fullscreen = DEFAULT_FULLSCREEN
 	slide_toggle_mode = DEFAULT_SLIDE_TOGGLE
 	slide_on_by_default = DEFAULT_SLIDE_ON_BY_DEFAULT
+	mouse_roll_enabled = DEFAULT_MOUSE_ROLL_ENABLED
+	mouse_roll_sensitivity = DEFAULT_MOUSE_ROLL_SENSITIVITY
 	roll_start_speed = ROLL_UNSET
 	roll_max_speed = ROLL_UNSET
 	roll_speed_change_rate = ROLL_UNSET

@@ -465,8 +465,17 @@ func handle_body_mouse_rotation() -> void:
 
 	# Yaw around the body's OWN up axis, so a left flick always turns the view left no matter how
 	# the body is oriented. (Yawing around a fixed world-up inverts left/right when upside down.)
+	# While the mouse-roll modifier is held, mouse X drives ROLL around the aim axis instead —
+	# direct rotation on its own sensitivity, so a flick is a fast precise bank. Mouse right
+	# rolls right (matches D); mouse Y still pitches as normal.
 	if mouse_motion.x != 0.0:
-		basis = basis.rotated(basis.y, -mouse_motion.x * sens).orthonormalized()
+		if is_mouse_roll_modifier_active():
+			basis = basis.rotated(
+				get_screen_roll_axis(),
+				-mouse_motion.x * get_mouse_roll_sensitivity()
+			).orthonormalized()
+		else:
+			basis = basis.rotated(basis.y, -mouse_motion.x * sens).orthonormalized()
 
 	# Pitch first articulates the neck (camera) up to a limit; the overflow past it tumbles the
 	# whole body around its right axis — a free 0g flip — so up/down never hits a hard stop.
@@ -571,9 +580,7 @@ func update_recoil(delta: float) -> void:
 	if recoil_pending.length_squared() < 0.00000001:
 		recoil_pending = Vector2.ZERO
 
-	# Base the recoil around the APPLIED pitch while walking (aim + gimbal stabilizer) so the
-	# stabilized view holds under fire too; the permanent climb above still writes the pure aim.
-	var base: float = ground.get_surface_walk_applied_pitch() if walking else look_pitch
+	var base: float = ground.surface_walk_pitch if walking else look_pitch
 	recoil_offset.x = clampf(recoil_offset.x, -limit - base, limit - base)
 
 	var recover_rate := recoil_recovery_speed
@@ -887,17 +894,36 @@ func get_roll_speed_change_rate() -> float:
 	return GameSettings.roll_speed_change_rate if GameSettings.roll_speed_change_rate >= 0.0 else roll_speed_change_rate
 
 
+# Mouse-roll modifier: zero-G only, opt-in via settings, active while the bind is held.
+func is_mouse_roll_modifier_active() -> bool:
+	return (
+		GameSettings.mouse_roll_enabled
+		and movement_mode == MovementMode.ZERO_G
+		and is_action_pressed_if_exists("mouse_roll")
+	)
+
+
+func get_mouse_roll_sensitivity() -> float:
+	if GameSettings.mouse_roll_sensitivity > 0.0:
+		return GameSettings.mouse_roll_sensitivity
+
+	return get_mouse_sensitivity()
+
+
 # Velocity-driven roll: the speed along the roll axis is steered directly (no torque, no
 # inertia float). Press = instant start speed in that direction (any opposing spin dies on
 # the spot), hold = ramp to max, release = bleed to zero, all at the one change rate.
 func handle_roll_input(delta: float) -> void:
 	var roll_input := 0.0
 
-	if is_action_pressed_if_exists("roll_left"):
-		roll_input += 1.0
+	# While the mouse-roll modifier is held the mouse owns roll: A/D are treated as released,
+	# so any key-driven spin bleeds off at the normal stop rate.
+	if not is_mouse_roll_modifier_active():
+		if is_action_pressed_if_exists("roll_left"):
+			roll_input += 1.0
 
-	if is_action_pressed_if_exists("roll_right"):
-		roll_input -= 1.0
+		if is_action_pressed_if_exists("roll_right"):
+			roll_input -= 1.0
 
 	var roll_axis := get_screen_roll_axis()
 	var current_speed := player.angular_velocity.dot(roll_axis)

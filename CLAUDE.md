@@ -39,7 +39,7 @@ lobbies, deployed to a DigitalOcean VPS at **147.182.160.52:7000**.
 - Client-supplied floats/vectors must pass `is_valid_vector`/`is_finite`; transforms must
   also pass `is_valid_transform` (orthonormal-basis determinant check) — replicas
   additionally orthonormalize the basis on receipt.
-- **Tests:** `godot --headless --path . -s tools/tests/run_smoke_tests.gd` (173 checks:
+- **Tests:** `godot --headless --path . -s tools/tests/run_smoke_tests.gd` (195 checks:
   scene instantiation, RPC-surface fingerprint, economy claim validation, lobby sanitation,
   net-state hygiene, surface-walk wall slide, grapple multi-wrap, cylindrical-force-field
   profile/gizmo, spinning-skybox spin math, map-creator document/bevel/importer/builder
@@ -203,14 +203,11 @@ lobbies, deployed to a DigitalOcean VPS at **147.182.160.52:7000**.
   just stop you. If ground is somehow lost anyway (shoved off / clipped past a lip) the body
   holds (`surface_walk_ground_lost`: drift arrested, snap tows you back) rather than floating
   off. Camera rolls with the body on an eased tween
-  (`surface_walk_align_*`), never a snap. Camera PITCH is gimbal-stabilized: the body's
-  alignment nod (forward tilting fore/aft as it banks onto seams/curves) is measured and
-  cancelled on the camera so only the mouse (+recoil) pitch the view — a per-frame offset
-  (`surface_walk_pitch_stabilize`) added to the aim on the camera write only, washed toward 0 at
-  `surface_walk_pitch_stabilize_recenter` (LOWER = more locked, HIGHER = follows the surface
-  sooner, 0 = off) so deliberate wall/ceiling transitions still settle the view onto the new
-  surface (never left looking the wrong way; offset clamped so aim+offset stays within the pitch
-  limit). Jump-off keeps the tangential run (×`DETACH_MOMENTUM_CARRY`, 1.35). Mounting is
+  (`surface_walk_align_*`), never a snap. Camera PITCH is rigidly body-relative (helmet cam):
+  `surface_walk_pitch` is the mouse (+recoil) aim written straight to the Camera3D, so the
+  body's alignment nod moves the view with it. (The old gimbal stabilizer —
+  `surface_walk_pitch_stabilize` cancelling the nod — was REMOVED as broken; git history has
+  it if a rebuild is ever wanted.) Jump-off keeps the tangential run (×`DETACH_MOMENTUM_CARRY`, 1.35). Mounting is
   FULLY AUTOMATIC (no engage key): floating with your feet pointed at a surface within
   `AUTO_GROUND_LOCK_DISTANCE` (2 m) locks on, gated by
   `surface_walk_entry_max_angle_degrees` (15° — the normal must be near the body's up).
@@ -257,7 +254,11 @@ lobbies, deployed to a DigitalOcean VPS at **147.182.160.52:7000**.
 - **Settings:** `game_settings.gd` + `settings_menu.gd` (keybinds, FOV, sensitivity,
   volume, fullscreen, slide hold/toggle, zero-G roll feel [start/max/change-rate sliders =
   PER-PLAYER overrides, unset (-1) follows the export defaults on PlayerMovementController
-  — tune game-wide feel in the SCRIPT exports, read live] → `user://settings.cfg`).
+  — tune game-wide feel in the SCRIPT exports, read live], mouse-roll modifier [opt-in
+  toggle + own sens slider (shown only while on): HOLD the `mouse_roll` bind (default V)
+  in zero-G and mouse X drives ROLL around the aim axis instead of yaw — direct rotation
+  for fast precise banks, A/D roll ignored while held; mouse Y still pitches; inert in
+  ground mode] → `user://settings.cfg`).
 
 ## State notes / TODO
 - **Zero-G wall push DISABLED** (space push off geometry + limb pushes):

@@ -59,17 +59,6 @@ enum GroundState { GROUNDED, AIRBORNE }
 # walking. 1.02 = capsule rest + 2 cm skin, so the snap owns the height cleanly.
 @export var surface_walk_body_offset: float = 1.02
 @export var surface_walk_pitch_limit_degrees: float = 90.0   # hard look clamp (full up/down)
-# View-pitch gimbal wash-out rate: how fast a held camera offset settles onto the surface
-# after the body reorients. 0 = NEVER (absolute hold — the view stays where you put it
-# until the mouse moves it); higher = the view follows big transitions sooner. The gimbal
-# itself is switched by pitch_gimbal_strength below.
-@export var surface_walk_pitch_stabilize_recenter: float = 0.5
-# How much of the body's alignment nod the gimbal cancels each frame: 1 = camera pitch
-# fully decoupled from the body (your view holds where you put it until the MOUSE moves
-# it), 0 = camera rigidly bolted to the body like a helmet cam. Pairs with the recenter
-# rate above. (There is deliberately NO look-angle release — that false-fired on downhill
-# faces; leaving ground mode by looking is not a thing.)
-@export_range(0.0, 1.0) var pitch_gimbal_strength := 1.0
 # Entering ground mode auto-releases an attached grapple wire.
 @export var release_grapple_on_entry := true
 # ENTRY gate for both C-lock and auto-lock: a surface only locks if its normal is within
@@ -143,9 +132,6 @@ var surface_walk_anchor_point: Vector3 = Vector3.ZERO
 # along the smoothed body normal launches the body when a seam swaps the anchor.
 var surface_walk_anchor_normal: Vector3 = Vector3.UP
 var surface_walk_pitch: float = 0.0
-# Camera-pitch offset cancelling the body's alignment nod (the gimbal); applied on camera
-# writes only, washed toward 0 each frame.
-var surface_walk_pitch_stabilize: float = 0.0
 var surface_walk_smoothed_target: Vector3 = Vector3.UP
 var surface_walk_anchor_foreign_time: float = 0.0
 var surface_walk_align_rate: float = 0.0
@@ -203,7 +189,7 @@ func physics_update_ground(delta: float) -> void:
 		update_surface_walk_transition(delta)
 		return
 
-	update_surface_walk_mouse_look(delta)
+	update_surface_walk_mouse_look()
 	update_slide_state()
 
 	# Space RELEASED: fire the charged launch (grounded) or let go passively (mid-fall —
@@ -551,7 +537,6 @@ func enter_surface_walk_mode(hit_position: Vector3, surface_normal: Vector3, ins
 	var seed_pitch := asin(clampf(entry_view_dir.dot(surface_walk_normal), -1.0, 1.0))
 	var seed_cap := deg_to_rad(surface_walk_pitch_limit_degrees - 2.0)
 	surface_walk_pitch = clampf(seed_pitch, -seed_cap, seed_cap)
-	surface_walk_pitch_stabilize = 0.0
 	coordinator.reset_recoil()
 
 	var target_position := hit_position + surface_walk_normal * surface_walk_body_offset
@@ -568,7 +553,7 @@ func enter_surface_walk_mode(hit_position: Vector3, surface_normal: Vector3, ins
 	player.sleeping = false
 
 	if camera != null:
-		camera.rotation = Vector3(get_surface_walk_applied_pitch(), 0.0, 0.0)
+		camera.rotation = Vector3(surface_walk_pitch, 0.0, 0.0)
 
 	log_movement_event("ENTER mode  instant=%s  normal=%s  carry=%s" % [
 		instant, _fmt_v(surface_walk_normal), _fmt_v(surface_walk_entry_carry)])
@@ -594,7 +579,6 @@ func exit_surface_walk_mode() -> void:
 	surface_walk_transition_active = false
 	surface_walk_shake_timer = 0.0
 	surface_walk_align_rate = 0.0
-	surface_walk_pitch_stabilize = 0.0
 	ground_state = GroundState.GROUNDED
 
 	coordinator.fold_view_into_body()
@@ -696,7 +680,7 @@ func update_surface_walk_entry_shake(delta: float) -> void:
 # ---------------------------------------------------------------- look
 
 
-func update_surface_walk_mouse_look(delta: float) -> void:
+func update_surface_walk_mouse_look() -> void:
 	var sens: float = coordinator.get_mouse_sensitivity()
 	var yaw_delta: float = -coordinator.mouse_motion.x * sens
 	var pitch_delta: float = -coordinator.mouse_motion.y * sens
@@ -709,29 +693,8 @@ func update_surface_walk_mouse_look(delta: float) -> void:
 	var pitch_limit := deg_to_rad(surface_walk_pitch_limit_degrees)
 	surface_walk_pitch = clampf(surface_walk_pitch, -pitch_limit, pitch_limit)
 
-	# Wash the gimbal offset toward 0 (sustained reorientation still settles the view) and
-	# clamp so aim + offset never exceed the pitch limit.
-	if pitch_gimbal_strength <= 0.0:
-		surface_walk_pitch_stabilize = 0.0
-	else:
-		# recenter = 0 means the held offset NEVER washes out (absolute hold); higher
-		# values settle the view onto NEW surfaces after big deliberate transitions.
-		if surface_walk_pitch_stabilize_recenter > 0.0:
-			surface_walk_pitch_stabilize *= exp(-surface_walk_pitch_stabilize_recenter * delta)
-
-		surface_walk_pitch_stabilize = clampf(
-			surface_walk_pitch_stabilize,
-			-pitch_limit - surface_walk_pitch,
-			pitch_limit - surface_walk_pitch
-		)
-
 	if camera != null:
-		camera.rotation = Vector3(get_surface_walk_applied_pitch(), 0.0, 0.0)
-
-
-func get_surface_walk_applied_pitch() -> float:
-	var pitch_limit := deg_to_rad(surface_walk_pitch_limit_degrees)
-	return clampf(surface_walk_pitch + surface_walk_pitch_stabilize, -pitch_limit, pitch_limit)
+		camera.rotation = Vector3(surface_walk_pitch, 0.0, 0.0)
 
 
 func update_surface_walk_orientation() -> void:
@@ -772,9 +735,6 @@ func align_surface_walk_normal_toward(target_normal: Vector3, delta: float) -> v
 	var step_angle := minf(desired_step, surface_walk_align_rate * delta)
 	var t := clampf(step_angle / full_angle, 0.0, 1.0)
 
-	var old_forward := surface_walk_forward
-	var old_up := surface_walk_normal
-
 	var new_normal := surface_walk_normal.slerp(target_normal, t).normalized()
 	surface_walk_forward = Quaternion(surface_walk_normal, new_normal) * surface_walk_forward
 	surface_walk_normal = new_normal
@@ -785,9 +745,6 @@ func align_surface_walk_normal_toward(target_normal: Vector3, delta: float) -> v
 		projected_forward = get_fallback_surface_forward(surface_walk_normal)
 
 	surface_walk_forward = projected_forward.normalized()
-
-	if pitch_gimbal_strength > 0.0:
-		surface_walk_pitch_stabilize -= (surface_walk_forward - old_forward).dot(old_up) * pitch_gimbal_strength
 
 
 # ---------------------------------------------------------------- sensor (unchanged)

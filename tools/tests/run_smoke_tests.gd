@@ -39,7 +39,6 @@ func _run_all() -> void:
 	test_lobby_settings_sanitation()
 	test_network_state_hygiene()
 	test_surface_walk_wall_slide()
-	test_surface_walk_pitch_gimbal()
 	test_charge_weapon_scaling()
 	await test_grapple_multiwrap()
 	await test_cylindrical_force_field()
@@ -382,54 +381,6 @@ func test_surface_walk_wall_slide() -> void:
 	# Parallel to the wall (pure +Z): untouched.
 	var parallel := mc.strip_into_wall_component(Vector3(0, 0, 4), wall_tangent)
 	check(parallel.is_equal_approx(Vector3(0, 0, 4)), "parallel motion is unaffected")
-
-
-# --- Surface-walk pitch gimbal ----------------------------------------------------------
-# When the walked-surface normal tilts fore/aft, the body noses up/down; the stabilizer stores
-# a camera-pitch offset that CANCELS that nod (so only the mouse pitches the view). Assert the
-# offset takes the opposing sign, that recenter <= 0 disables it, and that the applied pitch is
-# clamped to the pitch limit. Uses a bare controller instance — align_surface_walk_normal_toward
-# only touches member vectors/floats (no player/camera needed).
-
-func test_surface_walk_pitch_gimbal() -> void:
-	print("- movement: surface-walk pitch gimbal")
-
-	var mc := GroundMovementController.new()
-	mc.surface_walk_forward = Vector3(0, 0, -1)
-	mc.surface_walk_align_rate = 1000.0   # keep the step off the rate limiter so a nod accrues
-
-	# Normal tilted +10 deg about +X (body right) noses the forward UP -> offset must go negative.
-	mc.surface_walk_normal = Vector3.UP
-	mc.surface_walk_pitch_stabilize = 0.0
-	mc.align_surface_walk_normal_toward(Vector3.UP.rotated(Vector3.RIGHT, deg_to_rad(10.0)), 0.1)
-	check(mc.surface_walk_pitch_stabilize < -0.0001, "nose-up nod is cancelled by a negative pitch offset")
-
-	# Opposite tilt noses the forward DOWN -> offset must go positive.
-	mc.surface_walk_normal = Vector3.UP
-	mc.surface_walk_forward = Vector3(0, 0, -1)
-	mc.surface_walk_align_rate = 1000.0
-	mc.surface_walk_pitch_stabilize = 0.0
-	mc.align_surface_walk_normal_toward(Vector3.UP.rotated(Vector3.RIGHT, deg_to_rad(-10.0)), 0.1)
-	check(mc.surface_walk_pitch_stabilize > 0.0001, "nose-down nod is cancelled by a positive pitch offset")
-
-	# pitch_gimbal_strength = 0 disables the stabilizer: no offset accrues from alignment.
-	# (recenter = 0 means "never wash out" — an absolute hold — not "off".)
-	mc.surface_walk_normal = Vector3.UP
-	mc.surface_walk_forward = Vector3(0, 0, -1)
-	mc.surface_walk_align_rate = 1000.0
-	mc.surface_walk_pitch_stabilize = 0.0
-	mc.pitch_gimbal_strength = 0.0
-	mc.align_surface_walk_normal_toward(Vector3.UP.rotated(Vector3.RIGHT, deg_to_rad(10.0)), 0.1)
-	check(is_equal_approx(mc.surface_walk_pitch_stabilize, 0.0), "gimbal strength 0 disables the stabilizer")
-
-	# Applied pitch (aim + offset) is clamped to the pitch limit so it can't invert the view.
-	mc.surface_walk_pitch = 0.0
-	mc.surface_walk_pitch_stabilize = deg_to_rad(200.0)
-	var applied := mc.get_surface_walk_applied_pitch()
-	check(is_equal_approx(applied, deg_to_rad(mc.surface_walk_pitch_limit_degrees)),
-		"applied pitch clamps to the pitch limit")
-
-	mc.free()
 
 
 # --- Charge railgun scaling -------------------------------------------------------------
