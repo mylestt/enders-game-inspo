@@ -2,18 +2,25 @@
 
 [ext_resource type="Script" uid="uid://dri7xm7iaiedc" path="res://Resources/Scripts/Weapons/flak_shotgun_weapon.gd" id="1_flak_gun"]
 [ext_resource type="PackedScene" uid="uid://efthum54ogvt" path="res://Resources/Objects/Weapons/flak_projectile.tscn" id="2_flak_pellet"]
-[ext_resource type="PackedScene" path="res://Resources/Objects/Weapons/flak_mini_projectile.tscn" id="3_frag_pellet"]
+[ext_resource type="PackedScene" uid="uid://bv7sy3gyfuoge" path="res://Resources/Objects/Weapons/flak_mini_projectile.tscn" id="3_frag_pellet"]
 [ext_resource type="PackedScene" uid="uid://4fhix7rtub1r" path="res://Resources/Models/flak.glb" id="4_6gfla"]
 
 [node name="FlakShotgun" type="Node3D" unique_id=731956520]
 script = ExtResource("1_flak_gun")
 flak_projectile_scene = ExtResource("2_flak_pellet")
+flak_pellet_speed = 70.5
+flak_base_damage = 10.0
 flak_ricochet_damage_multiplier = 2.0
 flak_ricochet_speed_multiplier = 2.0
+flak_max_speed = 300.0
 flak_max_multiplying_ricochets = 20
 flak_lifetime = 3.0
 frag_projectile_scene = ExtResource("3_frag_pellet")
+frag_pellet_speed = 70.5
 hitscan_spread_degrees = Vector2(4.5, 3.5)
+mag_size = 16
+starting_reserve = 200
+reload_time = 1.0
 
 [node name="Muzzle" type="Marker3D" parent="." unique_id=307815742]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.27130914)

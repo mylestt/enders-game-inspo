@@ -4,6 +4,5 @@
 
 [node name="FlakProjectile" type="Node3D" unique_id=1160662584]
 script = ExtResource("1_aiqvn")
-trail_amount = 128
-trail_lifetime = 1.92
+pellet_radius = 0.09999999999999999
 trail_width = 0.12
