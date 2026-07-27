@@ -1,315 +1,158 @@
-# Project Overview: Zero-G Tactical FPS
+# Project Overview: Zero-G Arena Movement Shooter
 
-This project is a Godot prototype for a zero-gravity, six-degrees-of-freedom tactical FPS. The intended long-term game is a 5v5 competitive shooter built around defusal-style round structure, single elimination pressure, team coordination, precise shooting, body control, and zero-gravity movement.
+**July 2026 pivot.** This document is the design vision — the game this project is heading
+toward. It is NOT a description of what is implemented today: `CLAUDE.md` is the
+current-state handoff and `ARCHITECTURE.md` the technical map. The previous vision (a 5v5
+defusal-style tactical FPS with gate scoring and robot limb damage) is dropped — see
+"Dropped From the Old Vision" below; git history has the old document.
 
-The current prototype focus is not the full defusal mode. The main mode to prototype first is a single-elimination team deathmatch variant that uses the same core movement, combat, scoring, and teamplay ideas. This mode is meant to prove the main feel of the game before the larger defusal rules are built out.
+The game is a **zero-gravity arena movement shooter** in the lineage of Quake, Unreal
+Tournament, and Halo: fast momentum-driven movement through full-6DOF arenas, weapons that
+spawn around the map and get fought over, and classic arena game modes (TDM, CTF, Gun
+Game, and other staples).
 
-The original concept in the design document described a zero-gravity battle room where two teams score by disabling the enemy team and/or entering the enemy gate. That concept has changed into a broader 5v5 defusal and single-elimination FPS, but the core identity remains the same: zero gravity, full 6DOF control, tactical teamwork, robot limb damage, momentum management, and objective pressure.
+**Status boundary that matters:** none of the arena-direction maps are designed yet and
+the weapon roster isn't finished. Until they are, the currently implemented modes (team
+elimination with the buy menu, FFA deathmatch) stay exactly as they are. Nothing in this
+document is an instruction to change or remove existing modes or systems today — it
+describes where the game goes once its pieces exist.
 
 ## High-Level Identity
 
-The game is a tactical arena FPS in zero gravity.
-
-Players do not simply run, jump, and strafe like a traditional shooter. They move through the arena by controlling momentum, orientation, body posture, pushes, impacts, and positioning. Because there is no gravity, there is no fixed up or down. A player can be sideways, upside down, spinning, drifting, bracing against a wall, or lining up a shot while moving through open space.
-
-The central challenge is not only shooting accurately. Players must also understand where their body is, where their momentum is carrying them, which way they are oriented, which limbs are still usable, where their teammates are, and whether the team should fight, survive, reposition, or push the objective.
-
-The game should feel tactical and deliberate, even though the movement can be physically dynamic. Every push, rotation, missed surface, destroyed limb, or gate attempt can matter.
-
-## Intended Main Game Direction
-
-The intended full game direction is a 5v5 FPS with:
-
-- Defusal-style team structure.
-- Single-elimination round pressure.
-- Zero-gravity movement.
-- Six degrees of freedom.
-- Robot limb destruction instead of a normal health-bar-only model.
-- Team objectives that require coordination.
-- A main prototype mode based on single-elimination team deathmatch.
-
-The full defusal mode is part of the game direction, but it is not the current priority. The current priority is to prototype the single-elimination TDM-style mode because it exercises the most important core systems: movement, shooting, robot limb damage, scoring, team coordination, and objective movement through the arena.
-
-## Current Prototype Mode: Single-Elimination TDM With Gate Scoring
-
-The mode currently being designed for prototyping is a 5v5 single-elimination team mode.
-
-Each round is a tactical 5v5 fight. Players are expected to have one life or otherwise be removed from meaningful round participation once eliminated or fully disabled. The team must balance direct combat against objective movement.
-
-There are two main scoring methods:
-
-- Killing, eliminating, or fully neutralizing the enemy team is worth 2 points.
-- Going through the enemy gate is worth 3 points.
-
-The gate objective requires teamwork. A single player cannot complete it alone. The current requirement discussed is that one player must go through the enemy gate while another teammate holds it open. This makes the gate objective require at least two players acting together.
-
-The original design document described the gate condition as at least two active, non-disabled players passing through the enemy gate. The updated direction discussed here changes the emphasis slightly: one player goes through, and another player holds the gate open. Both versions point toward the same design goal: gate scoring should require coordinated team action, not a solo rush.
-
-The win condition is not fully decided yet. Two possible directions are currently open:
-
-- First team to reach a target number of points wins.
-- After a set number of rounds, the team with the most points wins.
-
-No final point target, round count, or match length has been locked in yet.
-
-## Teams
-
-Matches are designed around two teams of five players.
-
-- Team A has 5 players.
-- Team B has 5 players.
-
-All players begin each round inside or near their team's starting zone.
-
-The game is meant to support team tactics rather than only individual duels. Players should need to think about where teammates are, how many teammates remain active, who can help with the gate, who can still move effectively, and whether the team has enough functional players to complete the objective.
-
-## Round Structure
-
-Each round is a tactical 5v5 battle.
-
-The round can reward a team for:
-
-- Eliminating or fully neutralizing the enemy team.
-- Completing the enemy gate objective.
-- Potentially accomplishing both in the same round.
-
-In the original design document, both objectives could be completed in the same round. That allowed a maximum of 5 points in one round:
-
-- 2 points for eliminating or fully neutralizing all enemies.
-- 3 points for entering the enemy gate.
-- 5 total points if both objectives are completed.
-
-That scoring structure is still useful as a reference for the prototype unless changed later. The current discussion keeps the same point values: 2 points for killing, eliminating, or fully neutralizing the enemy team and 3 points for going through the enemy gate.
-
-## Movement Model
-
-The arena is in zero gravity.
-
-Players do not move through traditional walking, running, or jumping as the primary movement model. Instead, movement is based on pushing off and interacting with physical surfaces and objects.
-
-Players can push off:
-
-- Walls.
-- Floors.
-- Ceilings.
-- Obstacles.
-- Other players.
-- Arena structures.
-
-Once a player pushes off, they continue moving in that direction until another force changes their momentum. This means players retain momentum and can drift through open space. If a player moves away from usable surfaces or teammates, they may become vulnerable or unable to easily redirect themselves.
-
-Movement should reward planning. A player who uses a wall, obstacle, or teammate well can create a strong angle or reach the gate. A player who misjudges a push can drift into danger, lose access to surfaces, or become easy to shoot.
-
-## Six Degrees Of Freedom
-
-The game uses six degrees of freedom.
-
-Players can move and rotate freely in three-dimensional space. There is no true up, down, floor, or ceiling once a player is in motion. Orientation is a core part of play.
-
-Players must manage:
-
-- Position: where they are in the arena.
-- Orientation: which direction their body is facing.
-- Momentum: where their body is moving.
-- Rotation: whether they are stable, turning, or spinning.
-- Body exposure: which limbs and body sections are visible to enemies.
-- Readiness: whether they are positioned to shoot, brace, push, enter the gate, or help a teammate.
-
-Good players should be able to use rotation and posture to aim, protect limbs, reduce their target profile, prepare for impacts, and line up pushes.
-
-## Body Position And Posture
-
-The original concept includes body position hotkeys. These allow players to quickly change posture in zero gravity.
-
-Possible body positions include:
-
-- Fetal position.
-- Full upright position.
-- Arms tucked.
-- Legs tucked.
-- Defensive curl.
-- Wide stance.
-- Gate-entry pose.
-- Wall-brace pose.
-
-The fetal position makes the player more compact. This can make the player a smaller target, but may limit visibility, aiming angles, or readiness.
-
-The full upright position extends the body in the direction the player is currently oriented. This may help with aiming, pushing off surfaces, or passing through gates, but it also makes the player a larger target.
-
-Other body positions may affect hitbox shape, movement control, combat options, gate entry, or bracing against surfaces. These posture ideas are part of the original design direction, but the exact implementation details are not final.
-
-## Combat Model
-
-The intended combat model centers on accurate shooting and destroying or removing robot body parts.
-
-The original design document gave each player one weapon:
-
-- Laser gun.
-
-That is no longer the intended final direction. The laser prototype has been removed from the active code path; the intended direction is normal FPS weapons supported by a buy menu and an expandable weapon inventory.
-
-Players are robots rather than people in suits. When limbs are hit, they should be damaged, destroyed, or shot off rather than merely disabled as suit sections.
-
-The key combat idea is that players do not simply lose abstract health. Instead, their ability to participate is reduced based on what gets hit or removed. A player can lose movement options, aiming ability, bracing ability, gate ability, or full participation depending on the damaged body section.
-
-This makes aiming at specific body parts tactically meaningful.
-
-## Robot Limb Damage System
-
-Every player is a robot with body sections and limbs that can be damaged or shot off.
-
-When a robot body part is hit by weapon fire, that part may become damaged, destroyed, or physically removed depending on the final weapon and damage rules.
-
-Destroyed or missing limbs cannot be used for:
-
-- Pushing off walls.
-- Stabilizing movement.
-- Changing direction.
-- Aiming, if the missing or destroyed limb is needed for weapon control.
-- Certain body positions.
-
-Examples adapted from the original concept:
-
-- If a player's right robot arm is shot off or destroyed, that arm can no longer be used.
-- If a player's left robot leg is shot off or destroyed, that leg can no longer be used.
-- If both legs are destroyed, the player may still be able to use active arms.
-
-This system is important because movement and combat are deeply connected. Losing a limb is not only a damage state; it changes what the player can physically do in the arena.
-
-## Critical Hit Zones
-
-The original design includes stronger effects for certain hit zones. These should be adapted to the robot-body direction rather than treated as suit damage.
-
-Head hit:
-
-- Immediately disables the player.
-- Counts as an elimination for the round.
-
-Chest hit:
-
-- Immediately disables, destroys, or otherwise removes use of the player's legs.
-- Does not remove use of the arms.
-- Leaves the player able to aim, shoot, push off with arms, or assist teammates if their arms are still functional.
-
-These rules make different shots valuable in different ways. A head hit removes a player immediately. A chest hit can severely limit movement while still leaving the target partly active.
-
-## Elimination And Full Neutralization
-
-A player is considered eliminated, destroyed, or fully neutralized if they can no longer meaningfully participate in the round.
-
-A player can be eliminated if:
-
-- They are hit in the head.
-- Their robot body is fully disabled, destroyed, or otherwise unable to keep participating.
-- They lose enough function that the rules define them as inactive.
-
-An eliminated, destroyed, or fully neutralized player cannot score, assist in gate capture, or continue fighting.
-
-This matters especially because the gate objective requires active teammates. Destroying or removing key robot limbs can be just as strategically important as killing an enemy outright if it prevents them from fighting, moving, holding the gate, or entering the gate.
-
-## Gate Objective
-
-Each team has a gate associated with its side of the arena. The enemy gate is the objective.
-
-The gate objective is worth 3 points.
-
-The current discussed prototype requirement is:
-
-- One active player must go through the enemy gate.
-- Another active teammate must hold the gate open.
-- This requires at least two players coordinating.
-
-The original design document requirement was:
-
-- At least two active, non-disabled players from the same team must pass through the enemy gate.
-- Disabled or eliminated players do not count.
-- A single player entering the gate does not score.
-
-Both forms should be understood as expressing the same current design priority: the gate is a coordinated objective that cannot be completed by one player alone. Future implementation should clarify whether the exact rule is "two players pass through" or "one player passes while another holds the gate open."
-
-## Scoring
-
-The currently discussed scoring values are:
-
-| Objective | Points |
-| --- | ---: |
-| Kill, eliminate, or fully neutralize the enemy team | 2 |
-| Complete the enemy gate objective | 3 |
-
-The original design allows both objectives to be scored in the same round, for a maximum of 5 points in a round.
-
-The match win condition is undecided:
-
-- It may be first to a target number of points.
-- It may be most points after a fixed number of rounds.
-
-Until the win condition is finalized, AI agents working on the project should treat the point values as known and the match ending rule as unresolved.
-
-## Strategy And Player Decision-Making
-
-The game rewards both combat skill and movement skill.
-
-Players must think about:
-
-- Which limbs to protect.
-- Which enemies or robot limbs to disable, destroy, or remove first.
-- Whether to fight or rush the gate.
-- How to use walls and obstacles for movement.
-- How to rotate while drifting.
-- How to avoid becoming stranded in open space.
-- How to help teammates move or recover.
-- When to sacrifice positioning for a shot.
-- When to destroy key limbs instead of fully eliminating enemies.
-- Whether enough active teammates remain to attempt the gate.
-- Whether an enemy is still dangerous even after losing some limb function.
-
-Because players cannot freely move in open air, positioning is extremely important. A player drifting away from surfaces or teammates may become vulnerable. A player with missing or destroyed limbs may still be dangerous if they can aim or help with the objective.
-
-The gate creates an important tactical split: teams can win value through fighting, but the higher-value objective requires coordinated movement and survival.
-
-## Prototype Priorities
-
-The current prototype should focus on proving the systems needed for the single-elimination TDM/gate mode.
-
-The most important systems are:
-
-- 5v5 team structure.
-- Zero-gravity movement.
-- Six-degrees-of-freedom body control.
-- Shooting.
-- Robot limb damage, destruction, and removal.
-- Elimination, destruction, and full-neutralization rules.
-- Gate objective behavior.
-- Round scoring.
-- A match win condition once the point or round target is chosen.
-
-The defusal-style mode is part of the larger direction, but the prototype mode should come first because it tests the core game identity without requiring every defusal-specific rule to exist yet.
-
-## Known Unresolved Design Questions
-
-The following items are intentionally unresolved based on the current description:
-
-- Whether matches end by first team to a point target or by highest score after a set number of rounds.
-- The exact target score if using first-to-points.
-- The exact number of rounds if using fixed-round scoring.
-- Whether both objectives can always be scored in one round in the updated prototype.
-- Whether the final gate rule is two players passing through or one player passing while another holds it open.
-- The exact implementation details for body posture hotkeys.
-- The exact rule for when partial robot limb damage becomes full elimination beyond the examples given.
-- The exact relationship between the future defusal mode and the prototype single-elimination TDM mode.
-
-AI agents should not invent answers to these questions. They should preserve them as design decisions to be made later unless the user provides more direction.
+An arena shooter where the movement IS the game. There is no gravity and no fixed up or
+down: every wall, ceiling, and curved interior is a floor you can land on, run along, and
+launch from. Players who master the movement cross the arena dramatically faster than
+players who don't, and that speed is the primary skill expression — alongside the classic
+arena skill of controlling the powerful weapon spawns.
+
+The pacing target is arena-fast, not tactical-deliberate. Fights happen at speed, deaths
+feed respawns, and map knowledge (routes + weapon timing) wins games.
+
+## The Core Movement Loop
+
+The heart of the game. A player moves through the arena by:
+
+1. **Launching** — jumping off the surface they're standing on (jump-off carries extra
+   tangential momentum), using the charged space launch, or **grappling**: the wire
+   attaches to static geometry as a fixed-length tether, enabling tows, swings at speed,
+   and wire-wraps around corners.
+2. **Landing** — flying feet-first at a surface makes the body smoothly align and lock on
+   automatically (no engage key). A good landing is continuous — speed in, speed out —
+   not a dead stop.
+3. **Building and keeping speed** — sprint to accelerate on the surface; momentum above
+   run speed is kept **by sliding**. That rule is deliberate: land hot → slide to keep the
+   excess → release and normal friction reclaims it. Slide into the next jump-off or
+   grapple swing to chain speed across the arena.
+
+Skill expression is chaining these into **routes**: practiced sequences of launches,
+swings, feet-first landings, and slides that move you across the map as fast as possible.
+
+Most of this loop already exists in code (auto-mount surface walk, slide, momentum-carrying
+jump-off, grapple with wrapping — see `CLAUDE.md` for internals). What the pivot adds is
+intent: tuning, maps, and modes built around this loop rather than around tactical rounds.
+
+## Weapons: Map Pickups
+
+Guns spawn at points around the map, on a spectrum from weak to powerful. The strong
+weapons are contested: controlling their spawn timing and location is map control, exactly
+the classic arena formula.
+
+- **Spawn loadout is mode-defined.** Each mode decides what you start with (Gun Game
+  brings its own weapon ladder; FFA already rolls a random gun per life). The grapple is
+  standard issue for everyone — it's movement equipment, not a weapon.
+- `weapon_registry.tres` stays the single source of the weapon pool; the pickup system
+  will draw from it. **No pickup spawner exists yet.**
+- Weapon tiering, pickup respawn timers, and telegraphing (spawn sounds / announcer) are
+  TBD.
+
+## Game Modes
+
+Target modes: **TDM**, **CTF**, **Gun Game**, plus other common arena staples (KOTH etc. —
+exact list TBD).
+
+Implemented today: round-based team elimination (buy menu economy) and FFA deathmatch.
+These stay unchanged until the arena systems (maps, weapon pickups, mode rules) are built.
+Whether the buy-menu team mode survives long-term alongside the arena modes is an open
+question.
+
+## Map Design Principles
+
+Maps are authored around the movement loop:
+
+- **Routes first.** Every map should contain deliberate lines a skilled player can chain —
+  launch → swing → feet-first landing → slide → relaunch — to cross it at maximum speed.
+  Route knowledge should be learnable, practicable, and visibly faster.
+- **Pickups are the strategy layer.** Weapon spawn placement creates the fights and gives
+  routes a purpose (get to the power weapon first, rotate between pickups efficiently).
+- **Zero-G means every surface counts.** Routes can run along walls, ceilings, and curved
+  interiors; curved surfaces should use analytic primitive colliders so landings and
+  surface-running stay smooth (see `CLAUDE.md`).
+- Authoring mechanics (spawn groups, the map registry, the in-game map creator) are
+  documented in `CLAUDE.md` and `MAP_CREATOR.md`.
+
+None of the arena-direction maps are designed yet; the current `diamond` and `sphere`
+arenas predate the pivot.
+
+## What Exists vs. What the Pivot Needs
+
+Already built (details in `CLAUDE.md`):
+
+- Surface walk with fully automatic feet-first mounting, seam/curve traversal, slide
+  (the momentum keeper), and momentum-carrying jump-off.
+- Grapple wire for every player: tether, swings, reel, wire-wrapping around geometry,
+  networked rope visuals.
+- Zero-G 6DOF flight with boosters, roll controls, and the charged space launch.
+- A weapon roster (hitscan, burst, charge railgun, minigun, plasma projectile) behind a
+  drag-and-drop weapon registry, with server-authoritative damage validation.
+- Server-authoritative multiplayer: lobbies (up to 5), per-lobby sessions, team
+  elimination + FFA modes, scoreboards, match end, VPS deployment.
+- Map registry + in-game map creator for custom maps.
+
+Needed for the pivot (also tracked in `TODO.md` §1):
+
+- **Weapon pickup system** — spawn points, respawn timers, tiered placement, pickup
+  networking/validation.
+- **The arena modes** — TDM, CTF (flags/carriers), Gun Game (ladder), then other staples;
+  mode-defined spawn loadouts.
+- **Route-first maps** designed for the movement loop and pickup control.
+- **A movement flow/tuning pass** for arena speed (e.g. landing-alignment forgiveness,
+  route chaining feel) — the slide momentum rule itself stays as designed.
+
+## Dropped From the Old Vision (July 2026)
+
+These were the previous design direction and are no longer targets. Do not build them:
+
+- 5v5 defusal-style structure and single-elimination round pressure.
+- The gate objective and its 2-point-elimination / 3-point-gate scoring.
+- Robot limb damage/destruction as the combat model — the game uses the standard
+  health-bar model that is actually implemented.
+- Body posture hotkeys (fetal/upright/tucked poses).
+- The "tactical and deliberate" pacing goal — replaced by arena speed.
+
+## Unresolved Design Questions
+
+Intentionally open. Don't invent answers; ask the owner or mark assumptions clearly:
+
+- Weapon tier list, pickup respawn timers, and pickup telegraphing rules.
+- The exact mode list beyond TDM/CTF/Gun Game (KOTH? Oddball-style? a race/time-trial
+  mode that leans on routes?).
+- Per-mode spawn loadouts (what the starter weapon is per mode, if any).
+- Team sizes / player counts per mode (the old fixed 5v5 no longer applies).
+- Long-term fate of the buy-menu team-elimination mode once arena modes exist.
+- Movement tuning specifics: how forgiving feet-first landing alignment should be
+  (current auto-mount entry gate is deliberately narrow), and whether the currently
+  disabled zero-G wall push returns as a movement tool.
 
 ## Guidance For Future AI Agents
 
-When working on this project, understand it as a zero-gravity tactical FPS first.
-
-Do not treat it as a normal grounded shooter with a zero-gravity visual theme. The core of the game is the relationship between movement, body orientation, momentum, team objectives, and limb function.
-
-Do not assume a standard health-bar combat model. The intended design uses robot body-part damage and limb loss, where hits change what a player can physically do.
-
-Do not assume the full defusal mode is the immediate implementation target. The current priority is the single-elimination TDM-style prototype with gate scoring.
-
-Do not finalize unresolved rules without user direction. If implementation work needs a temporary assumption, keep it narrow, document it clearly, and avoid presenting it as final design.
-
-The game should be understood as a tactical team sport in zero gravity: combat matters, but so do body control, positioning, teammate coordination, and objective timing.
+- This document is the TARGET. `CLAUDE.md` describes what actually exists — trust it for
+  current behavior. Don't build pivot features unprompted, and don't remove or alter the
+  existing modes/economy: the owner has said current gamemodes stay until the arena maps
+  and weapons are ready.
+- The movement feel is the product. When touching movement code, protect momentum, flow,
+  and the land-slide-launch chain. Don't add friction, snap, or speed caps that break
+  route play. The slide rule (excess speed survives only while sliding) is deliberate.
+- This is a true zero-G 6DOF game, not a grounded shooter with a space theme. Every
+  surface is a floor; routes and fights use all of them.
+- Don't finalize unresolved rules without the owner's direction. If implementation needs a
+  temporary assumption, keep it narrow and document it as provisional.

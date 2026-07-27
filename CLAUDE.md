@@ -1,4 +1,4 @@
-# CLAUDE.md — Zero-G Tactical FPS (Godot 4.6.3)
+# CLAUDE.md — Zero-G Arena Movement Shooter (Godot 4.6.3)
 
 Current-state + gotchas handoff for AI sessions. Design vision: `PROJECT_OVERVIEW.md`.
 Player/weapon internals: `ARCHITECTURE.md` (predates the multiplayer/lobby/admin/map
@@ -6,7 +6,11 @@ systems). Weapon how-to: `WEAPONS.md`. In-game map editor: `MAP_CREATOR.md`. Re-
 code directly when in doubt.
 
 ## What it is
-Zero-gravity 6DOF tactical FPS. Jolt physics + physics interpolation ON. Player =
+Zero-gravity 6DOF **arena movement shooter** (Quake/UT/Halo lineage — July 2026 pivot,
+vision in `PROJECT_OVERVIEW.md`): momentum movement between surfaces + grapple, with
+map-spawned weapon pickups and classic arena modes (TDM/CTF/Gun Game) as the TARGET.
+Implemented modes today are still team elimination + FFA — change nothing mode-side until
+the arena maps/weapons exist. Jolt physics + physics interpolation ON. Player =
 `RigidBody3D` with composed child controllers. Server-authoritative multiplayer with
 lobbies, deployed to a DigitalOcean VPS at **147.182.160.52:7000**.
 
@@ -90,7 +94,8 @@ lobbies, deployed to a DigitalOcean VPS at **147.182.160.52:7000**.
   arena-edge spawns (raycast from centre, farthest from others; falls back to markers),
   kill-ranked scoreboard, no buy menu, random gun from lobby pool + booster fuel each life,
   timed match, optional kill limit, auto-respawn. Clients mirror the mode into
-  `GameLaunch.game_mode_id`.
+  `GameLaunch.game_mode_id`. These two are the IMPLEMENTED modes; the pivot's target modes
+  (TDM/CTF/Gun Game + weapon pickups, `PROJECT_OVERVIEW.md`) are not built yet.
 - **Match rules** (host menu + cmdline): shared — min players, time limit, heal/ammo on
   kill. Team — starting cash, points to win. FFA — respawn time, booster fuel, kill limit,
   weapon pool. Cmdline: `--mode --respawn-time --booster-fuel --ffa-weapons --kill-limit
@@ -261,6 +266,12 @@ lobbies, deployed to a DigitalOcean VPS at **147.182.160.52:7000**.
   ground mode] → `user://settings.cfg`).
 
 ## State notes / TODO
+- **July 2026 design pivot** (vision: `PROJECT_OVERVIEW.md`): arena movement shooter —
+  map-spawned weapon pickups fought over, TDM/CTF/Gun Game + common arena modes,
+  route-first maps, mode-defined spawn loadouts; slide stays the deliberate momentum
+  keeper. NOTHING pivot-side is implemented (no pickup spawners, no new modes, no arena
+  maps) and existing gamemodes/economy stay unchanged until it is. Old-vision
+  defusal/gate/limb-damage/posture ideas are DROPPED.
 - **Zero-G wall push DISABLED** (space push off geometry + limb pushes):
   `wall_push_enabled = false` on PlayerMovementController — mechanic code intact, flip to
   re-enable. Gates the push itself, the zero-G charge, and every HUD affordance (push

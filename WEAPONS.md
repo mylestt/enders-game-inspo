@@ -4,6 +4,11 @@ How the first-person weapons work, and how to add a new one so it feels coherent
 rest. Zero-G, server-authoritative, physics-interpolated. Everything is data-driven per gun
 via `@export`s you tune in the Inspector — you rarely touch code to make a new weapon.
 
+> **July 2026 pivot:** the design target is now an arena movement shooter where guns spawn
+> around the map as contested pickups (`PROJECT_OVERVIEW.md`). Nothing in this guide
+> changes — `weapon_registry.tres` stays the single weapon-pool source a future pickup
+> system will draw from. No pickup spawner exists yet.
+
 ---
 
 ## 1. The layers
