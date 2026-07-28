@@ -38,7 +38,9 @@ func _run_all() -> void:
 	test_economy_ffa_exclusive_grant()
 	test_lobby_settings_sanitation()
 	test_network_state_hygiene()
+	await test_player_weapon_mass_model()
 	test_surface_walk_wall_slide()
+	test_surface_walk_entry_aim_lock()
 	test_charge_weapon_scaling()
 	await test_grapple_multiwrap()
 	await test_cylindrical_force_field()
@@ -354,6 +356,80 @@ func test_network_state_hygiene() -> void:
 	player.free()
 
 
+# --- Player + equipped-weapon mass -------------------------------------------------------
+
+func test_player_weapon_mass_model() -> void:
+	print("- movement: player + equipped-weapon mass")
+
+	var player_scene := load("res://Resources/Objects/player.tscn") as PackedScene
+	var player := player_scene.instantiate() as RigidBody3D if player_scene != null else null
+	check(player != null, "runtime player instantiates for mass checks")
+
+	if player == null:
+		return
+
+	root.add_child(player)
+	await process_frame
+
+	player.call("set_equipped_weapon_mass", 1.0)
+	var reference_damp := player.linear_damp
+	check(is_equal_approx(float(player.call("get_total_carried_mass")), 6.0), "5 body + 1 weapon reports 6 total mass")
+	check(is_equal_approx(player.mass, 1.0), "reference loadout preserves physics mass 1")
+	check(is_equal_approx(player.inertia.x, 0.3), "reference loadout preserves rotational inertia")
+
+	player.call("set_equipped_weapon_mass", 2.0)
+	check(is_equal_approx(float(player.call("get_total_carried_mass")), 7.0), "heavier weapon increases total carried mass")
+	check(player.mass > 1.0, "heavier weapon increases rigid-body mass")
+	check(player.inertia.x > 0.3, "heavier weapon increases rotational inertia")
+	check(player.linear_damp < reference_damp, "heavier weapon loses zero-G drift more slowly")
+	check(float(player.call("get_inverse_mass_response_scale")) < 1.0, "heavier weapon reduces manual movement response")
+
+	var movement := PlayerMovementController.new()
+	movement.player = player
+	check(
+		movement.get_mass_scaled_response_fraction(0.55) < 0.55,
+		"heavier weapon slows zero-G grab/stabilization response"
+	)
+	movement.free()
+
+	var min_weapon_mass := INF
+	var max_weapon_mass := 0.0
+
+	for weapon_id in WeaponInventory.get_weapon_ids():
+		var weapon_scene := WeaponInventory.get_weapon_scene(weapon_id)
+		var weapon := weapon_scene.instantiate() as Weapon if weapon_scene != null else null
+
+		if weapon == null:
+			continue
+
+		var weapon_mass := weapon.get_weapon_mass()
+		check(weapon_mass > 0.0, "weapon '%s' has positive carried mass" % weapon_id)
+		min_weapon_mass = minf(min_weapon_mass, weapon_mass)
+		max_weapon_mass = maxf(max_weapon_mass, weapon_mass)
+		weapon.free()
+
+	check(max_weapon_mass > min_weapon_mass, "weapon roster contains meaningfully different masses")
+
+	var inventory := player.get_node_or_null("WeaponInventory") as WeaponInventory
+	check(inventory != null, "runtime player exposes its weapon inventory")
+
+	if inventory != null:
+		inventory.unlocked_weapon_ids[&"railgun"] = true
+		check(inventory.equip_weapon(&"railgun"), "equipping a registered weapon succeeds")
+		check(
+			is_equal_approx(float(player.call("get_equipped_weapon_mass")), 2.02),
+			"inventory propagates the equipped weapon's mass to the player"
+		)
+		inventory.clear_mount()
+		check(
+			is_zero_approx(float(player.call("get_equipped_weapon_mass"))),
+			"clearing the weapon removes its mass from the player"
+		)
+
+	player.queue_free()
+	await process_frame
+
+
 # --- Surface-walk wall slide ------------------------------------------------------------
 # strip_into_wall_component removes the part of a walk velocity heading INTO a wall (so you
 # stop against it / slide along its base) while leaving parallel motion untouched.
@@ -381,6 +457,54 @@ func test_surface_walk_wall_slide() -> void:
 	# Parallel to the wall (pure +Z): untouched.
 	var parallel := mc.strip_into_wall_component(Vector3(0, 0, 4), wall_tangent)
 	check(parallel.is_equal_approx(Vector3(0, 0, 4)), "parallel motion is unaffected")
+
+
+# --- Surface-walk entry aim lock ---------------------------------------------------------
+
+func test_surface_walk_entry_aim_lock() -> void:
+	print("- movement: surface-walk entry aim lock")
+
+	var player := RigidBody3D.new()
+	var ground := GroundMovementController.new()
+	ground.player = player
+
+	# A steep view is the failure-prone case: projecting the BODY forward instead of this
+	# view ray can turn a small feet/surface mismatch into a large yaw error.
+	var surface_normal := Vector3.UP.rotated(Vector3.FORWARD, deg_to_rad(14.0)).normalized()
+	var entry_view := Vector3(0.03, 0.99, -0.12).normalized()
+	var surface_forward := ground.get_surface_forward_for_view(entry_view, surface_normal)
+	var surface_pitch := ground.get_surface_pitch_for_view(entry_view, surface_normal)
+	var body_basis := ground.make_surface_walk_basis(surface_forward, surface_normal)
+	var rebuilt_view := -(body_basis * Basis.from_euler(Vector3(surface_pitch, 0.0, 0.0))).z
+	check(
+		rebuilt_view.angle_to(entry_view) < 0.00001,
+		"surface body heading + camera pitch exactly rebuild the entry aim ray"
+	)
+
+	var rig := CameraRig.new()
+	var view := Camera3D.new()
+	player.add_child(rig)
+	rig.add_child(view)
+	root.add_child(player)
+	rig.player = player
+	rig.camera = view
+	view.position = Vector3(0.2, 0.6, -0.15)
+
+	var target := Vector3(7.0, 3.5, -18.0)
+	rig.begin_world_aim_lock(target)
+	player.transform.basis = Basis.from_euler(Vector3(0.7, -0.4, 0.9))
+	rig.transform.basis = Basis.from_euler(Vector3(-0.2, 0.3, -0.15))
+	rig.apply_world_aim_lock()
+
+	var expected := (target - view.global_position).normalized()
+	var actual := -view.global_transform.basis.z
+	check(
+		actual.angle_to(expected) < 0.00001,
+		"camera hierarchy counter-rotates to keep the captured world target under the crosshair"
+	)
+
+	ground.free()
+	player.free()
 
 
 # --- Charge railgun scaling -------------------------------------------------------------

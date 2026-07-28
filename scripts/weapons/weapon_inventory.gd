@@ -2,6 +2,7 @@ class_name WeaponInventory
 extends Node
 
 signal weapon_equipped(weapon_id: StringName, weapon: Weapon)
+signal equipped_weapon_mass_changed(weapon_mass: float)
 
 # The single weapon registry lives in a preloaded resource, editable in the inspector, exactly
 # like the map registry (map_registry.tres / MapGenerator). Drag a weapon .tscn into
@@ -214,6 +215,7 @@ func equip_weapon(weapon_id: StringName) -> bool:
 
 	_refresh_ammo_hud()
 	weapon_equipped.emit(equipped_weapon_id, equipped_weapon)
+	equipped_weapon_mass_changed.emit(get_equipped_weapon_mass())
 	return true
 
 
@@ -233,6 +235,7 @@ func clear_mount() -> void:
 			child.queue_free()
 
 	_refresh_ammo_hud()
+	equipped_weapon_mass_changed.emit(0.0)
 
 
 func _save_equipped_ammo() -> void:
@@ -411,6 +414,13 @@ func _aim_pressed() -> bool:
 
 func get_equipped_weapon_id() -> StringName:
 	return equipped_weapon_id
+
+
+func get_equipped_weapon_mass() -> float:
+	if equipped_weapon == null:
+		return 0.0
+
+	return equipped_weapon.get_weapon_mass()
 
 
 func has_equipped_weapon() -> bool:

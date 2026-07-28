@@ -59,6 +59,14 @@ var explosion_phase: float = 0.0
 var explosion_position_offset: Vector3 = Vector3.ZERO
 var explosion_rotation_offset: Vector3 = Vector3.ZERO
 
+# Ground-mode entry can rotate the player body by a very different amount than the camera.
+# During that short alignment, pin the rendered camera ray to the world point that was under
+# the crosshair at entry. This runs after the procedural offsets so none of them can feed the
+# body's alignment back into the player's aim.
+var world_aim_lock_active: bool = false
+var world_aim_lock_target: Vector3 = Vector3.ZERO
+var world_aim_lock_release_pending: bool = false
+
 
 func _ready() -> void:
 	player = get_parent() as RigidBody3D
@@ -106,6 +114,74 @@ func _physics_process(delta: float) -> void:
 
 	position = Vector3(0.0, dip, 0.0) + headbob_offset() + explosion_position_offset
 	rotation = Vector3(sway.y, sway.x, tilt) + explosion_rotation_offset
+
+	if world_aim_lock_active:
+		apply_world_aim_lock()
+
+		if world_aim_lock_release_pending:
+			world_aim_lock_active = false
+			world_aim_lock_release_pending = false
+
+
+# Starts (or refreshes) a short-lived camera lock to a fixed point in world space.
+func begin_world_aim_lock(target: Vector3) -> void:
+	if not target.is_finite():
+		return
+
+	world_aim_lock_target = target
+	world_aim_lock_active = true
+	world_aim_lock_release_pending = false
+
+
+# Keep the final locked frame exact, then return ownership to the normal ground look on the
+# next physics tick. Settling sway prevents a delayed counter-kick when the lock releases.
+func finish_world_aim_lock() -> void:
+	if not world_aim_lock_active:
+		return
+
+	world_aim_lock_release_pending = true
+	sway = Vector2.ZERO
+	prev_look_basis = get_look_basis()
+
+
+# Immediate cancellation is used if another system aborts ground entry.
+func cancel_world_aim_lock() -> void:
+	world_aim_lock_active = false
+	world_aim_lock_release_pending = false
+	sway = Vector2.ZERO
+	prev_look_basis = get_look_basis()
+
+
+func apply_world_aim_lock() -> void:
+	if camera == null:
+		return
+
+	var direction := world_aim_lock_target - camera.global_position
+
+	if direction.length_squared() < 0.000001:
+		return
+
+	direction = direction.normalized()
+
+	# Preserve the surface-aligned horizon selected by the transition; only the forward ray
+	# is locked. At a straight-up/down singularity, use the current right axis as reference.
+	var up_hint := camera.global_transform.basis.y.normalized()
+	var right := direction.cross(up_hint)
+
+	if right.length_squared() < 0.000001:
+		right = camera.global_transform.basis.x.slide(direction)
+
+	if right.length_squared() < 0.000001:
+		right = Vector3.RIGHT.slide(direction)
+
+	if right.length_squared() < 0.000001:
+		right = Vector3.FORWARD.slide(direction)
+
+	right = right.normalized()
+	var corrected_up := right.cross(direction).normalized()
+	var locked_transform := camera.global_transform
+	locked_transform.basis = Basis(right, corrected_up, -direction).orthonormalized()
+	camera.global_transform = locked_transform
 
 
 # `world_direction` points outward from the blast toward the viewer. A short counter-motion

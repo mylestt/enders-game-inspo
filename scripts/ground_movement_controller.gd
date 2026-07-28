@@ -78,6 +78,7 @@ const SURFACE_WALK_TRANSITION_DURATION := 0.1
 const SURFACE_WALK_ENTRY_SHAKE_DURATION := 0.18
 const SURFACE_WALK_ENTRY_SHAKE_STRENGTH := 0.07
 const SURFACE_WALK_ENTRY_SHAKE_FREQUENCY := 52.0
+const SURFACE_WALK_ENTRY_AIM_DISTANCE := 10000.0
 const SURFACE_WALK_SPAWN_PROBE_DISTANCE := 8.0
 const SURFACE_WALK_LOCK_MAX_DISTANCE := 4.0
 const AUTO_GROUND_LOCK_DISTANCE := 2.0    # auto-lock reach (feet ray only; see coordinator)
@@ -142,8 +143,11 @@ var surface_walk_transition_start_transform: Transform3D
 var surface_walk_transition_target_transform: Transform3D
 # Tangential momentum carried through entry, handed back when the slide-in completes.
 var surface_walk_entry_carry: Vector3 = Vector3.ZERO
+var surface_walk_entry_aim_target: Vector3 = Vector3.ZERO
+var surface_walk_entry_view_direction: Vector3 = Vector3.FORWARD
 
 var camera_base_position: Vector3 = Vector3.ZERO
+var camera_rig: CameraRig = null
 var surface_walk_shake_timer: float = 0.0
 var _pre_surface_walk_material: PhysicsMaterial = null
 
@@ -173,6 +177,7 @@ func setup(owner_coordinator: Node, owner_player: RigidBody3D, owner_camera: Cam
 
 	if camera != null:
 		camera_base_position = camera.position
+		camera_rig = camera.get_parent() as CameraRig
 
 
 func is_active() -> bool:
@@ -374,6 +379,13 @@ func get_move_speed() -> float:
 	return move_speed * (sprint_multiplier if is_sprinting() else 1.0)
 
 
+func get_inverse_mass_response_scale() -> float:
+	if player != null and player.has_method("get_inverse_mass_response_scale"):
+		return maxf(float(player.call("get_inverse_mass_response_scale")), 0.01)
+
+	return 1.0
+
+
 func is_sprinting() -> bool:
 	return is_action_pressed_if_exists("stabilize_rotation")
 
@@ -403,6 +415,7 @@ func get_wish_dir() -> Vector3:
 func handle_source_ground_move(delta: float) -> void:
 	var wish_dir := get_wish_dir()
 	var target_speed := get_move_speed()
+	var inverse_mass := get_inverse_mass_response_scale()
 	# The overspeed (landing-carry) regime starts above SPRINT speed, not the current
 	# target — releasing shift settles sprint surplus with crisp normal friction instead
 	# of the ultra-slow landing bleed.
@@ -414,7 +427,10 @@ func handle_source_ground_move(delta: float) -> void:
 		var add_speed_till_cap := target_speed - cur_speed_in_wish_dir
 
 		if add_speed_till_cap > 0.0:
-			var accel_speed := minf(ground_accel * delta * target_speed, add_speed_till_cap)
+			var accel_speed := minf(
+				ground_accel * inverse_mass * delta * target_speed,
+				add_speed_till_cap
+			)
 			var speed_before := tangent.length()
 			tangent += wish_dir * accel_speed
 
@@ -432,7 +448,9 @@ func handle_source_ground_move(delta: float) -> void:
 		# landing momentum is the slide's reward. Without the slide held, overspeed
 		# falls through to normal Source friction below and is reclaimed fast.
 		var excess := speed - top_ground_speed
-		var drop := maxf(excess * overspeed_friction, 0.75) * delta
+		# Overspeed loss is gameplay drag rather than Coulomb ground friction: heavier
+		# loadouts preserve carried slide momentum longer.
+		var drop := maxf(excess * overspeed_friction, 0.75) * inverse_mass * delta
 		tangent *= maxf(speed - drop, 0.0) / speed
 	elif speed > 0.0:
 		# Normal Source friction (multiplicative drop per tick).
@@ -467,7 +485,10 @@ func handle_source_air_move(delta: float) -> void:
 	var add_speed_till_cap := capped_speed - cur_speed_in_wish_dir
 
 	if add_speed_till_cap > 0.0:
-		var accel_speed := minf(air_accel * air_move_speed * delta, add_speed_till_cap)
+		var accel_speed := minf(
+			air_accel * air_move_speed * get_inverse_mass_response_scale() * delta,
+			add_speed_till_cap
+		)
 		player.linear_velocity += accel_speed * wish_dir
 
 	player.angular_velocity = Vector3.ZERO
@@ -487,9 +508,14 @@ func enter_spawn_surface_walk() -> bool:
 
 
 func enter_surface_walk_mode(hit_position: Vector3, surface_normal: Vector3, instant: bool = false) -> void:
-	# Capture the actual view direction BEFORE anything realigns, so the entry can keep the
-	# player looking at exactly what they were looking at.
-	var entry_view_dir: Vector3 = -coordinator.get_control_look_basis().z
+	# Capture the rendered center ray BEFORE anything realigns. A real collision point also
+	# compensates for the camera translating while the body closes the stand-height gap.
+	# With no hit, a distant point behaves like a direction lock.
+	surface_walk_entry_view_direction = get_entry_view_direction()
+	surface_walk_entry_aim_target = get_entry_aim_target(surface_walk_entry_view_direction)
+
+	if camera_rig != null:
+		camera_rig.begin_world_aim_lock(surface_walk_entry_aim_target)
 
 	coordinator.begin_surface_walk_mode()
 
@@ -520,23 +546,17 @@ func enter_surface_walk_mode(hit_position: Vector3, surface_normal: Vector3, ins
 	ground_state = GroundState.GROUNDED
 	airborne_time = 0.0
 
-	var look_forward := (-player.global_transform.basis.z).normalized()
-	var projected_forward := look_forward.slide(surface_walk_normal)
-
-	if projected_forward.length() < 0.01:
-		projected_forward = player.global_transform.basis.y.slide(surface_walk_normal)
-
-	if projected_forward.length() < 0.01:
-		projected_forward = get_fallback_surface_forward(surface_walk_normal)
-
-	surface_walk_forward = projected_forward.normalized()
-
-	# Preserve the ENTRY view pitch: whatever you were looking at when ground mode engaged
-	# stays on screen — the aim seeds from the view's angle to the new surface plane
-	# instead of snapping to the horizon (clamped just inside the hard stop).
-	var seed_pitch := asin(clampf(entry_view_dir.dot(surface_walk_normal), -1.0, 1.0))
-	var seed_cap := deg_to_rad(surface_walk_pitch_limit_degrees - 2.0)
-	surface_walk_pitch = clampf(seed_pitch, -seed_cap, seed_cap)
+	# Decompose the VIEW ray itself in the new surface frame. Using the body's old forward
+	# here is subtly wrong: at steep view pitches even a small feet/surface angle difference
+	# can produce a very large yaw error.
+	surface_walk_forward = get_surface_forward_for_view(
+		surface_walk_entry_view_direction,
+		surface_walk_normal
+	)
+	surface_walk_pitch = get_surface_pitch_for_view(
+		surface_walk_entry_view_direction,
+		surface_walk_normal
+	)
 	coordinator.reset_recoil()
 
 	var target_position := hit_position + surface_walk_normal * surface_walk_body_offset
@@ -561,6 +581,7 @@ func enter_surface_walk_mode(hit_position: Vector3, surface_normal: Vector3, ins
 	if instant:
 		surface_walk_transition_active = false
 		player.global_transform = target_transform
+		finalize_surface_walk_entry_aim()
 		player.reset_physics_interpolation()
 		print("Spawned in surface-walk mode.")
 		return
@@ -573,6 +594,14 @@ func enter_surface_walk_mode(hit_position: Vector3, surface_normal: Vector3, ins
 func exit_surface_walk_mode() -> void:
 	if not is_active():
 		return
+
+	# An external system can abort the 0.1 s entry. Put the locked view into the normal
+	# ground body/pitch representation before folding it into the zero-G body orientation.
+	if surface_walk_transition_active:
+		apply_surface_walk_entry_aim_pose()
+
+	if camera_rig != null:
+		camera_rig.cancel_world_aim_lock()
 
 	log_movement_event("EXIT mode  v=%s" % _fmt_v(player.linear_velocity))
 	reset_slide_state()
@@ -617,6 +646,7 @@ func start_surface_walk_transition(target_transform: Transform3D) -> void:
 
 	if SURFACE_WALK_TRANSITION_DURATION <= 0.0:
 		player.global_transform = surface_walk_transition_target_transform
+		finalize_surface_walk_entry_aim()
 		surface_walk_transition_active = false
 		player.linear_velocity = surface_walk_entry_carry
 
@@ -654,8 +684,100 @@ func update_surface_walk_transition(delta: float) -> void:
 
 	if raw_t >= 1.0:
 		player.global_transform.basis = surface_walk_transition_target_transform.basis
+		finalize_surface_walk_entry_aim()
 		surface_walk_transition_active = false
 		player.linear_velocity = surface_walk_entry_carry
+
+
+func get_entry_view_direction() -> Vector3:
+	if camera != null:
+		var rendered_direction := -camera.global_transform.basis.z
+
+		if rendered_direction.length_squared() > 0.000001:
+			return rendered_direction.normalized()
+
+	var control_direction: Vector3 = -coordinator.get_control_look_basis().z
+
+	if control_direction.length_squared() > 0.000001:
+		return control_direction.normalized()
+
+	return (-player.global_transform.basis.z).normalized()
+
+
+func get_entry_aim_target(view_direction: Vector3) -> Vector3:
+	var origin := camera.global_position if camera != null else player.global_position
+	var far_target := origin + view_direction.normalized() * SURFACE_WALK_ENTRY_AIM_DISTANCE
+	var result := raycast_from_player(origin, far_target)
+
+	if not result.is_empty():
+		var hit_position: Vector3 = result.get("position", far_target)
+
+		if hit_position.is_finite():
+			return hit_position
+
+	return far_target
+
+
+# The body's forward in ground mode is the view ray projected onto the stood-on plane. This
+# is what makes body yaw + camera pitch reproduce the exact same world-space aim direction.
+func get_surface_forward_for_view(view_direction: Vector3, up: Vector3) -> Vector3:
+	up = up.normalized()
+	var projected := view_direction.normalized().slide(up)
+
+	if projected.length_squared() < 0.000001:
+		projected = surface_walk_forward.slide(up)
+
+	if projected.length_squared() < 0.000001:
+		projected = (-player.global_transform.basis.z).slide(up)
+
+	if projected.length_squared() < 0.000001:
+		projected = get_fallback_surface_forward(up)
+
+	return projected.normalized()
+
+
+func get_surface_pitch_for_view(view_direction: Vector3, up: Vector3) -> float:
+	var pitch := asin(clampf(view_direction.normalized().dot(up.normalized()), -1.0, 1.0))
+	var pitch_limit := minf(deg_to_rad(surface_walk_pitch_limit_degrees), PI * 0.5)
+	return clampf(pitch, -pitch_limit, pitch_limit)
+
+
+# Rebuild the regular ground-mode body/pitch representation from the fixed aim target at the
+# camera's CURRENT position. A few iterations account for the camera's offset moving when the
+# body heading changes; the rig still owns the exact final locked frame.
+func apply_surface_walk_entry_aim_pose() -> void:
+	var view_direction := surface_walk_entry_view_direction
+
+	for _iteration in range(3):
+		if camera != null:
+			var to_target := surface_walk_entry_aim_target - camera.global_position
+
+			if to_target.length_squared() > 0.000001:
+				view_direction = to_target.normalized()
+
+		surface_walk_forward = get_surface_forward_for_view(view_direction, surface_walk_normal)
+		surface_walk_pitch = get_surface_pitch_for_view(view_direction, surface_walk_normal)
+		player.global_transform.basis = make_surface_walk_basis(
+			surface_walk_forward,
+			surface_walk_normal
+		)
+
+		if camera != null:
+			camera.rotation = Vector3(surface_walk_pitch, 0.0, 0.0)
+
+
+func finalize_surface_walk_entry_aim() -> void:
+	# The positional touchdown shake is safe while the target lock compensates for it, but it
+	# must not outlive that lock and introduce a final parallax nudge.
+	surface_walk_shake_timer = 0.0
+
+	if camera != null:
+		camera.position = camera_base_position
+
+	apply_surface_walk_entry_aim_pose()
+
+	if camera_rig != null:
+		camera_rig.finish_world_aim_lock()
 
 
 func update_surface_walk_entry_shake(delta: float) -> void:

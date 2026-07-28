@@ -8,10 +8,19 @@ extends RigidBody3D
 @export var linear_damp_value: float = 0.1
 @export var angular_damp_value: float = 1.2
 
+# Gameplay mass uses the existing per-weapon `weapon_weight` values as carried mass units.
+# The default 5-unit body + 1-unit weapon is normalized to a Godot physics mass of 1, so
+# today's common loadout keeps its exact force/impulse feel while lighter and heavier guns
+# move around that baseline. Set reference_total_mass alongside the roster if its typical
+# weapon mass changes.
+@export_group("Mass")
+@export var base_player_mass: float = 5.0
+@export var reference_total_mass: float = 6.0
+
 # Uniform (isotropic) rotational inertia. The capsule's natural inertia is anisotropic, which
 # made torque-driven roll spin cleanly only around the body's own axes; once the look/neck tilts
 # off them, roll precessed instead of banking. A uniform value rolls the same around any axis.
-# 0.3 matches the capsule's old perpendicular inertia, so roll feel is unchanged.
+# 0.3 is the inertia at reference_total_mass; carried mass scales it from there.
 @export var rotational_inertia: float = 0.3
 
 @export var network_send_rate: float = 30.0
@@ -59,6 +68,9 @@ var network_time_since_update: float = 0.0
 var network_is_headless_server: bool = false
 
 var last_body_slam_time_by_target_peer_id: Dictionary = {}
+var equipped_weapon_mass: float = 0.0
+var total_carried_mass: float = 5.0
+var mass_response_scale: float = 1.0
 
 @onready var camera: Camera3D = get_node_or_null("CameraRig/Camera3D") as Camera3D
 @onready var movement_controller: PlayerMovementController = get_node_or_null("MovementController") as PlayerMovementController
@@ -76,9 +88,7 @@ func _ready() -> void:
 	gravity_scale = 0.0
 	linear_damp_mode = RigidBody3D.DAMP_MODE_REPLACE
 	angular_damp_mode = RigidBody3D.DAMP_MODE_REPLACE
-	linear_damp = linear_damp_value
-	angular_damp = angular_damp_value
-	inertia = Vector3.ONE * rotational_inertia
+	_apply_mass_properties()
 	can_sleep = false
 	continuous_cd = true
 	
@@ -122,11 +132,52 @@ func _ready() -> void:
 		push_warning("WeaponInventory node is missing; weapon purchases will be unavailable.")
 	else:
 		weapon_inventory.setup(self)
+		weapon_inventory.equipped_weapon_mass_changed.connect(set_equipped_weapon_mass)
+		set_equipped_weapon_mass(weapon_inventory.get_equipped_weapon_mass())
 
 	if grapple_controller == null:
 		push_warning("GrappleController node is missing; the grapple wire will be unavailable.")
 	else:
 		grapple_controller.setup(self)
+
+
+func set_equipped_weapon_mass(new_weapon_mass: float) -> void:
+	equipped_weapon_mass = maxf(new_weapon_mass, 0.0)
+	_apply_mass_properties()
+
+
+func _apply_mass_properties() -> void:
+	total_carried_mass = maxf(base_player_mass, 0.01) + equipped_weapon_mass
+	mass_response_scale = maxf(
+		total_carried_mass / maxf(reference_total_mass, 0.01),
+		0.05
+	)
+
+	# Godot applies force/impulse response and rigid-body collisions through `mass`.
+	# Damping is an acceleration coefficient rather than a force in Godot, so divide it
+	# manually to make a heavier loadout coast and spin down more slowly as well.
+	mass = mass_response_scale
+	inertia = Vector3.ONE * maxf(rotational_inertia * mass_response_scale, 0.001)
+	linear_damp = maxf(linear_damp_value, 0.0) / mass_response_scale
+	angular_damp = maxf(angular_damp_value, 0.0) / mass_response_scale
+
+
+func get_total_carried_mass() -> float:
+	return total_carried_mass
+
+
+func get_equipped_weapon_mass() -> float:
+	return equipped_weapon_mass
+
+
+# Ratio to the reference loadout: >1 is heavier, <1 is lighter.
+func get_mass_response_scale() -> float:
+	return mass_response_scale
+
+
+# Manual velocity-driven controllers use this because they bypass RigidBody3D's force solver.
+func get_inverse_mass_response_scale() -> float:
+	return 1.0 / maxf(mass_response_scale, 0.05)
 
 
 func set_multiplayer_player(new_peer_id: int, new_is_local_player: bool, new_network_manager: Node) -> void:
@@ -569,7 +620,9 @@ func detect_player_body_slam_contacts(state: PhysicsDirectBodyState3D) -> void:
 		if not can_send_body_slam_to_target(target_peer_id):
 			continue
 		
-		var impulse := linear_velocity * body_slam_impulse_multiplier
+		# Momentum is mass * velocity: a heavier moving player delivers a stronger slam,
+		# while the receiver's own RigidBody mass determines how much velocity it gains.
+		var impulse := linear_velocity * mass_response_scale * body_slam_impulse_multiplier
 		
 		if impulse.length() > body_slam_max_impulse:
 			impulse = impulse.normalized() * body_slam_max_impulse

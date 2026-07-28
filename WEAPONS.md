@@ -134,6 +134,13 @@ Select a weapon scene's **root node** in the Inspector to see all of these.
 **(top)** `weapon_weight`, `aim_origin_node_path` (NodePath to the muzzle marker),
 `aim_local_direction` (the barrel's forward axis in the weapon's local frame, e.g. `(1,0,0)`).
 
+`weapon_weight` is also the weapon's **carried mass**. While equipped it is added to the
+player's `base_player_mass`; the resulting mass changes rigid-body collisions, zero-G
+force/impulse and recoil response, launch strength, rotational inertia, ground/air steering,
+wall-grab stabilization, and slide momentum retention. A 5-unit player holding a 1-unit
+weapon is the reference loadout and preserves the original movement feel. Gravity and hard
+grapple/surface constraints remain mass-independent.
+
 **Recoil** — `recoil_enabled`, `recoil_rotation_degrees`, `recoil_position_offset`,
 `recoil_random_rotation_degrees`, `recoil_random_position_offset`, **`recoil_kick_up`**,
 **`recoil_kick_side`**, `recoil_kick_free_float_mult` (camera-climb scale while unbraced),

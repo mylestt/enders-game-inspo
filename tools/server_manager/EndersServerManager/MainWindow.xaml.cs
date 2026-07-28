@@ -19,13 +19,24 @@ public partial class MainWindow : Window
     private static readonly Brush DotOk = new SolidColorBrush(Color.FromRgb(0x3D, 0xDC, 0x84));
     private static readonly Brush DotBad = new SolidColorBrush(Color.FromRgb(0xFF, 0x54, 0x70));
 
+    // The bracketed regex matches the real executable name but not the pgrep/pkill command
+    // carrying the pattern. A plain `pgrep -f enders_server.x86_64` sees its own SSH shell,
+    // which made a stopped server look alive and could make pkill terminate the stop command.
+    private const string ServerProcessPattern = "'[e]nders_server[.]x86_64'";
+
     private const string StatusCommand =
-        "if pgrep -f enders_server.x86_64 >/dev/null; then echo RUNNING; else echo STOPPED; fi; " +
+        "if pgrep -f " + ServerProcessPattern + " >/dev/null; then echo RUNNING; else echo STOPPED; fi; " +
         "if tmux has-session -t gameserver 2>/dev/null; then echo TMUX_OK; else echo TMUX_NONE; fi";
 
     private const string StopCommand =
-        "tmux kill-session -t gameserver 2>/dev/null; pkill -f enders_server.x86_64 2>/dev/null; sleep 1; " +
-        "if pgrep -f enders_server.x86_64 >/dev/null; then echo STILL_RUNNING; else echo STOPPED_OK; fi";
+        "tmux kill-session -t gameserver 2>/dev/null || true; " +
+        "pkill -TERM -f " + ServerProcessPattern + " 2>/dev/null || true; " +
+        "for i in 1 2 3 4 5 6 7 8 9 10; do " +
+        "if ! pgrep -f " + ServerProcessPattern + " >/dev/null; then break; fi; sleep 0.5; done; " +
+        "if pgrep -f " + ServerProcessPattern + " >/dev/null; then " +
+        "pkill -KILL -f " + ServerProcessPattern + " 2>/dev/null || true; sleep 0.5; fi; " +
+        "if pgrep -f " + ServerProcessPattern + " >/dev/null; then " +
+        "echo STILL_RUNNING; pgrep -af " + ServerProcessPattern + "; else echo STOPPED_OK; fi";
 
     public MainWindow()
     {
@@ -130,7 +141,7 @@ public partial class MainWindow : Window
 
     private async Task<bool> StopServerCore()
     {
-        Log("Stopping server (tmux kill-session + pkill)…");
+        Log("Stopping server (tmux, then TERM/KILL fallback)…");
         var (_, output) = await ExecAsync(StopCommand, 25);
         if (output.Contains("STOPPED_OK"))
         {

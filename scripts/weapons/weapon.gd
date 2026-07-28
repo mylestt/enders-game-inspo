@@ -8,6 +8,9 @@ signal reload_started()
 signal reload_finished()
 signal ads_changed(aiming: bool)
 
+# Carried mass in gameplay units. Besides viewmodel sway, the equipped value contributes to
+# the player's translational and rotational inertia. The legacy `weapon_weight` name remains
+# so every existing weapon scene keeps its serialized value.
 @export var weapon_weight: float = 1.0
 @export var aim_origin_node_path: NodePath
 @export var aim_local_direction: Vector3 = Vector3.FORWARD
@@ -123,6 +126,10 @@ func is_firing() -> bool:
 
 func get_weapon_weight() -> float:
 	return maxf(weapon_weight, 0.01)
+
+
+func get_weapon_mass() -> float:
+	return get_weapon_weight()
 
 
 # Shots come from the CAMERA — origin at the eye, direction straight down the view centre —

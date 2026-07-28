@@ -323,8 +323,14 @@ func integrate_forces(_state: PhysicsDirectBodyState3D) -> void:
 
 func integrate_zero_g_forces() -> void:
 	if grabbing_wall:
-		player.linear_velocity = player.linear_velocity.lerp(Vector3.ZERO, 0.55)
-		player.angular_velocity = player.angular_velocity.lerp(Vector3.ZERO, 0.25)
+		player.linear_velocity = player.linear_velocity.lerp(
+			Vector3.ZERO,
+			get_mass_scaled_response_fraction(0.55)
+		)
+		player.angular_velocity = player.angular_velocity.lerp(
+			Vector3.ZERO,
+			get_mass_scaled_response_fraction(0.25)
+		)
 
 
 func integrate_surface_walk_forces() -> void:
@@ -874,8 +880,14 @@ func try_grab() -> void:
 	grabbing_wall = true
 	grab_position = result.get("position", player.global_position)
 	
-	player.linear_velocity = player.linear_velocity.lerp(Vector3.ZERO, 0.8)
-	player.angular_velocity = player.angular_velocity.lerp(Vector3.ZERO, 0.35)
+	player.linear_velocity = player.linear_velocity.lerp(
+		Vector3.ZERO,
+		get_mass_scaled_response_fraction(0.8)
+	)
+	player.angular_velocity = player.angular_velocity.lerp(
+		Vector3.ZERO,
+		get_mass_scaled_response_fraction(0.35)
+	)
 
 
 func release_grab() -> void:
@@ -892,6 +904,24 @@ func get_roll_max_speed() -> float:
 
 func get_roll_speed_change_rate() -> float:
 	return GameSettings.roll_speed_change_rate if GameSettings.roll_speed_change_rate >= 0.0 else roll_speed_change_rate
+
+
+func get_inverse_mass_response_scale() -> float:
+	if player != null and player.has_method("get_inverse_mass_response_scale"):
+		return maxf(float(player.call("get_inverse_mass_response_scale")), 0.01)
+
+	return 1.0
+
+
+# Converts an existing one-tick response fraction into the equivalent response for the
+# current carried mass while preserving the exact fraction at the reference loadout.
+func get_mass_scaled_response_fraction(base_fraction: float) -> float:
+	var clamped := clampf(base_fraction, 0.0, 1.0)
+
+	if clamped <= 0.0 or clamped >= 1.0:
+		return clamped
+
+	return 1.0 - pow(1.0 - clamped, get_inverse_mass_response_scale())
 
 
 # Mouse-roll modifier: zero-G only, opt-in via settings, active while the bind is held.
@@ -927,7 +957,12 @@ func handle_roll_input(delta: float) -> void:
 
 	var roll_axis := get_screen_roll_axis()
 	var current_speed := player.angular_velocity.dot(roll_axis)
-	var change_step := deg_to_rad(get_roll_speed_change_rate()) * delta
+	var inverse_mass := get_inverse_mass_response_scale()
+	var change_step := deg_to_rad(get_roll_speed_change_rate()) * inverse_mass * delta
+	var mass_scaled_start_speed := minf(
+		get_roll_start_speed() * inverse_mass,
+		get_roll_max_speed()
+	)
 	var new_speed: float
 
 	if roll_input == 0.0:
@@ -935,8 +970,8 @@ func handle_roll_input(delta: float) -> void:
 	else:
 		new_speed = current_speed
 
-		if new_speed * roll_input < deg_to_rad(get_roll_start_speed()):
-			new_speed = roll_input * deg_to_rad(get_roll_start_speed())
+		if new_speed * roll_input < deg_to_rad(mass_scaled_start_speed):
+			new_speed = roll_input * deg_to_rad(mass_scaled_start_speed)
 
 		new_speed = move_toward(new_speed, roll_input * deg_to_rad(get_roll_max_speed()), change_step)
 
@@ -949,7 +984,7 @@ func handle_stabilize_input(delta: float) -> void:
 
 	player.angular_velocity = player.angular_velocity.move_toward(
 		Vector3.ZERO,
-		deg_to_rad(get_roll_speed_change_rate()) * delta
+		deg_to_rad(get_roll_speed_change_rate()) * get_inverse_mass_response_scale() * delta
 	)
 
 
