@@ -1,20 +1,20 @@
 [gd_scene format=3 uid="uid://f2mjnk65ihmq"]
 
-[ext_resource type="Script" uid="uid://cmt4i6gkjmk2f" path="res://scripts/player.gd" id="1_2hs0m"]
-[ext_resource type="Script" uid="uid://dxpqy5hokl06c" path="res://scripts/player_movement_controller.gd" id="2_1jxqw"]
-[ext_resource type="Script" uid="uid://5vqw82uk1ke2" path="res://scripts/suit_boosters.gd" id="3_dw050"]
-[ext_resource type="Script" uid="uid://bge7xypp4io2b" path="res://scripts/player_hud.gd" id="4_b26j0"]
-[ext_resource type="Script" uid="uid://dfkxxwjk335qe" path="res://scripts/impact_controller.gd" id="5_n7ghd"]
+[ext_resource type="Script" uid="uid://cmt4i6gkjmk2f" path="res://Resources/Scripts/Player/player.gd" id="1_2hs0m"]
+[ext_resource type="Script" uid="uid://dxpqy5hokl06c" path="res://Resources/Scripts/Player/player_movement_controller.gd" id="2_1jxqw"]
+[ext_resource type="Script" uid="uid://5vqw82uk1ke2" path="res://Resources/Scripts/Player/suit_boosters.gd" id="3_dw050"]
+[ext_resource type="Script" uid="uid://bge7xypp4io2b" path="res://Resources/Scripts/Player/player_hud.gd" id="4_b26j0"]
+[ext_resource type="Script" uid="uid://dfkxxwjk335qe" path="res://Resources/Scripts/Player/impact_controller.gd" id="5_n7ghd"]
 [ext_resource type="PackedScene" uid="uid://bbc4xgtr6w5ur" path="res://Resources/Widgets/Hud.tscn" id="6_ivps1"]
-[ext_resource type="Script" uid="uid://bvli02if67of" path="res://scripts/weapons/weapon_inventory.gd" id="6_wpninv"]
-[ext_resource type="Script" uid="uid://dn41x1pava75b" path="res://scripts/limb_pusher_controller.gd" id="7_dw050"]
-[ext_resource type="Script" uid="uid://dat7xmhcpfn2o" path="res://scripts/camera_rig.gd" id="8_camrig"]
-[ext_resource type="Script" uid="uid://cxe5nvye4p0xy" path="res://scripts/weapons/weapon_spring_sway.gd" id="9_spring_sway"]
-[ext_resource type="Script" uid="uid://dh4s3fn0hi3ur" path="res://scripts/player_health.gd" id="10_health"]
-[ext_resource type="Script" uid="uid://cg7trh76w3qq3" path="res://scripts/grapple_controller.gd" id="11_grapple"]
+[ext_resource type="Script" uid="uid://bvli02if67of" path="res://Resources/Scripts/Weapons/weapon_inventory.gd" id="6_wpninv"]
+[ext_resource type="Script" uid="uid://dn41x1pava75b" path="res://Resources/Scripts/Player/limb_pusher_controller.gd" id="7_dw050"]
+[ext_resource type="Script" uid="uid://dat7xmhcpfn2o" path="res://Resources/Scripts/Player/camera_rig.gd" id="8_camrig"]
+[ext_resource type="Script" uid="uid://cxe5nvye4p0xy" path="res://Resources/Scripts/Weapons/weapon_spring_sway.gd" id="9_spring_sway"]
+[ext_resource type="Script" uid="uid://dh4s3fn0hi3ur" path="res://Resources/Scripts/Player/player_health.gd" id="10_health"]
+[ext_resource type="Script" uid="uid://cg7trh76w3qq3" path="res://Resources/Scripts/Player/grapple_controller.gd" id="11_grapple"]
 [ext_resource type="Material" uid="uid://ictjshvmqobp" path="res://Resources/Materials/Mat1.tres" id="13_w4uxk"]
 [ext_resource type="Script" uid="uid://nid5ltl1bdyt" path="res://Resources/Scripts/PlayerNametag.cs" id="14_or2vr"]
-[ext_resource type="Script" uid="uid://vwlticrgm8hx" path="res://scripts/ground_movement_controller.gd" id="15_ground"]
+[ext_resource type="Script" uid="uid://vwlticrgm8hx" path="res://Resources/Scripts/Player/ground_movement_controller.gd" id="15_ground"]
 [ext_resource type="PackedScene" uid="uid://c856vj2sqlve2" path="res://Resources/Models/char.glb" id="16_n5i1l"]
 
 [sub_resource type="CylinderMesh" id="CylinderMesh_or2vr"]
@@ -39,6 +39,7 @@ grappleController = NodePath("../GrappleController")
 
 [node name="MovementController" type="Node" parent="." unique_id=294609104]
 script = ExtResource("2_1jxqw")
+max_jump_force = 60.0
 show_limb_push_debug_ui = false
 show_limb_push_ui_when_no_limb_near = false
 
@@ -48,7 +49,6 @@ move_speed = 7.0
 overspeed_friction = 0.09
 airborne_max_time = 0.0
 surface_walk_pitch_limit_degrees = 100.0
-pitch_gimbal_strength = 0.5
 surface_walk_entry_max_angle_degrees = 90.0
 surface_walk_slope_align_speed = 9.0
 debug_movement_log = false

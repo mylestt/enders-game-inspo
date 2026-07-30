@@ -1,7 +1,7 @@
 [gd_scene format=4 uid="uid://c2ujmkb081tnc"]
 
-[ext_resource type="Texture2D" uid="uid://wo10hkhnn7ns" path="res://Props/rlysimpledrone_f6cf48a63e3ca72c7ca439e0add32a9f.jpg" id="1_7ln82"]
-[ext_resource type="Script" uid="uid://bb827ctk3u73n" path="res://scripts/drone.gd" id="2_drone"]
+[ext_resource type="Texture2D" uid="uid://crbv26k00gsrn" path="res://Resources/Models/Enemies/rlysimpledrone_f6cf48a63e3ca72c7ca439e0add32a9f.jpg" id="1_7ln82"]
+[ext_resource type="Script" uid="uid://bb827ctk3u73n" path="res://Resources/Scripts/Enemies/drone.gd" id="2_drone"]
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_harhc"]
 radius = 0.4531626

@@ -24,7 +24,7 @@ func _initialize() -> void:
 	GameLaunch.username_configured = true
 	GameLaunch.lobby_name = "Loopback Test Lobby"
 
-	change_scene_to_file("res://scenes/main.tscn")
+	change_scene_to_file("res://Resources/Scenes/Core/main.tscn")
 	print("Loopback client: connecting to 127.0.0.1 and creating a lobby...")
 
 

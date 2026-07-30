@@ -1,0 +1,75 @@
+[gd_scene format=3 uid="uid://b27y0s55qx24m"]
+
+[ext_resource type="Script" uid="uid://b4vmjnqxsjw6m" path="res://Resources/Scripts/Core/main.gd" id="1_sugp2"]
+[ext_resource type="Script" uid="uid://dat60tk8l7fsn" path="res://Resources/Scripts/UI/buy_menu.gd" id="4_jyhfs"]
+[ext_resource type="PackedScene" uid="uid://dl2cjmy8ky8xq" path="res://Resources/Scenes/Tests/test_map.tscn" id="4_tbgi4"]
+[ext_resource type="Script" uid="uid://ss27ux00fv75" path="res://Resources/Scripts/Networking/network_manager.gd" id="4_tefeu"]
+[ext_resource type="PackedScene" uid="uid://f2mjnk65ihmq" path="res://Resources/Objects/player.tscn" id="5_tbgi4"]
+[ext_resource type="Script" uid="uid://bjn7sj3j0c1h1" path="res://Resources/Scripts/Networking/round_manager.gd" id="6_round"]
+[ext_resource type="Script" uid="uid://tjqvjd3cbcdb" path="res://Resources/Scripts/Networking/server_admin.gd" id="7_admin"]
+[ext_resource type="Script" uid="uid://bl7ig0ef00xlg" path="res://Resources/Scripts/UI/admin_console.gd" id="8_console"]
+[ext_resource type="Script" uid="uid://cmqs5yuimp758" path="res://Resources/Scripts/Networking/lobby_manager.gd" id="9_lobby"]
+[ext_resource type="Script" uid="uid://dtglsq7hq2vtw" path="res://Resources/Scripts/Networking/lobby_browser.gd" id="10_browser"]
+[ext_resource type="Script" uid="uid://dg56k8ek316nr" path="res://Resources/Scripts/UI/round_hud.gd" id="11_roundhud"]
+[ext_resource type="Script" uid="uid://cwcakba58fk0q" path="res://Resources/Scripts/UI/scoreboard.gd" id="12_scoreboard"]
+[ext_resource type="Script" uid="uid://d00rhfk3nukjc" path="res://Resources/Scripts/UI/game_over_hud.gd" id="13_gameover"]
+[ext_resource type="Script" uid="uid://dundkdjk2x61u" path="res://Resources/Scripts/Enemies/drone_spawner.gd" id="14_drones"]
+[ext_resource type="Script" uid="uid://c07247hpxrq76" path="res://Resources/Scripts/Gamemodes/CTF/CtfNotificationHud.gd" id="15_jkv2x"]
+
+[node name="World Node3D" type="Node3D" unique_id=878825741]
+script = ExtResource("1_sugp2")
+
+[node name="BuyMenu" type="CanvasLayer" parent="." unique_id=2018399957]
+script = ExtResource("4_jyhfs")
+starting_cash = 200000
+
+[node name="GeneratedMap" parent="." unique_id=1659737674 instance=ExtResource("4_tbgi4")]
+
+[node name="NetworkManager" type="Node" parent="." unique_id=925509397]
+script = ExtResource("4_tefeu")
+player_scene = ExtResource("5_tbgi4")
+players_parent_path = NodePath("../Players")
+spawn_a_path = NodePath("../SpawnPointA")
+spawn_b_path = NodePath("../SpawnPointB")
+buy_menu_path = NodePath("../BuyMenu")
+
+[node name="RoundManager" type="Node" parent="." unique_id=171747401]
+script = ExtResource("6_round")
+
+[node name="LobbyManager" type="Node" parent="." unique_id=1665426191]
+script = ExtResource("9_lobby")
+
+[node name="LobbyBrowser" type="CanvasLayer" parent="." unique_id=712953124]
+script = ExtResource("10_browser")
+
+[node name="RoundHUD" type="CanvasLayer" parent="." unique_id=554489353]
+script = ExtResource("11_roundhud")
+
+[node name="Scoreboard" type="CanvasLayer" parent="." unique_id=845839312]
+script = ExtResource("12_scoreboard")
+
+[node name="GameOverHUD" type="CanvasLayer" parent="." unique_id=845839313]
+script = ExtResource("13_gameover")
+
+[node name="ServerAdmin" type="Node" parent="." unique_id=217199436]
+script = ExtResource("7_admin")
+
+[node name="AdminConsole" type="CanvasLayer" parent="." unique_id=1436361641]
+script = ExtResource("8_console")
+
+[node name="Players" type="Node3D" parent="." unique_id=1147699974]
+
+[node name="WeaponEffects" type="Node3D" parent="." unique_id=292710641]
+
+[node name="DroneSpawner" type="Node3D" parent="." unique_id=1147699975]
+script = ExtResource("14_drones")
+
+[node name="SpawnPointA" type="Marker3D" parent="." unique_id=301948085]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, -37)
+
+[node name="SpawnPointB" type="Marker3D" parent="." unique_id=1767691915]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 37)
+
+[node name="CtfNotificationHud" type="CanvasLayer" parent="." unique_id=1409887623]
+script = ExtResource("15_jkv2x")
+metadata/_custom_type_script = "uid://c07247hpxrq76"

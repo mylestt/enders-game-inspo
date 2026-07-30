@@ -1,5 +1,0 @@
-[gd_scene format=3 uid="uid://btaqa117sklgn"]
-
-[ext_resource type="PackedScene" uid="uid://cqtncghpu6pc0" path="res://Props/CaptureTheFlagPill.glb" id="1_ibsc7"]
-
-[node name="CaptureTheFlagPill" unique_id=899605525 instance=ExtResource("1_ibsc7")]

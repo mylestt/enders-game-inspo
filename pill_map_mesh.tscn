@@ -1,5 +1,0 @@
-[gd_scene format=3 uid="uid://d1r0bbt4yv8b6"]
-
-[ext_resource type="PackedScene" uid="uid://cl1bevbao1pk6" path="res://Props/PillMap.glb" id="1_16j5t"]
-
-[node name="PillMap" unique_id=1414198448 instance=ExtResource("1_16j5t")]

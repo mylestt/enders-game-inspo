@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://bv7sy3gyfuoge"]
 
-[ext_resource type="Script" uid="uid://iicblqu3rbjb" path="res://scripts/weapons/plasma_projectile.gd" id="1_frag"]
+[ext_resource type="Script" uid="uid://iicblqu3rbjb" path="res://Resources/Scripts/Weapons/plasma_projectile.gd" id="1_frag"]
 
 [sub_resource type="Curve" id="Curve_7eq0l"]
 _data = [Vector2(0, 0.99539334), 0.0, 0.0, 0, 0, Vector2(0.74705887, 1), 0.0, 0.0, 0, 0, Vector2(0.9960785, 0.021913767), 0.0, 0.0, 0, 0]

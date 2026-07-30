@@ -1,7 +1,0 @@
-[gd_scene format=3 uid="uid://0jf5ak884hmg"]
-
-[ext_resource type="Script" uid="uid://f58hv825u7ge" path="res://scripts/spawn_point.gd" id="1_spawnpt"]
-
-[node name="SpawnPoint" type="Node3D" unique_id=1706213118]
-script = ExtResource("1_spawnpt")
-show_in_game = true

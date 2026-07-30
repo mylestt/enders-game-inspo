@@ -1,0 +1,7 @@
+[gd_scene format=3 uid="uid://dl2cjmy8ky8xq"]
+
+[ext_resource type="Script" uid="uid://c2wxkwjloh87o" path="res://Resources/Scripts/Maps/map_generator.gd" id="1_mapgen"]
+
+[node name="TestMap" type="Node3D" unique_id=773544436]
+script = ExtResource("1_mapgen")
+map_id = "diamond"

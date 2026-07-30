@@ -1,28 +1,26 @@
-# Godot 4+ editor cache and generated import data.
-# Regenerated automatically by the editor — tracking it caused "phantom"
-# git changes on every viewport move, Play press, or asset re-import.
-.godot/
+# Godot-generated editor/import state.
+/.godot/
+/.mono/
 
-# Blender auto-save backups
+# Local IDE state.
+/.idea/
+/.vs/
+/.vscode/
+
+# All exported games, packaging output, and local autosaves belong here.
+/build/
+
+# Blender autosaves and import metadata for editable source files.
 *.blend1
+/Resources/Source/**/*.import
 
-# Import metadata for the raw Blender sources kept only for editing.
-# The game uses the exported .glb files, not these .blend files directly,
-# so Godot regenerates this on demand and it doesn't need tracking.
-raw_blend/*.import
-
-# Export binaries too large for GitHub (kept local; deploy via scp per DEPLOY.md)
+# Legacy root export names are ignored if an old workflow recreates them.
 /EndersGameInspo.exe
 /EndersGameInspo.console.exe
 /ZeroGravArena.exe
 /ZeroGravArena.console.exe
-build/enders_server.x86_64
-build/mac/
 
-# Steam build staging (300MB+ exports — far over GitHub's 100MB hard limit)
-SteamBuilds/
-
-# Server-manager tool build output (source is tracked; binaries are not)
-tools/server_manager/EndersServerManager/bin/
-tools/server_manager/EndersServerManager/obj/
-tools/server_manager/publish/
+# Server-manager compiler/publish output.
+/tools/server_manager/EndersServerManager/bin/
+/tools/server_manager/EndersServerManager/obj/
+/tools/server_manager/publish/

@@ -9,9 +9,8 @@ extends SceneTree
 #   - server-economy hit validation (fire-rate tokens, damage clamp, plasma per-target dedup)
 #   - lobby-settings sanitation against hostile client dictionaries
 #   - network state hygiene (basis orthonormalization, transform validation, spawn slots)
-#   - map creator: document round-trip + hostile-JSON sanitation, bevel mesh generation
-#     (winding checked against engine convention), OBJ/STL runtime parsers, and built-map
-#     runtime guarantees (spawn groups, analytic-vs-trimesh colliders, solid geometry)
+#   - uploaded glTF test maps: marker naming, triplanar fallback material, environment,
+#     and MeshInstance3D -> StaticBody3D -> trimesh CollisionShape3D generation
 #   - cylindrical force field: ring weight profile, local-axis push + height gating,
 #     generated collider/gizmo children, Diamond arena placement
 #   - spinning skybox rig: fullbright shader loads, spin accumulation/orthonormality
@@ -38,16 +37,15 @@ func _run_all() -> void:
 	test_economy_ffa_exclusive_grant()
 	test_lobby_settings_sanitation()
 	test_network_state_hygiene()
+	await test_player_weapon_mass_model()
 	test_surface_walk_wall_slide()
+	test_ground_mode_modifier_policy()
+	test_surface_walk_entry_aim_lock()
 	test_charge_weapon_scaling()
 	await test_grapple_multiwrap()
 	await test_cylindrical_force_field()
 	test_spinning_skybox()
-	test_map_creator_document_roundtrip()
-	test_bevel_mesh_generators()
-	test_model_importer_parsers()
-	await test_map_creator_builder()
-	test_map_creator_gizmos()
+	await test_uploaded_map_preparation()
 
 	# Runtime (in-tree, physics-active) checks per registered arena. `grounded` asserts
 	# every spawn stands on a surface within the 8 m ground-mode probe. Both current arenas
@@ -82,36 +80,16 @@ func check(condition: bool, label: String) -> void:
 
 # --- Scene integrity ---------------------------------------------------------------------
 
-const SCENE_PATHS := [
-	"res://Resources/Objects/player.tscn",
-	"res://scenes/main.tscn",
-	"res://scenes/start_menu.tscn",
-	"res://scenes/test_map.tscn",
-	"res://scenes/map_creator.tscn",
-	"res://DiamondArena.tscn",
-	"res://scenes/sphere.tscn",
-	"res://spin_space_ball.tscn",
-	"res://scenes/spawn_point.tscn",
-	"res://testingdrone.tscn",
-	"res://scenes/minigun.tscn",
-	"res://scenes/railgun.tscn",
-	"res://scenes/rifle.tscn",
-	"res://scenes/plasma_cannon.tscn",
-	"res://scenes/plasma_projectile.tscn",
-	"res://scenes/hitscan_tracer_effect.tscn",
-	"res://scenes/minigun_tracer_effect.tscn",
-	"res://scenes/railgun_tracer_effect.tscn",
-	"res://scenes/rifle_tracer_effect.tscn",
-	"res://scenes/minigun_muzzle_flash.tscn",
-	"res://scenes/railgun_muzzle_flash.tscn",
-	"res://scenes/rifle_muzzle_flash.tscn",
-]
+const SCENE_ROOT := "res://Resources"
 
 
 func test_scene_instantiation() -> void:
 	print("- scene instantiation")
 
-	for path in SCENE_PATHS:
+	var scene_paths := find_files_recursive(SCENE_ROOT, ".tscn")
+	check(not scene_paths.is_empty(), "Resources contains discoverable scenes")
+
+	for path in scene_paths:
 		var scene := load(path) as PackedScene
 
 		if scene == null:
@@ -134,6 +112,34 @@ func test_scene_instantiation() -> void:
 			weapon.free()
 
 
+func find_files_recursive(directory_path: String, extension: String) -> Array[String]:
+	var found: Array[String] = []
+	var directory := DirAccess.open(directory_path)
+
+	if directory == null:
+		return found
+
+	directory.list_dir_begin()
+	var entry := directory.get_next()
+
+	while entry != "":
+		var is_directory := directory.current_is_dir()
+
+		if not entry.begins_with("."):
+			var path := directory_path.path_join(entry)
+
+			if is_directory:
+				found.append_array(find_files_recursive(path, extension))
+			elif entry.to_lower().ends_with(extension.to_lower()):
+				found.append(path)
+
+		entry = directory.get_next()
+
+	directory.list_dir_end()
+	found.sort()
+	return found
+
+
 # --- RPC protocol fingerprint --------------------------------------------------------------
 # Godot sends RPCs as an index into each node's alphabetically-sorted @rpc method table, so
 # ANY change to the project's @rpc surface breaks wire compatibility with older builds (calls
@@ -150,7 +156,7 @@ func test_rpc_protocol_fingerprint() -> void:
 	declarations.sort()
 
 	var fingerprint := String("\n".join(declarations)).md5_text()
-	var network_manager_script := preload("res://scenes/network_manager.gd")
+	var network_manager_script := preload("res://Resources/Scripts/Networking/network_manager.gd")
 	var recorded := String(network_manager_script.NET_RPC_FINGERPRINT)
 
 	check(declarations.size() > 0, "project declares @rpc methods (%d found)" % declarations.size())
@@ -312,7 +318,7 @@ func test_lobby_settings_sanitation() -> void:
 func test_network_state_hygiene() -> void:
 	print("- network: transform validation and spawn slots")
 
-	var nm_script := load("res://scenes/network_manager.gd")
+	var nm_script := load("res://Resources/Scripts/Networking/network_manager.gd")
 	var nm: Node = nm_script.new()   # not added to the tree: _ready never runs
 
 	var good := Transform3D(Basis.IDENTITY.rotated(Vector3(0.3, 0.8, 0.52).normalized(), 1.2), Vector3(1, 2, 3))
@@ -354,6 +360,80 @@ func test_network_state_hygiene() -> void:
 	player.free()
 
 
+# --- Player + equipped-weapon mass -------------------------------------------------------
+
+func test_player_weapon_mass_model() -> void:
+	print("- movement: player + equipped-weapon mass")
+
+	var player_scene := load("res://Resources/Objects/player.tscn") as PackedScene
+	var player := player_scene.instantiate() as RigidBody3D if player_scene != null else null
+	check(player != null, "runtime player instantiates for mass checks")
+
+	if player == null:
+		return
+
+	root.add_child(player)
+	await process_frame
+
+	player.call("set_equipped_weapon_mass", 1.0)
+	var reference_damp := player.linear_damp
+	check(is_equal_approx(float(player.call("get_total_carried_mass")), 6.0), "5 body + 1 weapon reports 6 total mass")
+	check(is_equal_approx(player.mass, 1.0), "reference loadout preserves physics mass 1")
+	check(is_equal_approx(player.inertia.x, 0.3), "reference loadout preserves rotational inertia")
+
+	player.call("set_equipped_weapon_mass", 2.0)
+	check(is_equal_approx(float(player.call("get_total_carried_mass")), 7.0), "heavier weapon increases total carried mass")
+	check(player.mass > 1.0, "heavier weapon increases rigid-body mass")
+	check(player.inertia.x > 0.3, "heavier weapon increases rotational inertia")
+	check(player.linear_damp < reference_damp, "heavier weapon loses zero-G drift more slowly")
+	check(float(player.call("get_inverse_mass_response_scale")) < 1.0, "heavier weapon reduces manual movement response")
+
+	var movement := PlayerMovementController.new()
+	movement.player = player
+	check(
+		movement.get_mass_scaled_response_fraction(0.55) < 0.55,
+		"heavier weapon slows zero-G grab/stabilization response"
+	)
+	movement.free()
+
+	var min_weapon_mass := INF
+	var max_weapon_mass := 0.0
+
+	for weapon_id in WeaponInventory.get_weapon_ids():
+		var weapon_scene := WeaponInventory.get_weapon_scene(weapon_id)
+		var weapon := weapon_scene.instantiate() as Weapon if weapon_scene != null else null
+
+		if weapon == null:
+			continue
+
+		var weapon_mass := weapon.get_weapon_mass()
+		check(weapon_mass > 0.0, "weapon '%s' has positive carried mass" % weapon_id)
+		min_weapon_mass = minf(min_weapon_mass, weapon_mass)
+		max_weapon_mass = maxf(max_weapon_mass, weapon_mass)
+		weapon.free()
+
+	check(max_weapon_mass > min_weapon_mass, "weapon roster contains meaningfully different masses")
+
+	var inventory := player.get_node_or_null("WeaponInventory") as WeaponInventory
+	check(inventory != null, "runtime player exposes its weapon inventory")
+
+	if inventory != null:
+		inventory.unlocked_weapon_ids[&"railgun"] = true
+		check(inventory.equip_weapon(&"railgun"), "equipping a registered weapon succeeds")
+		check(
+			is_equal_approx(float(player.call("get_equipped_weapon_mass")), 2.02),
+			"inventory propagates the equipped weapon's mass to the player"
+		)
+		inventory.clear_mount()
+		check(
+			is_zero_approx(float(player.call("get_equipped_weapon_mass"))),
+			"clearing the weapon removes its mass from the player"
+		)
+
+	player.queue_free()
+	await process_frame
+
+
 # --- Surface-walk wall slide ------------------------------------------------------------
 # strip_into_wall_component removes the part of a walk velocity heading INTO a wall (so you
 # stop against it / slide along its base) while leaving parallel motion untouched.
@@ -381,6 +461,130 @@ func test_surface_walk_wall_slide() -> void:
 	# Parallel to the wall (pure +Z): untouched.
 	var parallel := mc.strip_into_wall_component(Vector3(0, 0, 4), wall_tangent)
 	check(parallel.is_equal_approx(Vector3(0, 0, 4)), "parallel motion is unaffected")
+
+
+# --- Ground-mode modifier ---------------------------------------------------------------
+
+func test_ground_mode_modifier_policy() -> void:
+	print("- movement: ground-mode modifier policy")
+
+	var movement := PlayerMovementController
+	check(
+		movement.is_ground_mode_allowed_for_modifier(true, false),
+		"default-on: released modifier allows automatic ground mode"
+	)
+	check(
+		not movement.is_ground_mode_allowed_for_modifier(true, true),
+		"default-on: held modifier blocks ground mode"
+	)
+	check(
+		not movement.is_ground_mode_allowed_for_modifier(false, false),
+		"default-off: released modifier blocks ground mode"
+	)
+	check(
+		movement.is_ground_mode_allowed_for_modifier(false, true),
+		"default-off: held modifier allows ground mode"
+	)
+	check(
+		GameSettings.DEFAULT_GROUND_MODE_ON_BY_DEFAULT,
+		"ground mode preserves automatic mounting by default"
+	)
+
+	var ctrl_is_default := false
+
+	for event in InputMap.action_get_events("ground_mode_modifier"):
+		if event is InputEventKey:
+			var key_event := event as InputEventKey
+			var code := key_event.physical_keycode if key_event.physical_keycode != 0 else key_event.keycode
+			ctrl_is_default = code == KEY_CTRL
+
+	check(ctrl_is_default, "Ground Mode Modifier defaults to Ctrl")
+
+	var original_default := GameSettings.ground_mode_on_by_default
+	var player := RigidBody3D.new()
+	var controller := PlayerMovementController.new()
+	var ground := GroundMovementController.new()
+	controller.player = player
+	controller.ground = ground
+	ground.player = player
+	ground.coordinator = controller
+
+	GameSettings.ground_mode_on_by_default = true
+	Input.action_press("ground_mode_modifier")
+	controller.movement_mode = PlayerMovementController.MovementMode.SURFACE_WALK
+	controller.pending_spawn_ground_mode = true
+	controller.enforce_ground_mode_input_policy()
+	check(
+		controller.movement_mode == PlayerMovementController.MovementMode.ZERO_G,
+		"default-on: pressing the modifier immediately exits active ground mode"
+	)
+	check(
+		not controller.pending_spawn_ground_mode,
+		"a blocking modifier state cancels forced spawn mounting"
+	)
+
+	GameSettings.ground_mode_on_by_default = false
+	Input.action_release("ground_mode_modifier")
+	controller.movement_mode = PlayerMovementController.MovementMode.SURFACE_WALK
+	controller.enforce_ground_mode_input_policy()
+	check(
+		controller.movement_mode == PlayerMovementController.MovementMode.ZERO_G,
+		"default-off: releasing the modifier immediately exits active ground mode"
+	)
+
+	GameSettings.ground_mode_on_by_default = original_default
+	Input.action_release("ground_mode_modifier")
+	ground.free()
+	controller.free()
+	player.free()
+
+
+# --- Surface-walk entry aim lock ---------------------------------------------------------
+
+func test_surface_walk_entry_aim_lock() -> void:
+	print("- movement: surface-walk entry aim lock")
+
+	var player := RigidBody3D.new()
+	var ground := GroundMovementController.new()
+	ground.player = player
+
+	# A steep view is the failure-prone case: projecting the BODY forward instead of this
+	# view ray can turn a small feet/surface mismatch into a large yaw error.
+	var surface_normal := Vector3.UP.rotated(Vector3.FORWARD, deg_to_rad(14.0)).normalized()
+	var entry_view := Vector3(0.03, 0.99, -0.12).normalized()
+	var surface_forward := ground.get_surface_forward_for_view(entry_view, surface_normal)
+	var surface_pitch := ground.get_surface_pitch_for_view(entry_view, surface_normal)
+	var body_basis := ground.make_surface_walk_basis(surface_forward, surface_normal)
+	var rebuilt_view := -(body_basis * Basis.from_euler(Vector3(surface_pitch, 0.0, 0.0))).z
+	check(
+		rebuilt_view.angle_to(entry_view) < 0.00001,
+		"surface body heading + camera pitch exactly rebuild the entry aim ray"
+	)
+
+	var rig := CameraRig.new()
+	var view := Camera3D.new()
+	player.add_child(rig)
+	rig.add_child(view)
+	root.add_child(player)
+	rig.player = player
+	rig.camera = view
+	view.position = Vector3(0.2, 0.6, -0.15)
+
+	var target := Vector3(7.0, 3.5, -18.0)
+	rig.begin_world_aim_lock(target)
+	player.transform.basis = Basis.from_euler(Vector3(0.7, -0.4, 0.9))
+	rig.transform.basis = Basis.from_euler(Vector3(-0.2, 0.3, -0.15))
+	rig.apply_world_aim_lock()
+
+	var expected := (target - view.global_position).normalized()
+	var actual := -view.global_transform.basis.z
+	check(
+		actual.angle_to(expected) < 0.00001,
+		"camera hierarchy counter-rotates to keep the captured world target under the crosshair"
+	)
+
+	ground.free()
+	player.free()
 
 
 # --- Charge railgun scaling -------------------------------------------------------------
@@ -465,7 +669,7 @@ func test_grapple_multiwrap() -> void:
 	player.freeze = true
 	container.add_child(player)
 
-	var grapple = load("res://scripts/grapple_controller.gd").new()
+	var grapple = load("res://Resources/Scripts/Player/grapple_controller.gd").new()
 	grapple.wrap_surface_offset = 0.005      # the tight, dense-bend tuning from player.tscn
 	grapple.wrap_min_pivot_separation = 0.0
 	player.add_child(grapple)
@@ -655,7 +859,7 @@ func _find_force_field(node: Node) -> CylindricalForceField:
 func test_spinning_skybox() -> void:
 	print("- spinning skybox rig")
 
-	var shader = load("res://shaders/skybox_fullbright.gdshader")
+	var shader = load("res://Resources/Materials/Shaders/Gameplay/skybox_fullbright.gdshader")
 	check(shader is Shader, "skybox shader resource loads")
 	check(shader is Shader and shader.get_mode() == Shader.MODE_SPATIAL, "skybox shader is a spatial shader")
 
@@ -771,436 +975,124 @@ func test_map_runtime(map_id: String, scene: PackedScene, expect_grounded: bool)
 	await physics_frame
 
 
-# --- Map creator: document persistence ------------------------------------------------------
-# Custom maps are data-only JSON under user://custom_maps. Round-trip must preserve every
-# entry, and a hostile/hand-mangled file must degrade to defaults instead of crashing.
+# --- Uploaded glTF test-map preparation ----------------------------------------------------
 
-const SMOKE_MAP_SLUG := "zz_smoke_suite"
+func test_uploaded_map_preparation() -> void:
+	print("- uploaded glTF test-map preparation")
 
+	var loaded := TestMapLoader.load_file("res://Resources/Models/Maps/Diamond.glb")
+	check(bool(loaded.get("ok", false)), "an actual project GLB loads through GLTFDocument")
 
-func test_map_creator_document_roundtrip() -> void:
-	print("- map creator document roundtrip")
+	var loaded_scene := loaded.get("scene") as Node3D
 
-	MapDocument.delete_map(SMOKE_MAP_SLUG)
-
-	var doc := MapDocument.create_new("Smoke Suite Map")
-	doc.slug = SMOKE_MAP_SLUG
-
-	var box := doc.make_primitive_entry("box")
-	box["position"] = [1.0, 2.0, 3.0]
-	box["bevel_radius"] = 0.25
-	box["bevel_segments"] = 2
-	box["material"]["color"] = [0.9, 0.2, 0.1]
-	doc.objects.append(box)
-
-	var spot := doc.make_light_entry("spot")
-	spot["energy"] = 7.5
-	doc.objects.append(spot)
-
-	var model := doc.make_model_entry("assets/thing.glb", "Thing")
-	model["scale"] = [2.0, 2.0, 2.0]
-	doc.objects.append(model)
-
-	check(doc.save() == OK, "document saves to user://custom_maps")
-	check(MapDocument.map_exists(SMOKE_MAP_SLUG), "saved map is listed as existing")
-
-	var loaded := MapDocument.load_map(SMOKE_MAP_SLUG)
-	check(loaded != null, "saved map loads back")
-
-	if loaded != null:
-		check(loaded.map_name == "Smoke Suite Map", "map name survives the round trip")
-		check(loaded.objects.size() == doc.objects.size(), "all %d entries survive (got %d)" % [doc.objects.size(), loaded.objects.size()])
-
-		var loaded_box := loaded.get_entry(int(box["id"]))
-		check(not loaded_box.is_empty(), "box entry found by id after reload")
-		check(MapDocument.vec3_from(loaded_box.get("position")).is_equal_approx(Vector3(1, 2, 3)), "box position survives")
-		check(absf(MapDocument._safe_float(loaded_box.get("bevel_radius"), 0.0) - 0.25) < 0.001, "bevel radius survives")
-
-		var loaded_model := loaded.get_entry(int(model["id"]))
-		check(String(loaded_model.get("source", "")) == "assets/thing.glb", "model source path survives")
-
-	# Custom map ids resolve through MapGenerator while the file exists.
-	check(MapGenerator.is_custom_map_id("custom:" + SMOKE_MAP_SLUG), "custom: prefix detected")
-	check(MapGenerator.has_map("custom:" + SMOKE_MAP_SLUG), "has_map true for an existing custom map")
-	check(MapGenerator.get_map_name("custom:" + SMOKE_MAP_SLUG) == "Smoke Suite Map", "custom map display name resolves")
-	check(MapGenerator.normalize_map_id("CUSTOM:Zz Smoke Suite") == "custom:zz_smoke_suite", "custom id normalization slugs the tail")
-	check(not MapGenerator.has_map("custom:definitely_missing_zz"), "has_map false for a missing custom map")
-
-	var copy_slug := MapDocument.duplicate_map(SMOKE_MAP_SLUG, "Smoke Suite Copy")
-	check(copy_slug != "" and MapDocument.map_exists(copy_slug), "duplicate_map creates a new save")
-	MapDocument.delete_map(copy_slug)
-
-	# Hostile input: junk types, path traversal in a model source, unknown kinds. Must not
-	# crash, must drop what cannot be trusted (same ethos as the lobby-settings guards).
-	var hostile := MapDocument.new()
-	hostile.load_from_dict({
-		"name": 42,
-		"next_object_id": "lots",
-		"environment": "nope",
-		"objects": [
-			"not a dict",
-			{"kind": "warp_core"},
-			{"kind": "model", "source": "../../outside.glb"},
-			{"kind": "model", "source": "C:/windows/system32/evil.glb"},
-			{"kind": "primitive", "shape": "box", "position": [1, "a", 3], "size": "huge"},
-			{"kind": "light", "type": "spot", "energy": 99999.0, "color": [9, 9, 9]},
-		],
-	})
-	check(hostile.map_name == "Untitled Map", "hostile name degrades to default")
-	check(hostile.objects.size() == 2, "hostile entries: only sanitizable ones survive (got %d)" % hostile.objects.size())
-
-	for entry in hostile.objects:
-		if String(entry.get("kind", "")) == "light":
-			check(MapDocument._safe_float(entry.get("energy"), 0.0) <= 64.0, "hostile light energy is clamped")
-
-	MapDocument.delete_map(SMOKE_MAP_SLUG)
-	check(not MapDocument.map_exists(SMOKE_MAP_SLUG), "delete_map removes the save")
-
-
-# --- Map creator: bevel mesh generation ------------------------------------------------------
-# The generators must produce watertight-looking geometry at the requested size with unit
-# normals, and their winding must MATCH the engine's own convention — checked empirically
-# against a BoxMesh so an inside-out regression cannot slip in.
-
-func test_bevel_mesh_generators() -> void:
-	print("- bevel mesh generators")
-
-	var reference_sign := _mesh_winding_sign((BoxMesh.new() as Mesh).get_mesh_arrays())
-
-	var rounded := BevelMesh.build_rounded_box(Vector3(2.0, 1.0, 3.0), 0.2, 3)
-	check(rounded.get_surface_count() == 1, "rounded box commits one surface")
-
-	var arrays := rounded.surface_get_arrays(0)
-	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
-	check(vertices.size() > 24, "rounded box is denser than a plain box (%d verts)" % vertices.size())
-
-	var aabb := rounded.get_aabb()
-	check(
-		aabb.size.is_equal_approx(Vector3(2.0, 1.0, 3.0)),
-		"rounded box AABB matches requested size (got %s)" % str(aabb.size)
-	)
-
-	var normals_ok := true
-
-	for normal in normals:
-		if absf(normal.length() - 1.0) > 0.01:
-			normals_ok = false
-			break
-
-	check(normals_ok, "rounded box normals are unit length")
-	check(_mesh_winding_sign(arrays) == reference_sign, "rounded box winding matches engine convention")
-
-	# Full round-over (radius = half the smallest dimension) must stay sane.
-	var pill := BevelMesh.build_rounded_box(Vector3(1.0, 1.0, 1.0), 0.5, 4)
-	check(pill.get_aabb().size.is_equal_approx(Vector3.ONE), "fully-rounded box (sphere case) keeps its size")
-
-	var flat := BevelMesh.build_rounded_box(Vector3(2.0, 2.0, 2.0), 0.0, 3)
-	check(flat.get_aabb().size.is_equal_approx(Vector3(2, 2, 2)), "zero bevel falls back to a plain box")
-
-	var cylinder := BevelMesh.build_beveled_cylinder(1.0, 3.0, 0.3, 3, 24)
-	var cylinder_aabb := cylinder.get_aabb()
-	check(
-		absf(cylinder_aabb.size.y - 3.0) < 0.01 and absf(cylinder_aabb.size.x - 2.0) < 0.01,
-		"beveled cylinder AABB matches radius/height (got %s)" % str(cylinder_aabb.size)
-	)
-	check(_mesh_winding_sign(cylinder.surface_get_arrays(0)) == reference_sign, "beveled cylinder winding matches engine convention")
-
-
-# Sign of (edge cross) · normal for the first indexed triangle — a stable fingerprint of
-# front-face winding that both generated meshes must share with built-in meshes.
-func _mesh_winding_sign(arrays: Array) -> float:
-	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
-	var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
-
-	for triangle in range(indices.size() / 3):
-		var a := vertices[indices[triangle * 3]]
-		var b := vertices[indices[triangle * 3 + 1]]
-		var c := vertices[indices[triangle * 3 + 2]]
-		var cross := (b - a).cross(c - a)
-
-		if cross.length_squared() < 0.000001:
-			continue
-
-		var normal := (
-			normals[indices[triangle * 3]]
-			+ normals[indices[triangle * 3 + 1]]
-			+ normals[indices[triangle * 3 + 2]]
+	if loaded_scene != null:
+		check(
+			int(loaded.get("collision_count", 0)) > 0,
+			"loaded GLB receives runtime trimesh collision"
 		)
 
-		if normal.length_squared() < 0.000001:
-			continue
+		GameLaunch.set_uploaded_test_map("res://Resources/Models/Maps/Diamond.glb", loaded_scene, loaded)
+		GameLaunch.map_configured = true
+		GameLaunch.map_id = MapGenerator.UPLOADED_TEST_MAP_ID
 
-		return signf(cross.dot(normal))
+		var generator := MapGenerator.new()
+		generator.build_on_ready = false
+		root.add_child(generator)
+		generator.build_map()
+		check(
+			generator.get_node_or_null("GeneratedMap/UploadedTestMap") == loaded_scene,
+			"MapGenerator installs the transient uploaded scene"
+		)
+		check(
+			GameLaunch.uploaded_test_map_scene == null,
+			"MapGenerator consumes the transient scene exactly once"
+		)
+		generator.free()
+		await physics_frame
 
-	return 0.0
+		GameLaunch.map_configured = false
+		GameLaunch.map_id = MapGenerator.DEFAULT_MAP_ID
+		GameLaunch.clear_uploaded_test_map()
 
+	var map := Node3D.new()
 
-# --- Map creator: runtime model parsers -------------------------------------------------------
+	var geometry := MeshInstance3D.new()
+	geometry.name = "BlockoutGeometry"
+	geometry.mesh = BoxMesh.new()
+	map.add_child(geometry)
 
-func test_model_importer_parsers() -> void:
-	print("- model importer parsers")
+	var textured := MeshInstance3D.new()
+	textured.name = "TexturedGeometry"
+	var textured_mesh := BoxMesh.new()
+	var authored_material := StandardMaterial3D.new()
+	var authored_image := Image.create(1, 1, false, Image.FORMAT_RGBA8)
+	authored_image.fill(Color(0.8, 0.2, 0.1))
+	authored_material.albedo_texture = ImageTexture.create_from_image(authored_image)
+	textured_mesh.material = authored_material
+	textured.mesh = textured_mesh
+	textured.position = Vector3(3.0, 0.0, 0.0)
+	map.add_child(textured)
 
-	check(ClassDB.class_exists("GLTFDocument"), "GLTFDocument available for runtime .glb/.gltf loading")
-	check(ClassDB.class_exists("FBXDocument"), "FBXDocument available for runtime .fbx loading")
-	check(MapModelImporter.is_supported("user://thing.BLEND"), "extension check is case-insensitive")
-	check(not MapModelImporter.is_supported("user://thing.txt"), "unsupported extensions are rejected")
+	var spawn := Marker3D.new()
+	spawn.name = "Spawn.001"
+	spawn.position = Vector3(0.0, 1.0, 2.0)
+	map.add_child(spawn)
 
-	# OBJ: a unit quad with explicit normals -> one surface, two indexed triangles.
-	var obj_path := "user://zz_smoke_model.obj"
-	var obj_file := FileAccess.open(obj_path, FileAccess.WRITE)
-	obj_file.store_string(
-		"# smoke quad\n"
-		+ "v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\n"
-		+ "vn 0 0 1\n"
-		+ "f 1//1 2//1 3//1 4//1\n"
+	var light_marker := Node3D.new()
+	light_marker.name = "Light"
+	map.add_child(light_marker)
+
+	var visual_only := Node3D.new()
+	visual_only.name = "no_collision_decor"
+	var visual_mesh := MeshInstance3D.new()
+	visual_mesh.mesh = BoxMesh.new()
+	visual_only.add_child(visual_mesh)
+	map.add_child(visual_only)
+
+	var result := TestMapLoader.prepare_scene(map)
+	check(bool(result.get("ok", false)), "uploaded map preparation succeeds")
+	check(int(result.get("mesh_count", 0)) == 2, "only playable geometry is counted")
+	check(int(result.get("collision_count", 0)) == 2, "every playable mesh gets collision")
+	check(int(result.get("spawn_count", 0)) == 1, "Spawn.001 is recognized as a spawn marker")
+	check(int(result.get("light_count", 0)) == 1, "Light marker generates a usable light")
+	check(
+		int(result.get("blockout_material_count", 0)) == 1,
+		"only the untextured mesh gets the triplanar blockout material"
 	)
-	obj_file.close()
-
-	var obj_scene := MapModelImporter.load_model_scene(obj_path)
-	check(obj_scene != null, "OBJ parses into a scene")
-
-	if obj_scene != null:
-		var mesh_instance := obj_scene.get_node_or_null("Mesh") as MeshInstance3D
-		check(mesh_instance != null and mesh_instance.mesh != null, "OBJ scene contains a mesh")
-
-		if mesh_instance != null and mesh_instance.mesh != null:
-			var arrays := mesh_instance.mesh.surface_get_arrays(0)
-			var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
-			check(indices.size() == 6, "OBJ quad fan-triangulates into 2 triangles (got %d indices)" % indices.size())
-			check(_mesh_winding_sign(arrays) == _mesh_winding_sign((BoxMesh.new() as Mesh).get_mesh_arrays()), "OBJ winding converted to engine convention")
-
-		obj_scene.free()
-
-	DirAccess.remove_absolute(obj_path)
-
-	# ASCII STL: one facet -> one triangle.
-	var stl_path := "user://zz_smoke_model.stl"
-	var stl_file := FileAccess.open(stl_path, FileAccess.WRITE)
-	stl_file.store_string(
-		"solid smoke\n"
-		+ " facet normal 0 0 1\n  outer loop\n"
-		+ "   vertex 0 0 0\n   vertex 1 0 0\n   vertex 0 1 0\n"
-		+ "  endloop\n endfacet\nendsolid smoke\n"
+	check(geometry.material_override is ShaderMaterial, "untextured geometry uses the blockout shader")
+	check(textured.material_override == null, "authored albedo texture is preserved")
+	check(
+		geometry.get_node_or_null("StaticBody3D/CollisionShape3D") is CollisionShape3D,
+		"collider hierarchy is MeshInstance3D -> StaticBody3D -> CollisionShape3D"
 	)
-	stl_file.close()
 
-	var stl_scene := MapModelImporter.load_model_scene(stl_path)
-	check(stl_scene != null, "ASCII STL parses into a scene")
+	var collision := geometry.get_node_or_null("StaticBody3D/CollisionShape3D") as CollisionShape3D
+	check(
+		collision != null and collision.shape is ConcavePolygonShape3D,
+		"uploaded geometry uses a trimesh collision shape"
+	)
+	check(
+		visual_mesh.get_node_or_null("StaticBody3D") == null,
+		"no_collision branches remain visual-only"
+	)
+	var generated_light := light_marker.get_node_or_null("GeneratedLight") as OmniLight3D
+	check(generated_light != null, "empty Light marker becomes an OmniLight3D")
+	check(
+		generated_light != null
+		and is_equal_approx(generated_light.light_energy, TestMapLoader.TEST_LIGHT_ENERGY),
+		"generated omni light uses energy 16"
+	)
+	check(
+		generated_light != null
+		and is_equal_approx(generated_light.omni_range, TestMapLoader.TEST_LIGHT_MAX_RANGE),
+		"generated omni light uses maximum range 4096"
+	)
+	check(map.get_node_or_null("TestMapEnvironment") is WorldEnvironment, "uploaded map gets ambient environment lighting")
 
-	if stl_scene != null:
-		var mesh_instance := stl_scene.get_node_or_null("Mesh") as MeshInstance3D
-		var vertex_count := 0
-
-		if mesh_instance != null and mesh_instance.mesh != null:
-			var arrays := mesh_instance.mesh.surface_get_arrays(0)
-			vertex_count = (arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
-
-		check(vertex_count == 3, "ASCII STL facet becomes one triangle (got %d verts)" % vertex_count)
-		stl_scene.free()
-
-	DirAccess.remove_absolute(stl_path)
-
-	# Binary STL: exact-size detection (84 + 50 * count bytes).
-	var bin_path := "user://zz_smoke_model_bin.stl"
-	var bin_file := FileAccess.open(bin_path, FileAccess.WRITE)
-	bin_file.store_buffer(PackedByteArray("solid-looking header".to_utf8_buffer()))
-	bin_file.store_buffer(PackedByteArray())
-
-	var padding := PackedByteArray()
-	padding.resize(80 - 20)
-	bin_file.store_buffer(padding)
-	bin_file.store_32(1)
-
-	for value in [0.0, 0.0, 1.0,  0.0, 0.0, 0.0,  1.0, 0.0, 0.0,  0.0, 1.0, 0.0]:
-		bin_file.store_float(value)
-
-	bin_file.store_16(0)
-	bin_file.close()
-
-	var bin_scene := MapModelImporter.load_model_scene(bin_path)
-	check(bin_scene != null, "binary STL parses into a scene")
-
-	if bin_scene != null:
-		bin_scene.free()
-
-	DirAccess.remove_absolute(bin_path)
-
-	# import_file refuses what it cannot read.
-	var bogus := MapModelImporter.import_file("user://does_not_exist.glb", SMOKE_MAP_SLUG)
-	check(not bool(bogus.get("ok", true)), "import_file fails cleanly on a missing file")
-	MapDocument.delete_map(SMOKE_MAP_SLUG)
-
-
-# --- Map creator: built map runtime behavior ---------------------------------------------------
-# A built custom map must carry the same guarantees hand-built arenas do: spawn markers in
-# the right groups, analytic colliders for exact primitives, trimesh for curved/bevel
-# geometry, physics-solid floors, and lights/environment present. Edit mode must NOT join
-# spawn groups (the editor runs in a live scene tree).
-
-func test_map_creator_builder() -> void:
-	print("- map creator built-map runtime")
-
-	var doc := MapDocument.create_new("Builder Check")
-	doc.slug = "zz_smoke_builder"
-
-	# create_new already includes a (beveled) floor box + one spawn per team.
-	var plain_box := doc.make_primitive_entry("box")
-	plain_box["position"] = [8.0, 6.0, 0.0]
-	plain_box["bevel_radius"] = 0.0
-	doc.objects.append(plain_box)
-
-	var beveled := doc.make_primitive_entry("box")
-	beveled["position"] = [8.0, 2.0, 0.0]
-	beveled["bevel_radius"] = 0.3
-	beveled["bevel_segments"] = 2
-	doc.objects.append(beveled)
-
-	var sphere := doc.make_primitive_entry("sphere")
-	sphere["position"] = [-8.0, 2.0, 0.0]
-	doc.objects.append(sphere)
-
-	var cylinder := doc.make_primitive_entry("cylinder")
-	cylinder["position"] = [0.0, 2.0, 8.0]
-	doc.objects.append(cylinder)
-
-	var ramp := doc.make_primitive_entry("ramp")
-	ramp["position"] = [0.0, 2.0, -8.0]
-	doc.objects.append(ramp)
-
-	var omni := doc.make_light_entry("omni")
-	omni["position"] = [0.0, 6.0, 0.0]
-	doc.objects.append(omni)
-
-	var map := CustomMapBuilder.build_map_node(doc, false)
 	root.add_child(map)
-
 	await physics_frame
-	await physics_frame
-
-	check(map.get_node_or_null("MapEnvironment") is WorldEnvironment, "built map has a WorldEnvironment")
-	check(map.get_node_or_null("Sun") is DirectionalLight3D, "built map has its sun")
-
-	var spawns_a := get_nodes_in_group("spawn_team_a")
-	var spawns_b := get_nodes_in_group("spawn_team_b")
-	check(spawns_a.size() == 1, "custom spawn joins spawn_team_a (got %d)" % spawns_a.size())
-	check(spawns_b.size() == 1, "custom spawn joins spawn_team_b (got %d)" % spawns_b.size())
-
-	var objects := map.get_node("Objects")
-	check(_entry_collider_shape(objects, int(plain_box["id"])) is BoxShape3D, "plain box gets an analytic BoxShape3D")
-	check(_entry_collider_shape(objects, 1) is ConcavePolygonShape3D, "beveled starter floor gets a trimesh collider")
-	check(_entry_collider_shape(objects, int(beveled["id"])) is ConcavePolygonShape3D, "beveled box gets a trimesh collider")
-	check(_entry_collider_shape(objects, int(sphere["id"])) is SphereShape3D, "sphere gets an analytic SphereShape3D")
-	check(_entry_collider_shape(objects, int(cylinder["id"])) is CylinderShape3D, "cylinder gets an analytic CylinderShape3D")
-	check(_entry_collider_shape(objects, int(ramp["id"])) is ConcavePolygonShape3D, "ramp gets a trimesh collider")
-
-	var light_found := false
-
-	for node in objects.get_children():
-		if int(node.get_meta("map_object_id", -1)) == int(omni["id"]):
-			light_found = node.get_node_or_null("Light") is OmniLight3D
-
-	check(light_found, "omni light entry builds an OmniLight3D")
-
-	# The floor must actually be solid: a downward ray from above it has to hit.
-	var space := (map as Node3D).get_world_3d().direct_space_state
-	var floor_query := PhysicsRayQueryParameters3D.create(Vector3(0, 4, 0), Vector3(0, -4, 0))
-	check(not space.intersect_ray(floor_query).is_empty(), "built floor is physics-solid")
+	check(get_nodes_in_group("spawn_team_a").has(spawn), "uploaded spawn joins spawn_team_a in-tree")
+	check(spawn.global_position.is_equal_approx(Vector3(0.0, 1.0, 2.0)), "uploaded spawn transform is preserved")
 
 	map.free()
 	await physics_frame
-	await physics_frame
-
-	# Edit mode: proxies instead of SpawnPoints — spawn groups must stay EMPTY.
-	var edit_map := CustomMapBuilder.build_map_node(doc, true)
-	root.add_child(edit_map)
-
-	await physics_frame
-
-	check(get_nodes_in_group("spawn_team_a").is_empty(), "edit-mode build never joins spawn groups")
-
-	var pick_bodies := 0
-
-	for node in edit_map.get_node("Objects").get_children():
-		if node.get_node_or_null("PickBody") != null:
-			pick_bodies += 1
-
-	check(pick_bodies == 3, "edit-mode spawns/lights carry pick colliders (got %d)" % pick_bodies)
-
-	edit_map.free()
-	await physics_frame
-
-
-func _entry_collider_shape(objects: Node, id: int) -> Shape3D:
-	for node in objects.get_children():
-		if int(node.get_meta("map_object_id", -1)) != id:
-			continue
-
-		var mesh := node.get_node_or_null("Mesh")
-
-		if mesh == null:
-			return null
-
-		var body := mesh.get_node_or_null("StaticBody3D")
-
-		if body == null:
-			return null
-
-		var collision := body.get_node_or_null("CollisionShape3D") as CollisionShape3D
-		return collision.shape if collision != null else null
-
-	return null
-
-
-# --- Map creator: transform gizmo integrity ----------------------------------------------------
-# The gizmo handles are physics bodies on a dedicated layer (object picking masks them
-# out). Handle records, metadata, and layer isolation must line up or clicks go to the
-# wrong subsystem. Built without entering the tree — construction has no _ready deps.
-
-func test_map_creator_gizmos() -> void:
-	print("- map creator transform gizmo")
-
-	var editor = (load("res://scenes/map_creator.tscn") as PackedScene).instantiate()
-	editor._build_gizmos()
-
-	# 3 axis handles + 1 centre handle per tool (move / rotate / scale).
-	check(editor.gizmo_handles.size() == 12, "gizmo builds 12 handles (got %d)" % editor.gizmo_handles.size())
-
-	var per_tool := {}
-	var layers_ok := true
-	var metas_ok := true
-	var axes_ok := true
-
-	for i in range(editor.gizmo_handles.size()):
-		var handle: Dictionary = editor.gizmo_handles[i]
-		var tool := int(handle["tool"])
-		per_tool[tool] = int(per_tool.get(tool, 0)) + 1
-
-		var body := handle["body"] as StaticBody3D
-
-		if body == null or body.collision_mask != 0:
-			layers_ok = false
-
-		if body == null or int(body.get_meta("gizmo_index", -1)) != i:
-			metas_ok = false
-
-		var axis := int(handle["axis"])
-
-		if axis < -1 or axis > 2:
-			axes_ok = false
-
-	check(
-		int(per_tool.get(editor.Tool.MOVE, 0)) == 4
-		and int(per_tool.get(editor.Tool.ROTATE, 0)) == 4
-		and int(per_tool.get(editor.Tool.SCALE, 0)) == 4,
-		"each tool owns 3 axis handles + 1 centre handle"
-	)
-	check(layers_ok, "handle bodies never collide with anything themselves (mask 0)")
-	check(metas_ok, "every handle body carries its gizmo_index metadata")
-	check(axes_ok, "handle axes are -1 (free) or 0..2")
-
-	# Object picking must not see the gizmo layer, and vice versa.
-	check((editor.OBJECT_PICK_MASK & editor.GIZMO_LAYER) == 0, "object-pick mask excludes the gizmo layer")
-
-	editor.free()

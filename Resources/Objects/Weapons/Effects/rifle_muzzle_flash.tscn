@@ -1,0 +1,11 @@
+[gd_scene format=3 uid="uid://d13inluxpw2ta"]
+
+[ext_resource type="Script" uid="uid://b10s7d0s4ebr8" path="res://Resources/Scripts/Weapons/weapon_muzzle_flash.gd" id="1_wmf"]
+
+[node name="RifleMuzzleFlash" type="Node3D" unique_id=1504969135]
+script = ExtResource("1_wmf")
+overall_scale = 0.7
+flash_length = 1.6
+override_colors = true
+primary_color = Color(0.99999994, 0.8695031, 0.6836788, 1)
+secondary_color = Color(1, 0.7452149, 0.5273232, 1)

@@ -1,7 +1,7 @@
 [gd_scene format=4 uid="uid://bspniaebkdmhq"]
 
-[ext_resource type="Texture2D" uid="uid://cx6g2bygli807" path="res://textures/GreyGrid.png" id="1_0giav"]
-[ext_resource type="PackedScene" uid="uid://0jf5ak884hmg" path="res://scenes/spawn_point.tscn" id="2_wsoqb"]
+[ext_resource type="Texture2D" uid="uid://cx6g2bygli807" path="res://Resources/Textures/Blockout/GreyGrid.png" id="1_0giav"]
+[ext_resource type="PackedScene" uid="uid://0jf5ak884hmg" path="res://Resources/Objects/World/spawn_point.tscn" id="2_wsoqb"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_stt0p"]
 

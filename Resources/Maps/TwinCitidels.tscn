@@ -1,6 +1,6 @@
 [gd_scene format=4 uid="uid://bgpnis7k3mj77"]
 
-[ext_resource type="PackedScene" uid="uid://0jf5ak884hmg" path="res://scenes/spawn_point.tscn" id="2_juwdh"]
+[ext_resource type="PackedScene" uid="uid://0jf5ak884hmg" path="res://Resources/Objects/World/spawn_point.tscn" id="2_juwdh"]
 [ext_resource type="PackedScene" uid="uid://bv863scax14op" path="res://Resources/Objects/Gamemodes/CTF/flags.tscn" id="3_b8stt"]
 [ext_resource type="Material" uid="uid://ca0uuhsuxts63" path="res://Resources/Materials/MatRed.tres" id="4_v6qu1"]
 [ext_resource type="Material" uid="uid://dkr58dr03qoar" path="res://Resources/Materials/MatBlue.tres" id="5_pojky"]

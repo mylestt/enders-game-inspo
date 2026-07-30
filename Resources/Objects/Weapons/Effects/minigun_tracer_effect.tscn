@@ -1,0 +1,14 @@
+[gd_scene format=3 uid="uid://xff1yt7sjm3j"]
+
+[ext_resource type="Script" uid="uid://dytr63lws3rdh" path="res://Resources/Scripts/Weapons/weapon_hitscan_tracer_effect.gd" id="1_tracer_effect"]
+
+[node name="MinigunTracerEffect" type="Node3D" unique_id=1377768278]
+script = ExtResource("1_tracer_effect")
+fade_time = 0.085
+tracer_width = 0.09
+jagged_radius = 0.35
+segment_count = 4
+tracer_color = Color(0.9897408, 0.7097869, 1.540184e-06, 0.8039216)
+tracer_emission_energy = 7.08
+head_glow_length = 1.72
+head_glow_boost = 2.255

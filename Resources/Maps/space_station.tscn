@@ -1,7 +1,7 @@
 [gd_scene format=3 uid="uid://divnxli045irj"]
 
-[ext_resource type="PackedScene" uid="uid://dnrdcfixmfh01" path="res://Props/Space Station.fbx" id="1_rmovq"]
-[ext_resource type="Texture2D" uid="uid://cx6g2bygli807" path="res://textures/GreyGrid.png" id="2_s2a6q"]
+[ext_resource type="PackedScene" uid="uid://dnrdcfixmfh01" path="res://Resources/Models/Maps/Space Station.fbx" id="1_rmovq"]
+[ext_resource type="Texture2D" uid="uid://cx6g2bygli807" path="res://Resources/Textures/Blockout/GreyGrid.png" id="2_s2a6q"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_hmrha"]
 albedo_texture = ExtResource("2_s2a6q")

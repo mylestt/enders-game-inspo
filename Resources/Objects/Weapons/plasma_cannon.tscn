@@ -1,0 +1,31 @@
+[gd_scene format=3 uid="uid://dt4qr1yprma4w"]
+
+[ext_resource type="Script" uid="uid://dhgh0bxgbioo6" path="res://Resources/Scripts/Weapons/projectile_weapon.gd" id="1_pc"]
+[ext_resource type="PackedScene" uid="uid://ccjmi075khtom" path="res://Resources/Models/Weapons/PlasmaCannon.glb" id="2_pc"]
+
+[node name="PlasmaCannon" type="Node3D" unique_id=1878215640]
+script = ExtResource("1_pc")
+projectile_speed = 50.0
+rounds_per_second = 2.26
+weapon_weight = 1.6
+aim_origin_node_path = NodePath("Muzzle")
+recoil_enabled = false
+recoil_rotation_degrees = Vector3(1.6, 0, 0)
+recoil_position_offset = Vector3(0, 0.02, 0.09)
+recoil_random_rotation_degrees = Vector3(0.2, 0.6, 0.2)
+recoil_kick_up = 10.0
+recoil_kick_side = 0.8
+fire_knockback_force = 9.0
+mag_size = 5
+starting_reserve = 20
+reload_time = 2.6
+ads_fov = 55.0
+
+[node name="PlasmaCannonModel" parent="." unique_id=217930771 instance=ExtResource("2_pc")]
+transform = Transform3D(-0.29999998, 0, -1.3113414e-08, 0, 0.29999998, 0, 1.3113414e-08, 0, -0.29999998, -0.3255074, 0.0009562969, 0.07930393)
+
+[node name="Muzzle" type="Marker3D" parent="." unique_id=1085165854]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.32310623, -0.06008602, -0.37066978)
+
+[node name="ADSmarker" type="Marker3D" parent="." unique_id=606970981]
+transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, -0.5380086, 0.16778651, 0.2231307)

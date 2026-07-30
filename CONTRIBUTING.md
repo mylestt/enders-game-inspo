@@ -31,4 +31,4 @@ the source or share access without the owner's OK.
 - Branch off `main`, open a pull request, and let the owner review before merging.
 - Keep commits focused and described.
 - The deploy/build steps and project conventions are in
-  [`CLAUDE.md`](CLAUDE.md), [`DEPLOY.md`](DEPLOY.md), and `PROJECT_OVERVIEW.md`.
+  [`CLAUDE.md`](CLAUDE.md), [`docs/guides/DEPLOY.md`](docs/guides/DEPLOY.md), and `docs/design/PROJECT_OVERVIEW.md`.

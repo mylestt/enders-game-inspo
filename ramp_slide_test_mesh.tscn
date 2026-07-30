@@ -1,5 +1,0 @@
-[gd_scene format=3 uid="uid://brht087ynlmia"]
-
-[ext_resource type="PackedScene" uid="uid://ds23wwte3q2ux" path="res://Props/RampSlideTest.glb" id="1_1klwl"]
-
-[node name="RampSlideTest" unique_id=513469289 instance=ExtResource("1_1klwl")]

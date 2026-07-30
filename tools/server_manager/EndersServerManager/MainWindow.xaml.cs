@@ -196,7 +196,7 @@ public partial class MainWindow : Window
     private async Task StartCore()
     {
         Log($"Starting server on port {_settings.GamePort} (chmod +x && run_server.sh)…");
-        var cmd = $"cd {_settings.RemoteDirectory} && chmod +x enders_server.x86_64 && ./run_server.sh {_settings.GamePort}";
+        var cmd = $"cd {_settings.RemoteDirectory} && chmod +x enders_server.x86_64 run_server.sh && ./run_server.sh {_settings.GamePort}";
         var (_, output) = await ExecAsync(cmd, 30);
         if (output.Length > 0)
             Log(output);
