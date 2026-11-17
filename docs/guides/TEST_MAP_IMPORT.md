@@ -26,9 +26,13 @@ floor. Apply object transforms before export when practical.
 
 ## Materials and lighting
 
-Authored glTF albedo textures are kept automatically. Untextured meshes get the existing
-`Resources/Textures/Blockout/GreyGrid.png` asset sampled with a world-space triplanar shader, so they need no
-UVs or copied texture asset. The grid reads in 1-metre cells with 10-metre major lines.
+Set the Principled BSDF **Base Color** on each Blender material to tint the checker
+when you upload the map. Each untextured material slot gets its own color, even when
+several slots share one object. Surfaces with no material get the neutral grey checker.
+Surfaces with an authored base-color texture keep that texture.
+
+The checker uses `Resources/Textures/Blockout/GreyGrid.png` in world space and needs
+no UVs. It has 1-metre cells and contrasting 10-metre major lines.
 
 The importer always adds ambient environment lighting. Every imported/generated gameplay
 light is an `OmniLight3D` with energy `16` and maximum range `4096`. If the file has no

@@ -12,8 +12,8 @@ class_name TestMapLoader
 # Every other MeshInstance3D receives:
 #   MeshInstance3D -> StaticBody3D -> CollisionShape3D (trimesh)
 #
-# glTF materials that contain an albedo texture are kept. Untextured geometry gets the
-# built-in triplanar blockout grid, so a grey Blender blockout needs no UVs or texture files.
+# Surfaces with an authored albedo texture keep their material. Solid-color surfaces
+# tint the UV-free triplanar grid with their imported base color.
 
 const BLOCKOUT_SHADER := preload("res://Resources/Materials/Shaders/Gameplay/test_map_blockout.gdshader")
 const BLOCKOUT_TEXTURE := preload("res://Resources/Textures/Blockout/GreyGrid.png")
@@ -26,9 +26,6 @@ const FILE_DIALOG_FILTERS := [
 	"*.glb ; Binary glTF (recommended)",
 	"*.gltf ; glTF + companion files",
 ]
-
-static var _shared_blockout_material: ShaderMaterial
-
 
 # Returns:
 # {
@@ -107,6 +104,7 @@ static func prepare_scene(scene: Node3D) -> Dictionary:
 			"no_collision":
 				marker_branch_ids[node.get_instance_id()] = true
 
+	var grid_materials: Dictionary[Color, ShaderMaterial] = {}
 	for node in original_nodes:
 		if not (node is MeshInstance3D):
 			continue
@@ -118,8 +116,7 @@ static func prepare_scene(scene: Node3D) -> Dictionary:
 
 		result["mesh_count"] = int(result["mesh_count"]) + 1
 
-		if not _has_authored_albedo_texture(mesh_instance):
-			mesh_instance.material_override = _get_blockout_material()
+		if _apply_blockout_materials(mesh_instance, grid_materials):
 			result["blockout_material_count"] = int(result["blockout_material_count"]) + 1
 
 		if _add_trimesh_collider(mesh_instance):
@@ -276,38 +273,48 @@ static func _is_inside_marked_branch(node: Node, marked_ids: Dictionary) -> bool
 	return false
 
 
-static func _has_authored_albedo_texture(instance: MeshInstance3D) -> bool:
-	if instance.material_override is BaseMaterial3D:
-		var override_material := instance.material_override as BaseMaterial3D
-
-		if override_material.albedo_texture != null:
-			return true
-
-	var mesh := instance.mesh
-
-	if mesh == null:
+static func _apply_blockout_materials(
+	instance: MeshInstance3D, grid_materials: Dictionary[Color, ShaderMaterial]
+) -> bool:
+	if instance.mesh == null:
 		return false
 
-	for surface in range(mesh.get_surface_count()):
-		var material := mesh.surface_get_material(surface)
+	# A whole-object override takes precedence over every surface slot.
+	if instance.material_override != null:
+		var grid := _grid_for_material(instance.material_override, grid_materials)
+		if grid == null:
+			return false
+		instance.material_override = grid
+		return true
 
-		if material is BaseMaterial3D and (material as BaseMaterial3D).albedo_texture != null:
-			return true
+	var changed := false
+	for surface in range(instance.mesh.get_surface_count()):
+		var grid := _grid_for_material(instance.get_active_material(surface), grid_materials)
+		if grid != null:
+			instance.set_surface_override_material(surface, grid)
+			changed = true
 
-		# A custom shader is intentional authored material. Do not replace it.
-		if material is ShaderMaterial:
-			return true
-
-	return false
+	return changed
 
 
-static func _get_blockout_material() -> ShaderMaterial:
-	if _shared_blockout_material == null:
-		_shared_blockout_material = ShaderMaterial.new()
-		_shared_blockout_material.shader = BLOCKOUT_SHADER
-		_shared_blockout_material.set_shader_parameter("blockout_texture", BLOCKOUT_TEXTURE)
+static func _grid_for_material(
+	material: Material, grid_materials: Dictionary[Color, ShaderMaterial]
+) -> ShaderMaterial:
+	var tint := Color.WHITE
+	if material != null:
+		var base := material as BaseMaterial3D
+		if base == null or base.albedo_texture != null:
+			return null
+		tint = base.albedo_color
 
-	return _shared_blockout_material
+	if not grid_materials.has(tint):
+		var grid := ShaderMaterial.new()
+		grid.shader = BLOCKOUT_SHADER
+		grid.set_shader_parameter("blockout_texture", BLOCKOUT_TEXTURE)
+		grid.set_shader_parameter("tint", tint)
+		grid_materials[tint] = grid
+
+	return grid_materials[tint]
 
 
 static func _add_trimesh_collider(instance: MeshInstance3D) -> bool:

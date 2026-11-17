@@ -58,6 +58,7 @@ script = ExtResource("3_dw050")
 
 [node name="GrappleController" type="Node" parent="." unique_id=2126445204]
 script = ExtResource("11_grapple")
+max_range = 60.0
 wrap_surface_offset = 0.005
 wrap_min_pivot_separation = 0.0
 rope_width = 0.02

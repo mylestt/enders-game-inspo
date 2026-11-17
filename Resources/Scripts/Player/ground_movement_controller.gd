@@ -13,10 +13,10 @@ class_name GroundMovementController
 #  - Launch (space, CHARGED): holding space builds the coordinator's jump_force from min
 #    toward max (the HUD force bar is the charge meter); releasing launches you OUT of
 #    ground mode into zero-G along the surface normal — a tap barely nudges off, a full
-#    hold blasts. Walking off a ledge still FALLS (AIRBORNE: gravity along -normal, Source
-#    air control, no friction) and lands or times out to zero-G.
-#  - Walking off a ledge also goes AIRBORNE (you fall like a normal FPS); if nothing
-#    catches you within airborne_max_time you hand off to zero-G with momentum.
+#    hold blasts.
+#  - Walking off a ledge goes AIRBORNE with NO gravity: velocity coasts unchanged apart
+#    from Source air control. If nothing catches you within airborne_max_time, control
+#    hands off to zero-G with that momentum intact.
 #  - Mounting is fully AUTOMATIC (see the coordinator's auto ground lock): float with your
 #    feet pointed at a surface in reach and you're on it. C is SLIDE, not mount/dismount:
 #    momentum above sprint speed survives ONLY while sliding (hold C — or toggle, see
@@ -45,8 +45,7 @@ enum GroundState { GROUNDED, AIRBORNE }
 # move_speed 12 and you carry a meaningful edge for several seconds, steerable but never
 # pumpable. Below move_speed, normal Source friction applies unchanged.
 @export var overspeed_friction := 0.35
-@export var hop_gravity := 15.2           # pull along -normal while AIRBORNE/falling (Source ~800u/s^2)
-@export var airborne_max_time := 2.0      # falling in ground mode this long, no landing -> zero-G
+@export var airborne_max_time := 2.0      # ground missing this long, no landing -> zero-G
 @export var air_cap := 0.85               # max speed the air recipe adds along the steer dir
 @export var air_accel := 800.0
 @export var air_move_speed := 500.0
@@ -106,11 +105,6 @@ const STICK_SPEED_BOOST_REFERENCE := 8.0
 # zero-G — the effective timeout never drops below this grace.
 const AIRBORNE_MIN_GRACE := 0.15
 const DETACH_MOMENTUM_CARRY := 1.35       # run speed kept (boosted) on Alt-detach
-# Fall gravity is heavier than rise gravity (the classic anti-float trick): symmetric
-# gravity hangs ~0.25 s of near-weightlessness at the apex, which reads as floaty/"a second
-# push". Rise keeps hop_gravity; descent uses hop_gravity * this.
-const FALL_GRAVITY_MULTIPLIER := 1.6
-
 var coordinator: Node = null              # PlayerMovementController (mode owner, shared look)
 var player: RigidBody3D
 var camera: Camera3D
@@ -197,7 +191,7 @@ func physics_update_ground(delta: float) -> void:
 	update_surface_walk_mouse_look()
 	update_slide_state()
 
-	# Space RELEASED: fire the charged launch (grounded) or let go passively (mid-fall —
+	# Space RELEASED: fire the charged launch (grounded) or let go passively (mid-coast —
 	# there's nothing under your feet to push from). The charge lives on the coordinator.
 	if is_action_just_released_if_exists("push"):
 		if ground_state == GroundState.AIRBORNE:
@@ -222,8 +216,8 @@ func physics_grounded(delta: float) -> void:
 	var result := get_surface_walk_ground_result()
 
 	if result.is_empty():
-		# Walked off a ledge: FALL (stay in ground mode, gravity along the old -normal).
-		# If nothing catches us the airborne timeout hands off to zero-G.
+		# Walked off a ledge: coast without gravity while the short sensor-loss grace gives
+		# nearby ground a chance to catch us. The timeout then hands off to zero-G.
 		begin_airborne()
 		physics_airborne(delta)
 		return
@@ -237,27 +231,27 @@ func physics_grounded(delta: float) -> void:
 func physics_airborne(delta: float) -> void:
 	airborne_time += delta
 
-	# Gravity along the surface's -normal (heavier on the way down — see
-	# FALL_GRAVITY_MULTIPLIER), Source air control, no friction, no snap.
-	var rising := player.linear_velocity.dot(surface_walk_normal) > 0.0
-	var gravity := hop_gravity if rising else hop_gravity * FALL_GRAVITY_MULTIPLIER
-	player.linear_velocity += -surface_walk_normal * gravity * delta
+	# Ground mode is zero-gravity even while its probes have lost the surface: keep every
+	# component of the ledge-exit velocity. Air control may steer it, but no normal velocity
+	# is manufactured here.
 	handle_source_air_move(delta)
 
-	# A controlled ground-mode descent is its own landing gear: keep impact detection
-	# suppressed while falling, so a fast-but-clean landing takes NO impact shake at all.
-	# Genuine zero-G crashes (outside ground mode) still register normally.
-	if not rising and player.has_method("suppress_launch_impact"):
+	# A controlled ground-mode coast is its own landing gear: keep impact detection
+	# suppressed while moving toward a reacquired surface, so a clean landing takes no
+	# impact shake. Genuine zero-G crashes (outside ground mode) still register normally.
+	var normal_speed := player.linear_velocity.dot(surface_walk_normal)
+
+	if normal_speed <= 0.01 and player.has_method("suppress_launch_impact"):
 		player.call("suppress_launch_impact")
 
 	update_surface_walk_orientation()
 
-	# Landing: falling toward the surface AND genuinely at stand height (within 5 cm) — a
-	# looser gate "lands" you early, deleting fall velocity while still visibly off the
-	# ground and handing the last stretch to the slow snap spring, which reads as hovering
-	# mid-jump. Fast falls that skip the window are caught by the physics contact (which
-	# zeroes approach velocity at the floor), landing them the next tick.
-	if player.linear_velocity.dot(surface_walk_normal) <= 0.01:
+	# Landing: moving toward the surface AND genuinely at stand height (within 5 cm). A
+	# looser gate "lands" you early, deleting approach velocity while still visibly off the
+	# ground and handing the last stretch to the slow snap spring, which reads as hovering.
+	# Fast approaches that skip the window are caught by the physics contact (which zeroes
+	# approach velocity at the floor), landing them the next tick.
+	if normal_speed <= 0.01:
 		var result := get_surface_walk_ground_result()
 
 		if not result.is_empty():

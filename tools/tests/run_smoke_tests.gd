@@ -39,6 +39,7 @@ func _run_all() -> void:
 	test_network_state_hygiene()
 	await test_player_weapon_mass_model()
 	test_surface_walk_wall_slide()
+	test_surface_walk_airborne_has_no_gravity()
 	test_ground_mode_modifier_policy()
 	test_surface_walk_entry_aim_lock()
 	test_charge_weapon_scaling()
@@ -461,6 +462,31 @@ func test_surface_walk_wall_slide() -> void:
 	# Parallel to the wall (pure +Z): untouched.
 	var parallel := mc.strip_into_wall_component(Vector3(0, 0, 4), wall_tangent)
 	check(parallel.is_equal_approx(Vector3(0, 0, 4)), "parallel motion is unaffected")
+
+
+# --- Surface-walk ledge coast ------------------------------------------------------------
+
+func test_surface_walk_airborne_has_no_gravity() -> void:
+	print("- movement: ground-mode ledge coast")
+
+	var player := RigidBody3D.new()
+	var ground := GroundMovementController.new()
+	root.add_child(player)
+	ground.setup(null, player, null)
+	ground.surface_walk_normal = Vector3.UP
+
+	# With no input, a purely tangential cliff-exit velocity must remain purely tangential.
+	var ledge_velocity := Vector3(20.0, 0.0, -3.0)
+	player.linear_velocity = ledge_velocity
+	ground.physics_airborne(0.01)
+
+	check(
+		player.linear_velocity.is_equal_approx(ledge_velocity),
+		"ground-mode airborne coast adds no gravity or normal velocity"
+	)
+
+	ground.free()
+	player.free()
 
 
 # --- Ground-mode modifier ---------------------------------------------------------------
@@ -977,6 +1003,18 @@ func test_map_runtime(map_id: String, scene: PackedScene, expect_grounded: bool)
 
 # --- Uploaded glTF test-map preparation ----------------------------------------------------
 
+func _uses_blockout_tint(instance: MeshInstance3D, surface: int, expected: Color) -> bool:
+	var material := instance.get_active_material(surface) as ShaderMaterial
+	if material == null or material.shader != TestMapLoader.BLOCKOUT_SHADER:
+		return false
+
+	var tint = material.get_shader_parameter(&"tint")
+	return (
+		material.get_shader_parameter(&"blockout_texture") == TestMapLoader.BLOCKOUT_TEXTURE
+		and tint is Color and tint.is_equal_approx(expected)
+	)
+
+
 func test_uploaded_map_preparation() -> void:
 	print("- uploaded glTF test-map preparation")
 
@@ -1033,6 +1071,34 @@ func test_uploaded_map_preparation() -> void:
 	textured.position = Vector3(3.0, 0.0, 0.0)
 	map.add_child(textured)
 
+	var blue := StandardMaterial3D.new()
+	blue.albedo_color = Color(0.18, 0.42, 0.83)
+	var orange := StandardMaterial3D.new()
+	orange.albedo_color = Color(0.93, 0.36, 0.08)
+	var custom := ShaderMaterial.new()
+	custom.shader = Shader.new()
+	custom.shader.code = "shader_type spatial; void fragment() { ALBEDO = vec3(0.4); }"
+
+	var mixed_mesh := ArrayMesh.new()
+	var source_materials: Array[Material] = [blue, authored_material, custom, authored_material]
+	for surface in range(source_materials.size()):
+		var offset := Vector3.RIGHT * surface
+		var arrays := []
+		arrays.resize(Mesh.ARRAY_MAX)
+		arrays[Mesh.ARRAY_VERTEX] = PackedVector3Array([offset, offset + Vector3.UP, offset + Vector3.RIGHT])
+		mixed_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		mixed_mesh.surface_set_material(surface, source_materials[surface])
+
+	var mixed := MeshInstance3D.new()
+	mixed.mesh = mixed_mesh
+	mixed.set_surface_override_material(3, orange)
+	map.add_child(mixed)
+
+	var painted := MeshInstance3D.new()
+	painted.mesh = mixed_mesh
+	painted.material_override = orange
+	map.add_child(painted)
+
 	var spawn := Marker3D.new()
 	spawn.name = "Spawn.001"
 	spawn.position = Vector3(0.0, 1.0, 2.0)
@@ -1051,16 +1117,22 @@ func test_uploaded_map_preparation() -> void:
 
 	var result := TestMapLoader.prepare_scene(map)
 	check(bool(result.get("ok", false)), "uploaded map preparation succeeds")
-	check(int(result.get("mesh_count", 0)) == 2, "only playable geometry is counted")
-	check(int(result.get("collision_count", 0)) == 2, "every playable mesh gets collision")
+	check(int(result.get("mesh_count", 0)) == 4, "only playable geometry is counted")
+	check(int(result.get("collision_count", 0)) == 4, "every playable mesh gets collision")
 	check(int(result.get("spawn_count", 0)) == 1, "Spawn.001 is recognized as a spawn marker")
 	check(int(result.get("light_count", 0)) == 1, "Light marker generates a usable light")
 	check(
-		int(result.get("blockout_material_count", 0)) == 1,
-		"only the untextured mesh gets the triplanar blockout material"
+		int(result.get("blockout_material_count", 0)) == 3,
+		"fallback count includes each affected mesh once"
 	)
-	check(geometry.material_override is ShaderMaterial, "untextured geometry uses the blockout shader")
-	check(textured.material_override == null, "authored albedo texture is preserved")
+	check(_uses_blockout_tint(geometry, 0, Color.WHITE), "missing material uses a neutral checker tint")
+	check(textured.get_active_material(0) == authored_material, "authored albedo texture is preserved")
+	check(_uses_blockout_tint(mixed, 0, blue.albedo_color), "solid-colored surface tints the checker")
+	check(mixed.get_active_material(1) == authored_material, "textured surface survives alongside a tinted surface")
+	check(mixed.get_active_material(2) == custom, "custom shader survives alongside a tinted surface")
+	check(_uses_blockout_tint(mixed, 3, orange.albedo_color), "surface tint respects the active surface override")
+	check(_uses_blockout_tint(painted, 1, orange.albedo_color), "object tint takes precedence over a mesh texture")
+	check(mixed_mesh.surface_get_material(0) == blue, "tinting an instance preserves the underlying shared mesh")
 	check(
 		geometry.get_node_or_null("StaticBody3D/CollisionShape3D") is CollisionShape3D,
 		"collider hierarchy is MeshInstance3D -> StaticBody3D -> CollisionShape3D"
